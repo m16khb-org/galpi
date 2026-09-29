@@ -1,10 +1,9 @@
 ---
 type: "Reference"
 title: "Workflow: AI Meeting Minutes (Refine)"
+description: "End-to-end refine flow for AI meeting minutes: the frontend button through BackendPort.refineTranscript to the Application use case, the 0600 context-file handoff and env-var-only API key, and the worker's single-pass or map/reduce LLM pipeline that publishes minutes atomically."
+tags: [workflow, refinement, minutes, llm-pipeline, python-worker, sse, security]
 openwiki_generated: true
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-87d1f8af141955ca8bda47d2
     resource: repo://src-tauri/src/adapters/outbound/environment.rs
@@ -28,14 +27,20 @@ sources:
     resource: repo://src-tauri/src/application/use_cases.rs
   - id: openwiki-source-58bf79ff415dcf2a16d8cf75
     resource: repo://src-tauri/src/domain/artifact.rs
+  - id: openwiki-source-b4f288d4cce4fd187da94b04
+    resource: repo://src/adapters/tauri-backend.ts
   - id: openwiki-source-dd18508942eff5e6fea01ff4
     resource: repo://src/application/job-machine.ts
+  - id: openwiki-source-fba06fdd162d496a287ca37b
+    resource: repo://src/domain/backend.ts
   - id: openwiki-source-c3208585eb881402492ff4c9
     resource: repo://src/domain/participant.ts
   - id: openwiki-source-4cd7ade02c7980045548012d
     resource: repo://src/ui/app-view.ts
   - id: openwiki-source-7fce012a6f5ad5b4facc3ac7
     resource: repo://src/ui/controller.ts
+  - id: openwiki-source-d0fc2900c268a60d53ba1eb3
+    resource: repo://src/ui/participant-picker.ts
   - id: openwiki-source-e2187f531b128035d6432652
     resource: repo://worker/galpi_worker/__main__.py
   - id: openwiki-source-5f25284a6a84e2b7c5a07f23
@@ -52,7 +57,10 @@ sources:
     resource: repo://worker/tests/minutes_prompt_cases.py
   - id: openwiki-source-3721238f0160a6c818d5a60d
     resource: repo://worker/tests/refine_stream_cases.py
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T14:35:32.287Z
 ---
 
 
@@ -66,20 +74,24 @@ API and streams the answer back as minutes. Everything about the flow is shaped
 by three constraints: the transcript context is sensitive, so it travels
 through 0600 temporary files that are removed after the run; the API key is a
 secret, so it rides in the `GALPI_ASSISTANT_API_KEY` environment variable and
-never touches disk or the argument vector; and the minutes are only trustworthy
-if the model invents nothing, so the prompt contract forbids invented
-attendees, decisions, and dates.
+nowhere else — it is never part of the `AssistantSettings` document, the
+temporary context files, or the argument vector; and the minutes are only
+trustworthy if the model invents nothing, so the prompt contract forbids
+invented attendees, decisions, and dates.
 
 The flow spans three runtimes and one page cannot be read without its
 neighbors: [worker protocol](../architecture/worker-protocol.md) owns the JSONL
-events shown here, [meetings and artifacts](../concepts/meetings-and-artifacts.md)
-owns the folder and naming rules, [roster and assistant
-settings](../concepts/roster-and-assistant-settings.md) owns where the
-participants and glossary come from, [external
-services](../integrations/external-services.md) owns the API contract and
-<!-- openwiki: broken internal link [transcription.md] file "transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-credential storage, and [transcription](transcription.md) documents the
-pipeline that produces the transcript this workflow consumes.
+events shown here, [the Python worker](../architecture/python-worker.md) owns
+the sidecar runtime and the transcription pipeline that produces the transcript
+this workflow consumes, [meetings and
+artifacts](../concepts/meetings-and-artifacts.md) owns the folder and naming
+rules, [jobs and cancellation](../concepts/jobs-and-cancellation.md) owns the
+single-slot job registry and the error codes both sides rely on, and [external
+services](../integrations/external-services.md) owns the assistant API contract
+and credential storage. The saved roster, glossary, background text, and
+assistant settings that feed the refinement live in the same settings document
+backed by the keychain that [the Rust host](../architecture/rust-host.md)
+describes.
 
 ## The request path
 
@@ -292,7 +304,7 @@ The document is published through `write_text_atomic` (a `.tmp` sibling then
 |---|---|
 | Endpoint | `POST {base_url}/chat/completions`, `Accept: text/event-stream` |
 | Default base URL | `https://api.z.ai/api/coding/paas/v4` (`GALPI_ASSISTANT_BASE_URL` overrides) |
-| Default model | `glm-5.3` (the worker CLI default) |
+| Default model | `glm-5.3-flash` (the worker CLI default; `--model` overrides it) |
 | Timeout | 600 s (`REQUEST_TIMEOUT_SECONDS`) |
 | Body | `stream: true`, `temperature: 0.2` |
 | `max_tokens` | 131072 for GLM models on the default z.ai endpoint; 32768 everywhere else |
@@ -413,7 +425,7 @@ document is ever observable at the output path.
   attendee selection, the full glossary, and openable minutes;
   `refinement_is_rejected_before_a_token_is_saved` pins `ASSISTANT_KEY_MISSING`;
   `imported_transcript_is_refinable_without_transcription` pins the import
-  path.
+  path, asserting the refinement received the imported transcript itself.
 - `src-tauri/src/adapters/outbound/process/tests.rs` —
   `captures_refined_event_as_process_result` pins the `Refined` event as the
   completion carrier; `cancelling_stops_a_running_child_and_reaps_it` pins the

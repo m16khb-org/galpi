@@ -1,5 +1,5 @@
 # Files
 
-- [Workflow: AI Meeting Minutes (Refine)](ai-minutes.md)
+- [Workflow: AI Meeting Minutes (Refine)](ai-minutes.md) - End-to-end refine flow for AI meeting minutes: the frontend button through BackendPort.refineTranscript to the Application use case, the 0600 context-file handoff and env-var-only API key, and the worker's single-pass or map/reduce LLM pipeline that publishes minutes atomically.
 - [Workflow: Engine Setup & First Run](engine-setup.md) - Traces the first-run prepare_environment flow end to end — bundled-uv virtualenv creation for both engine presets, marker-based readiness recording from build.rs fingerprints, worker-side model downloads with honest progress reporting, ffmpeg staging, Hugging Face cache reuse and token handling, and why a failed prepare is always safe to retry.
 - [Workflow: Microphone Recording](recording.md) - Traces the native microphone recording pipeline end to end — the CPAL realtime callback feeding a bounded queue, the dedicated incremental WAV writer producing folder.wav.part, the atomic rename on stop, drop accounting, failure events that race the start call, macOS sleep blocking, and the RecordingController's background-safe elapsed clock that auto-selects the finished WAV for transcription.

@@ -5,7 +5,7 @@ description: The bundled transcription/minutes sidecar — CLI surface and exit 
 tags: [python, worker, sidecar, transcription, whisperx, qwen3, mlx, diarization, purity, protocol, atomic-writes]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
+    at: 2026-09-29T14:35:32.287Z
 sources:
   - id: openwiki-source-5b54a58d1b51cd490b0e7162
     resource: repo://package.json
@@ -63,7 +63,7 @@ sources:
     resource: repo://worker/tests/test_core.py
   - id: openwiki-source-e82676118198cdf74313a8e0
     resource: repo://worker/tests/test_qwen3.py
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
 ---
 
 # Python Worker Architecture
@@ -82,8 +82,10 @@ installed.
 The host-facing protocol (event envelope, sequencing, cancellation) is
 documented in [worker-protocol](worker-protocol.md); this page covers the
 worker's own architecture. Engine selection and the two runtime environments
-<!-- openwiki: broken internal link [engines-and-environment.md] file "engines-and-environment.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-are covered in [engines and environment](engines-and-environment.md).
+are covered in [engines and environment](../concepts/engines-and-environment.md),
+and the product-level flows that drive these three subcommands live in
+[AI minutes](../workflows/ai-minutes.md) and
+[engine setup](../workflows/engine-setup.md).
 
 ## Role and supervision boundary
 
@@ -148,10 +150,10 @@ Two mechanisms keep dependency noise off the protocol stream:
   progress into one honest GB figure and throttles to one update per second.
 
 The standing rule: no `print`, progress bar, or logging handler on stdout
-outside `EventWriter`. Related pages: [worker protocol](worker-protocol.md)
-<!-- openwiki: broken internal link [verification-gates.md] file "verification-gates.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-consumes this stream; [verification gates](verification-gates.md) runs the
-tests that enforce it.
+outside `EventWriter`. The host side of this stream — line parsing,
+supervision, cancellation — is owned by
+[worker protocol](worker-protocol.md); [verification
+gates](../testing/verification-gates.md) runs the tests that enforce it.
 
 ## The purity boundary
 
@@ -352,7 +354,9 @@ never renamed. The final `completed` event carries the `srt`, `txt`, and
 symlink, falling back to a copy where symlinks fail) so the bundled decoder is
 on the worker's PATH, then warms the selected engine's models and writes a
 manifest JSON atomically (`protocol: 1` plus package versions, model ids, and
-the per-stage devices) followed by a `prepared` event.
+the per-stage devices) followed by a `prepared` event. The first-run flow
+around this command — virtualenv creation, readiness markers, retry safety —
+is traced in [engine setup](../workflows/engine-setup.md).
 
 The Qwen3 prepare does the most work, in order:
 
@@ -433,13 +437,19 @@ Refinement routing: single pass up to the proven 48,000-character limit, map/red
 ### The assistant transport
 
 `assistant_stream.py` implements OpenAI-compatible streaming chat completions
-with stdlib `urllib` — no SDK. The base URL comes from
-`GALPI_ASSISTANT_BASE_URL` (default `https://api.z.ai/api/coding/paas/v4`),
-the model defaults to `glm-5.3`, and `GALPI_ASSISTANT_REASONING_EFFORT` is
-included in the request body only when set to a known effort, so other
+with stdlib `urllib` — no SDK. Its module-constant block is the source of
+truth for the API defaults; other code reads those names instead of
+restating the numbers. The base URL comes from
+`GALPI_ASSISTANT_BASE_URL` (default `DEFAULT_BASE_URL`,
+`https://api.z.ai/api/coding/paas/v4`), the model defaults to
+`DEFAULT_MODEL = "glm-5.3-flash"`, and `GALPI_ASSISTANT_REASONING_EFFORT` is
+included in the request body only when set to a known effort —
+`REASONING_EFFORTS` is the frozen set `low`/`medium`/`high`/`max` — so other
 providers see a clean OpenAI-compatible body. GLM models on the default
-endpoint get 131,072 max output tokens (the z.ai budget covers reasoning plus
-the document); everything else gets 32,768. Temperature is fixed at 0.2.
+endpoint get 131,072 max output tokens (`GLM_MAX_OUTPUT_TOKENS`; the z.ai
+budget covers reasoning plus the document); everything else gets 32,768
+(`MAX_OUTPUT_TOKENS`). Temperature is fixed at 0.2 and each request times out
+after `REQUEST_TIMEOUT_SECONDS` (600 s).
 
 The SSE consumer distinguishes `content` from `reasoning_content`: while only
 reasoning has arrived, the progress message reports the live reasoning length
@@ -447,8 +457,8 @@ at the band start. An error payload inside the stream raises immediately. An
 empty document is turned into an actionable error naming the finish reason —
 `length` (output cap hit with no body produced) and `content_filter` get
 Korean operator-facing messages — and a whole-document code fence is stripped
-from the result. Output is written via `write_text_atomic` and the `refined`
-event names the path.
+from the result by `strip_document_fence`. Output is written via
+`write_text_atomic` and the `refined` event names the path.
 
 ### The normative minutes format
 
@@ -460,9 +470,9 @@ appendix (term and speaker mappings with confidence). Missing sections keep
 their titles with "해당 없음", sensitive strings are masked, and speaker labels
 are never promoted to real names without evidence. Both the single-pass prompt
 and the reduce prompt use this structure, which is what keeps short and long
-meetings' minutes interchangeable downstream. See
-<!-- openwiki: broken internal link [ai-minutes.md] file "ai-minutes.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-[AI minutes](ai-minutes.md) for the product workflow around it.
+meetings' minutes interchangeable downstream. The product workflow around it —
+how minutes reach the meeting folder and what the user sees — is
+[AI minutes](../workflows/ai-minutes.md).
 
 ## Failure semantics across the boundary
 
@@ -523,8 +533,6 @@ actually matter:
 
 Everything that requires the ML stack — actual model loads, real ASR quality,
 diarization behavior — is deliberately outside this suite; it is verified by
-running the product against real recordings (see
-<!-- openwiki: broken internal link [transcription.md] file "transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-[transcription](transcription.md) and
-<!-- openwiki: broken internal link [verification-gates.md] file "verification-gates.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-[verification gates](verification-gates.md)).
+running the product against real recordings rather than in unit tests (see
+[verification gates](../testing/verification-gates.md) for what each gate
+covers and what stays manual).

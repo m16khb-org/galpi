@@ -3,9 +3,6 @@ type: architecture
 title: Worker Protocol & Process Supervision
 description: The versioned JSONL contract between the Python worker and the Rust host — the {v, seq, type} envelope and its six event types — the four coupled definitions that must change in one commit, and the run_process supervisor that parses bounded lines, batches stderr, and escalates cancellation SIGTERM → 3 s → SIGKILL.
 tags: [protocol, jsonl, worker, process-supervision, cancellation, ipc, events, rust, python, typescript]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-e8e61d605125cac4d909755e
     resource: repo://docs/ARCHITECTURE.md
@@ -67,7 +64,10 @@ sources:
     resource: repo://worker/galpi_worker/refine.py
   - id: openwiki-source-e549b3da4bf33233af9b0421
     resource: repo://worker/tests/test_core.py
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T14:35:32.287Z
 ---
 
 # Worker Protocol & Process Supervision
@@ -87,10 +87,9 @@ The supervision half of this page is
 `src-tauri/src/adapters/outbound/process.rs` — the single place in the host
 where a child process is spawned, read, and killed. The worker's internal
 pipeline is covered in [python worker](python-worker.md), the host's layers in
-[rust host](rust-host.md), job lifecycle semantics in
-[jobs and cancellation](../concepts/jobs-and-cancellation.md), and the end-to-end
-<!-- openwiki: broken internal link [../workflows/transcription.md] file "../workflows/transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-transcription flow in [transcription](../workflows/transcription.md).
+[rust host](rust-host.md), the webview half of the event path in
+[frontend](frontend.md), and job lifecycle semantics in
+[jobs and cancellation](../concepts/jobs-and-cancellation.md).
 
 ## The envelope and its four coupled definitions
 
@@ -407,6 +406,5 @@ roster reach the worker as context, and nothing is sent when both are empty.
   `JobRegistry` that owns the cancel oneshot.
 - [Jobs and cancellation](../concepts/jobs-and-cancellation.md) — job lifecycle
   semantics in depth.
-<!-- openwiki: broken internal link [../workflows/transcription.md] file "../workflows/transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Transcription workflow](../workflows/transcription.md) — the full run from
-  audio pick to artifacts.
+- [Frontend](frontend.md) — the webview side of `toJobEvent`,
+  `reduceJobEvent`, and the controller that mints job ids.

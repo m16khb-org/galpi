@@ -2,9 +2,6 @@
 type: "Reference"
 title: "System Overview: Three Runtimes, One Dependency Rule"
 openwiki_generated: true
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -20,6 +17,8 @@ sources:
     resource: repo://src-tauri/src/adapters/outbound/desktop.rs
   - id: openwiki-source-07c2f942d8b752165e98f3e6
     resource: repo://src-tauri/src/adapters/outbound/process.rs
+  - id: openwiki-source-7337133a31c82ce450d3f861
+    resource: repo://src-tauri/src/adapters/outbound/refinement.rs
   - id: openwiki-source-b3e301ecab2af521cf73e82e
     resource: repo://src-tauri/src/adapters/outbound/transcription.rs
   - id: openwiki-source-2f0342428f8826cab75a467b
@@ -48,7 +47,10 @@ sources:
     resource: repo://worker/galpi_worker/core.py
   - id: openwiki-source-86d977239657f28cd09e2c22
     resource: repo://worker/galpi_worker/protocol.py
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T14:35:32.287Z
 ---
 
 
@@ -68,9 +70,9 @@ page maps the whole and points at the pages that go deep.
 
 | Runtime | Root | Inner layers | Edge (adapters) | Entry |
 |---|---|---|---|---|
-| TypeScript webview | `src/` | `domain/` (contracts: `job.ts`, `speaker.ts`, `backend.ts`), `application/` (`job-machine.ts`, `recording-machine.ts`), `ui/` (controllers, view) | `adapters/tauri-backend.ts` — `TauriBackend` + Zod parsing | `src/main.ts` |
-| Rust Tauri host | `src-tauri/src/` | `domain/` (requests, value objects, artifacts, worker protocol parser), `application/` (ports, `Application` facade, `JobRegistry`) | `adapters/inbound/tauri.rs` (commands), `adapters/outbound/` (desktop, process, recording, settings) | `composition.rs` via `main.rs` → `galpi_lib::run()` |
-| Python sidecar | `worker/galpi_worker/` | pure modules: `core.py`, `artifacts.py`, `minutes_*.py` | `__main__.py` CLI, `engine.py`/`preparation.py`/`refine.py` use cases, `protocol.py` stdout writer, `assistant_stream.py` HTTP | `__main__.py` (`python -m galpi_worker`) |
+| TypeScript webview | `src/` | `domain/` (contracts: `job.ts`, `speaker.ts`, `backend.ts`, plus participant/glossary value objects), `application/` (`job-machine.ts`, `recording-machine.ts`), `ui/` (controllers, view) | `adapters/tauri-backend.ts` — `TauriBackend` + Zod parsing | `src/main.ts` |
+| Rust Tauri host | `src-tauri/src/` | `domain/` (requests, value objects, artifacts, worker protocol parser), `application/` (ports, `Application` facade, `JobRegistry`) | `adapters/inbound/tauri.rs` (commands), `adapters/outbound/` (desktop, transcription, refinement, setup/import, process, recording, settings, secrets) | `composition.rs` via `main.rs` → `galpi_lib::run()` |
+| Python sidecar | `worker/galpi_worker/` | pure modules: `core.py`, `artifacts.py`, `minutes_*.py` | `__main__.py` CLI, `engine.py`/`preparation.py`/`refine.py`/`qwen3.py` use cases, `protocol.py` stdout writer, `assistant_stream.py` HTTP | `__main__.py` (`python -m galpi_worker`) |
 
 The runtimes are connected by exactly two channels: the Tauri IPC boundary
 (`invoke` in, `job-event`/`recording-event` out) between webview and host, and
@@ -161,7 +163,7 @@ flowchart TD
     end
 
     subgraph HOST["Rust Tauri host - src-tauri/src/"]
-        CMD["adapters/inbound/tauri.rs - 16 Tauri commands"] --> APP["Application facade - use_cases.rs"]
+        CMD["adapters/inbound/tauri.rs - 17 Tauri commands"] --> APP["Application facade - use_cases.rs"]
         APP --> REG["JobRegistry - single active job slot"]
         APP -->|"Arc dyn ports"| OUT["adapters/outbound/ DesktopAdapter - NativeRecorder - LocalSettingsStore"]
         OUT --> PROC["process.rs run_process supervisor"]
@@ -179,7 +181,7 @@ flowchart TD
     EV -->|"job-event and recording-event"| TB
 ```
 
-*The request chain: TypeScript `invoke` enters through the 16 Tauri commands;
+*The request chain: TypeScript `invoke` enters through the 17 Tauri commands;
 worker events return through the `TauriEvents` bridge; the JSONL protocol
 connects the host to the Python sidecar.*
 
@@ -193,6 +195,17 @@ transcribe --input … --output … --engine … [--num-speakers|--speaker-range
 [--asr-context …]` → `run_process` spawns and supervises the subprocess.
 Results return through the same call stack; progress and logs travel the event
 path instead (below).
+
+The event path is the mirror image, and it is how the user actually sees
+progress: the worker prints one JSONL line per event on stdout →
+`run_process` reads the bounded line and `parse_worker_event`
+(`src-tauri/src/domain/worker.rs`) parses and version-checks it → `TauriEvents`
+wraps the `WorkerEvent` with its `job_id` and emits `job-event` (or a
+`RecordingFailure` on `recording-event`) → the webview's `TauriBackend`
+listener validates the payload with Zod (`rawJobEventSchema`, `toJobEvent`) →
+the pure reducers in `src/application/job-machine.ts` /
+`recording-machine.ts` fold it into view state. No step in that chain knows
+more of the chain than its adjacent layers.
 
 ## Three composition roots
 
@@ -209,8 +222,8 @@ downstream sees `BackendPort`.
 bridge, then a single `DesktopAdapter` whose `Arc`s are upcast to five port
 handles, adds `NativeRecorder` and `LocalSettingsStore`, registers
 `Application` with `.manage(...)`, loads the dialog and opener plugins, and
-lists all sixteen commands in `generate_handler!`. It is the only file allowed
-to do any of this.
+lists all seventeen commands in `generate_handler!`. It is the only file
+allowed to do any of this.
 
 **Worker — `worker/galpi_worker/__main__.py`.** An argparse parser defines the
 three subcommands (`prepare`, `transcribe`, `refine`); `main()` constructs one
@@ -220,7 +233,7 @@ injected. CLI flags carry the request: `--num-speakers` and `--speaker-range`
 are mutually exclusive and map onto the `SpeakerHint` value object; an absent
 flag means `auto`.
 
-## The ingress boundary: sixteen Tauri commands
+## The ingress boundary: seventeen Tauri commands
 
 Every command in `adapters/inbound/tauri.rs` is a one-line delegation from
 `State<'_, Application>` to a facade method — no business logic, no port
@@ -233,6 +246,7 @@ knowledge, just translation of the wire call:
 | `hugging_face_token_stored` | `hugging_face_token_stored` |
 | `save_hugging_face_token` | `save_hugging_face_token` |
 | `load_assistant_settings` | `load_assistant_settings` |
+| `save_assistant_api_key` | `save_assistant_api_key` |
 | `save_assistant_settings` | `save_assistant_settings` |
 | `save_engine_preset` | `save_engine_preset` |
 | `refine_transcript` | `refine_transcript` |
@@ -248,14 +262,16 @@ knowledge, just translation of the wire call:
 The readiness gate is part of the facade, not the command:
 `Application::transcribe` refuses to run when `diagnose` reports the selected
 engine not ready (`SETUP_REQUIRED`), and Qwen3 transcription runs from its own
-venv with `HF_HUB_OFFLINE=1` because it may only start after preparation has
-populated the cache.
+venv with `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1` because it may only
+start after preparation has populated the cache.
 
 Secrets never round-trip through this boundary. The frontend can only ask
 *whether* a Hugging Face token is stored (a boolean — the sheet shows a mask
 either way, and reading it would trigger a keychain prompt on every open), and
 the assistant API key is read from the keychain at the single moment a
-refinement actually needs it.
+refinement actually needs it. On the write side, the key has its own command,
+`save_assistant_api_key`, so a settings autosave can never carry the key, an
+untouched key is never rewritten, and a blank string clears it.
 
 ## The egress bridge: TauriEvents
 
@@ -286,7 +302,8 @@ safe in practice:
 - stderr lines are batched — 32 lines or 100 ms, whichever first — into single
   `Log` events, because a `uv pip install` printing thousands of lines must
   not flood the webview with one IPC event per line. A rolling tail of the
-  last 20 stderr lines becomes the `PROCESS_FAILED` detail.
+  last 20 stderr lines is kept, and its final line becomes the
+  `PROCESS_FAILED` detail (or `exit status …` when stderr was silent).
 - Stdout lines are parsed with the domain parser `parse_worker_event`
   (`src-tauri/src/domain/worker.rs`), which rejects malformed JSON and
   unsupported protocol versions; a duplicate `completed` event is also a
@@ -347,7 +364,7 @@ the JSON keys of the wire format. The frontend's `errorMessage` surfaces an
 fallback for anything else, while `errorDetail` keeps the raw diagnostic for
 logs. A consequence worth knowing when reading old text: `docs/ARCHITECTURE.md`
 (dated 2026-08-21) still cites 14 commands, 8 port traits, and a four-port
-`DesktopAdapter`; the current source has 16 commands, nine traits, and five
+`DesktopAdapter`; the current source has 17 commands, nine traits, and five
 `DesktopAdapter` impls. Treat the document as normative for *principles* and
 change-set rules, and the code plus the architecture fence as authoritative
 for counts and boundaries.
@@ -369,7 +386,7 @@ code without adding a boundary:
   a second storage medium exists, a repository abstraction is cost with no
   payoff.
 - **`BackendPort` is one integrated interface.** Its single consumer is the
-  `AppController`; the 22-method interface — 16 IPC calls, two event
+  `AppController`; the 23-method interface — 17 IPC calls, two event
   subscriptions, and dialog/opener conveniences (`chooseAudio`,
   `chooseTranscript`, `chooseOutputDirectory`, `openModelAccessPage`) — is one
   cohesive contract, so an ISP split would buy nothing. The frontend has no

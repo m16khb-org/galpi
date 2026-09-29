@@ -5,7 +5,7 @@ description: How Galpi models its two transcription engines (Qwen3 default, Whis
 tags: [engines, environment, readiness, uv, virtualenv, whisperx, qwen3, mlx, fingerprint, tauri, setup]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
+    at: 2026-09-29T14:35:32.287Z
 sources:
   - id: openwiki-source-6229fc7315005e295371fb06
     resource: repo://scripts/stage-sidecars.ts
@@ -51,11 +51,13 @@ sources:
     resource: repo://worker/galpi_worker/__main__.py
   - id: openwiki-source-89fa3a838065f5a48e8e8147
     resource: repo://worker/galpi_worker/preparation.py
+  - id: openwiki-source-d2db47b004246733d412c75d
+    resource: repo://worker/galpi_worker/qwen3.py
   - id: openwiki-source-a20d388d29fac330d11b928b
     resource: repo://worker/galpi_worker/runtime.py
   - id: openwiki-source-756f49236467f760abc5144f
     resource: repo://worker/requirements-qwen3.txt
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
 ---
 
 # Engine Presets & Environment Readiness
@@ -300,7 +302,10 @@ The prepare decision tree in `setup.rs`; each stage re-runs `status()` so every 
 `galpi_worker prepare` (`preparation.py`) first links ffmpeg into the engine
 bin dir — a symlink to the imageio-ffmpeg binary, falling back to a copy with
 `0o755` when symlinking fails. This link is exactly what `ffmpeg_ready`
-inspects and what the transcription path uses to decode audio.
+inspects. At transcription time the two stacks reach ffmpeg differently: the
+WhisperX path resolves `ffmpeg` from the process `PATH` (which
+`process_environment` prepends the engine bin to), while the Qwen3 path calls
+the imageio-ffmpeg binary directly through `ffmpeg_executable()`.
 
 **WhisperX** (`prepare_whisperx_models`) loads `large-v3-turbo` on CPU int8,
 then the Korean alignment model and the pyannote diarization pipeline on the
@@ -346,8 +351,10 @@ environment deterministically rather than inheriting the shell's:
 - Telemetry off: `HF_HUB_DISABLE_IMPLICIT_TOKEN`,
   `HF_HUB_DISABLE_TELEMETRY`, `PYANNOTE_METRICS_ENABLED=false`,
   `DO_NOT_TRACK=1`.
-- `PATH` prepends the preset's engine bin dir (so the linked `ffmpeg`
-  resolves) ahead of the fixed system paths, and `TMPDIR` is preserved.
+- `PATH` prepends the WhisperX engine bin dir (`engine/bin`, where prepare
+  links ffmpeg) ahead of the fixed system paths; this entry does not switch
+  with the preset, and the Qwen3 worker never depends on it (see above).
+  `TMPDIR` is preserved.
 - An optional `HF_TOKEN` (trimmed, non-empty) from settings.
 
 `assistant_environment` extends the same base with `GALPI_ASSISTANT_API_KEY`,
@@ -402,6 +409,8 @@ ready.
 - `src-tauri/src/adapters/outbound/model_cache.rs` (tests) — import uses hard
   links and preserves safe symlinks; offline mode requires the complete,
   tokenless cache.
+- `src-tauri/src/adapters/outbound/settings.rs` (tests) — the engine preset
+  persists while secrets stay out of `settings.json`.
 - `src/ui/controller.test.ts` — switching the preset saves it and
   re-diagnoses the environment.
 - `src/ui/app-view.dom.test.ts` — the preparation panel gates on readiness
@@ -410,13 +419,11 @@ ready.
 ## Related pages
 
 - [Python worker architecture](../architecture/python-worker.md) — the prepare
-  and transcribe pipelines these environments run.
+  and transcribe pipelines these environments run, i.e. what happens after
+  the readiness gate passes.
 - [Rust host architecture](../architecture/rust-host.md) — the hexagonal layer
   that owns `EnginePort`, `SettingsPort`, and the setup adapter.
 - [Engine setup workflow](../workflows/engine-setup.md) — the user-facing
   setup walkthrough.
-<!-- openwiki: broken internal link [../workflows/transcription.md] file "../workflows/transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Transcription workflow](../workflows/transcription.md) — what happens after
-  the readiness gate passes.
 - [External services](../integrations/external-services.md) — Hugging Face
   access, gating, and offline behavior.

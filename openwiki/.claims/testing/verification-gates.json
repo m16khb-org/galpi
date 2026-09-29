@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:30da797d0f44c7afdb1f61b9754bb5db7403ea8bd82493d74a770d502f3bfd23",
+  "pageVersion": "sha256:4d5e19ce426f68061cff774a13ec1d6e556c7da736aab74ae59369adc28d64fa",
   "claims": [
     {
       "id": "claim_7215778fc1804ab5917496f4bedcf806",
       "statement": "The canonical verification commands are Bun scripts in package.json: `bun run check` (architecture fence + Biome + tsc --noEmit), `bun test` (frontend unit + DOM tests), `bun run check:rust` (cargo fmt --check, clippy -D warnings, cargo test --all-targets), `bun run check:worker` (ruff check, ruff format --check, stdlib unittest discover), and `bun run check:all` chaining all four; Bun is the only supported driver and `npm test` is not a valid gate.",
       "evidence": [
         {
-          "resource": "repo://.agent-harness/testing/overview.md#L10-L18",
-          "version": "repo-lines-v1:sha256:09de857d2f242f37452bfb4b53ce4e6d87bc9339d5297a880c901539ae75cff4:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmMwMzViMTIzMzBiMmRhYjIwZjNiNmY3Njg1NjE1NTcyZTk1ODA5YWQ4YTNiMDg5OGIxNDI5M2YyYzE3NGQ2YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjEyN2MzMjExYTcyNzBkZmU3Mzg2ZTNhZmNhZTU0NjllZTI3YWViMTAyNzkxMDgyNzMyNjMxODBhZmY5NmNkNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjc0NDhlOWJkMTg4NDVlZTgyOWY5N2ZiYzk5YjFiYmJjOGM5NWY2OGEzN2VlYjcyMjczODgwZGUwNjFmNWU3MCJ9"
+          "resource": "repo://.issueops/testing/overview.md#L10-L29",
+          "version": "repo-lines-v1:sha256:1056a799676b1f7f8abc491bed22a5141abdd35202c9cb2b84ac9c79f22b3a36:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjMDM1YjEyMzMwYjJkYWIyMGYzYjZmNzY4NTYxNTU3MmU5NTgwOWFkOGEzYjA4OThiMTQyOTNmMmMxNzRkNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxMjdjMzIxMWE3MjcwZGZlNzM4NmUzYWZjYWU1NDY5ZWUyN2FlYjEwMjc5MTA4MjczMjYzMTgwYWZmOTZjZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUwODdjMTBhY2JhYTJhYzcyNWM3NmZiZjNiMjcxMmQ1YTRkMjg2YTRmMTE2Y2ZiOWFhNjg1NWZkN2I1MGVlZTMifQ"
         },
         {
           "resource": "repo://package.json#L16-L29",
@@ -106,7 +106,7 @@
         },
         {
           "resource": "repo://src/domain/backend.ts",
-          "version": "repo-file-v1:sha256:ea328d361cbf3005c53716ba36f4ffa87e7998227429eec55d98d07605f2e40a"
+          "version": "repo-file-v1:sha256:d728cbbd7e3f69e65f21119b8bafe68592b05177cea942bb6102dfa9fb52538a"
         }
       ]
     },
@@ -115,7 +115,7 @@
       "statement": "Frontend tests are colocated with implementations as *.test.ts files (src/application/job-machine.test.ts, src/ui/app-view.dom.test.ts and peers, src/styles.test.ts) and run via `bun test`; the state machines job-machine.ts and recording-machine.ts are immutable (state, event) → state reducers tested as pure functions with no DOM or IPC.",
       "evidence": [
         {
-          "resource": "repo://.agent-harness/testing/overview.md#L31-L37",
+          "resource": "repo://.issueops/testing/overview.md#L31-L37",
           "version": "repo-lines-v1:sha256:b04ef75b7edf9e1556fac09089bcc67e3aa63c3137ceb904ebec23d7c0be516b:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWY2OTlkMjM0YjI2MGY4ZjkyMWM4NzBmZGFiZjI5NTcwN2NmMGI5MDY4MWVjZTE4ZDM3ZDNiMzdlYTIxYTA3ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWQ0OWQ4Y2FlMTlkYjI5NmY1Y2FmOGNkYzYxZjg5M2YxYjdkZGM3ZDhlMmE4NzE2ZmM4NjU5ZWNjYWE2M2E0YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmE5YWQ3OWYzMjFkNWIxMmUxMjY0YWMyOTU2MGM5OTMxYzUxODliZTVhNGE4MGU2MTk3MTAyYjYwMGUxY2I2NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjdlYjlkNzkzYzU0NTM0NzAyMTkxOWU2MzEyZGRmNjhmZDRmM2I2ODZmMzU3YzQxZDgyOTU5NDM4MjQ1ODY5YiJ9"
         },
         {
@@ -165,7 +165,7 @@
       "statement": "src/styles.test.ts pins stylesheet invariants — `html [hidden]` keeps display:none and the workspace grid reserves four row tracks so the #app-error banner keeps its row (regression VQA-006) — because DOM text/hidden assertions once passed while a grid-row collapse visually hid the banner; DOM visibility checks are not pixel visibility.",
       "evidence": [
         {
-          "resource": "repo://.agent-harness/testing/overview.md#L60-L64",
+          "resource": "repo://.issueops/testing/overview.md#L60-L64",
           "version": "repo-lines-v1:sha256:dad839778a8ec71973b0c426d263e10af6bfa2cff49e71c6982b3c6f659d0e6f:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTZmY2FmOWQ3Y2Y4YzA4YjY3NzI4ZjA0MjI5ZjQwNjVkM2U4MmIyYzFlNTNhZTFjY2I0MmM0MjA1OWNkMTQyYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTQ2OGJmZWEwZDNkNTc0YjhlZDNkNjRhYjBkYzNiODU2MmE5NTM1MGYyNDc5OTRhZmNjZDY4YzY1NTM1M2Y5NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWNjYzRlNmI4ODQxZjU4MjE1YWRlOWI5MzY4OTRhOGQyMDliOGZlZTgyNGZiZDljYjk1MTgwYmEwZGMxMDA2ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjM5Y2FmODViMDZhY2E0MjBjNWMzNDExODgxOTFiOTMwYmQ3YTNiOGFmNWZiM2EyYTk2ZDYxMDdmMmIyYjhmMCJ9"
         },
         {
@@ -179,12 +179,12 @@
       "statement": "src-tauri/src/application/tests.rs is the main Rust use-case suite: a single FakePort implements every port Application consumes (engine, transcription, import, artifacts, recording, settings, refinement) over shared Mutex/atomic state that records observations, with a switchable TranscriptionBehavior (Success, Failure, Blocking) where Blocking signals the job started via mpsc and then awaits cancellation.",
       "evidence": [
         {
-          "resource": "repo://src-tauri/src/application/tests.rs#L246-L296",
-          "version": "repo-lines-v1:sha256:59822108ca25bf8f21d11bf976e2d40149b8d10a9aca3a5647dff6fa642a3e75:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlNGMzNWM0ZTJkYTIwMTczYjlkYzAxMzgzZjQ1NmUzYTExZGJiZDhiY2I5ZTJmNDc2Y2ExZjY4YThlMDYwMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkYjkxZjUyNTU3Y2U3ZTY4Y2Q4MjE5MTc4OWQzMjhlZWJhYjNiNTQ4N2E0MGE1N2JmODU2NGU4NzAwODRjMmIifQ"
+          "resource": "repo://src-tauri/src/application/tests.rs#L21-L110",
+          "version": "repo-lines-v1:sha256:4015fc5c1bf603e05e11f0d0cc377c27738d644c3d099533301301ea404a27a1:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkYWRhYzY1MjExOTAwYTA5Nzg1ZmMwYWZiYTRiOWFkYmJiMjY1MjgxZjhiNjBlYmFkZGFmYjFhNTgzNDEyMmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhYzE5MzdkNGU2OTU1MTU3NDJjZjI3ZTE5YTQ3YjAzYWRjZGJiMzBmMjJjOGNjNzk0MmJkNGZmMjYyNjEwNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlZDYwYzZjZDY4ZWM3YmFmOTlhOTI5ZjcyNGFiZDNmMWY0NTEyY2I2YzZiMzI3MzllYTFmOTQ1YzdmNjE5MmYifQ"
         },
         {
-          "resource": "repo://src-tauri/src/application/tests.rs#L57-L108",
-          "version": "repo-lines-v1:sha256:425e33b248cfb6523f63432f9b1337add0556fb9fb9c68420f5f26b7b9829601:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1M2NiNjNjNTcwMmVmMTVkNGEwZjRjYTU4ODQ0ZjZmMzBhMTg1NWM4YzIxZDY3ODY3OTIxYzRhMjBiMjcyN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlZDYwYzZjZDY4ZWM3YmFmOTlhOTI5ZjcyNGFiZDNmMWY0NTEyY2I2YzZiMzI3MzllYTFmOTQ1YzdmNjE5MmYifQ"
+          "resource": "repo://src-tauri/src/application/tests.rs#L246-L296",
+          "version": "repo-lines-v1:sha256:3b2c25491ddba026cfb0c622866b12be6350701943923d28baf42679ab3752e5:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5NTgxZDYyOWUxZGNjNjBmOTVlYTcxMmQ5ZmJlNTY0NDk5MmM4ZTI2YWE1MWQ1MWQxNDZkNTVmNzZhNWFkMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2MTk3YzcxN2MzM2NkY2M3ZmM4MzQ2YjliZDQyMjliYjgwMzg3MjUzOWQ2NTJhM2NkYTFhY2Q5ZjQ5NmEzNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlOTkxOTdiOTA3Njg2MTVkMjM0MjZhNjVlOGIyYmIxNDEwMjYxNWI3MGU0ZDY5MDFjMjAyNjQ1MzBhZDEwNjkifQ"
         }
       ]
     },
@@ -215,12 +215,16 @@
       "statement": "The application suite pins roster/glossary propagation: saved participants, aliases, and glossary terms travel into the ASR biasing context and onto each refinement job (selected attendees travel in roster order, the glossary travels whole on every refinement), and no ASR context is sent when nothing is saved.",
       "evidence": [
         {
-          "resource": "repo://src-tauri/src/application/tests.rs#L392-L453",
-          "version": "repo-lines-v1:sha256:b3c188a16a950aa025d147f5275b359773a35e0fc3c89a90d606d5f28c330ce5:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxOTQ4NGVlZGYzNjRmYjhjMTJmMWViOThmYmY2YTliNGY2NTBmNDI3ODc0YThkNzM1OTAxMGFhZGU0MzFiYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjZmNDY2ZTU5Y2ZjMzA3MDNjNDVmNzJhZjY1ZGU1NGFjMzYzZDM1NGNjMWEzMzMwMzUwYWNkNDUyNDM0YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjYjZhMDI4YTU3YzYwODlhYmE0OTQzMDgwZWY0Mjk0NmE5ZjYxMjI5NjdiNzNkMGQ2NTM4ZTQ2YWVlZDU0MmMifQ"
+          "resource": "repo://src-tauri/src/application/tests.rs#L402-L444",
+          "version": "repo-lines-v1:sha256:4153ac7377a45af7ec3a9a3decbe8cc06f0c09a50cfec8f476f13d9762556d94:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxOTQ4NGVlZGYzNjRmYjhjMTJmMWViOThmYmY2YTliNGY2NTBmNDI3ODc0YThkNzM1OTAxMGFhZGU0MzFiYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjZmNDY2ZTU5Y2ZjMzA3MDNjNDVmNzJhZjY1ZGU1NGFjMzYzZDM1NGNjMWEzMzMwMzUwYWNkNDUyNDM0YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcxMmRjOTNhMTE1OWMzNzU2YmIxYjM0NWJkYWExMjBiYjEzM2JkM2I4ODcwZjM4ZTkyZTljN2YzZTYzZjNjMDUifQ"
         },
         {
-          "resource": "repo://src-tauri/src/application/tests.rs#L519-L585",
-          "version": "repo-lines-v1:sha256:377842db695b18e76860ebcdb7f24a9d26fa179ae9949817e3f2be5f00411120:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxOTQ4NGVlZGYzNjRmYjhjMTJmMWViOThmYmY2YTliNGY2NTBmNDI3ODc0YThkNzM1OTAxMGFhZGU0MzFiYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjZmNDY2ZTU5Y2ZjMzA3MDNjNDVmNzJhZjY1ZGU1NGFjMzYzZDM1NGNjMWEzMzMwMzUwYWNkNDUyNDM0YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhMWY2MzllZjZkNDAyNGRmOTA4MDg1MTAyYzM3OWU0ZWY2MTQ5MzJiM2IwMmUyZTI1ZjZlNTU1YWI4MDg3ZmYifQ"
+          "resource": "repo://src-tauri/src/application/tests.rs#L446-L462",
+          "version": "repo-lines-v1:sha256:2ccc4cbd1330b1a6434f829308f77b3cb4eabbd4bf48be9b1922d14cfa54aecc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxOTQ4NGVlZGYzNjRmYjhjMTJmMWViOThmYmY2YTliNGY2NTBmNDI3ODc0YThkNzM1OTAxMGFhZGU0MzFiYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjZmNDY2ZTU5Y2ZjMzA3MDNjNDVmNzJhZjY1ZGU1NGFjMzYzZDM1NGNjMWEzMzMwMzUwYWNkNDUyNDM0YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjYjZhMDI4YTU3YzYwODlhYmE0OTQzMDgwZWY0Mjk0NmE5ZjYxMjI5NjdiNzNkMGQ2NTM4ZTQ2YWVlZDU0MmMifQ"
+        },
+        {
+          "resource": "repo://src-tauri/src/application/tests.rs#L519-L594",
+          "version": "repo-lines-v1:sha256:b4a4b7d2ec21b6c6db3dfadb0b4b07801a0f305352a6652057f92de6b7d76973:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNjUzNDRkZjE0MGNmNGM1ZGFjODFhZmQ3NjIzOWRlYTcwMjJkMjMyMWMxZGFhNmIzMDIzYjJjYTM3NjEzN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzYzI1ZGEzYjI4YjlhOTAzZjllNGJhMWJkNjA2MzQ1MDNlZmFlZjg1N2FjYjIxNjIwMjg4MmU2ZjIyNDcyNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhMWY2MzllZjZkNDAyNGRmOTA4MDg1MTAyYzM3OWU0ZWY2MTQ5MzJiM2IwMmUyZTI1ZjZlNTU1YWI4MDg3ZmYifQ"
         }
       ]
     },
@@ -239,7 +243,7 @@
       "statement": "Rust fakes follow the LSP rule from docs/ARCHITECTURE.md §4: a FakePort must preserve the production contract (stable error codes, event ordering), and when production evolves and a fake drifts, the fake is fixed to match production — never production weakened to match the fake.",
       "evidence": [
         {
-          "resource": "repo://.agent-harness/testing/overview.md#L38-L40",
+          "resource": "repo://.issueops/testing/overview.md#L38-L40",
           "version": "repo-lines-v1:sha256:27eb9d793c545347021919e6312ddf68fd4f3b686f357c41d82959438245869b:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQ5YzgwZDg2Y2FmYzA4YWE0NjMwZTMyNGQxOWVmOGJhZjNhOWU1MDkyODM1MGZjMGIzYThjZjY4MTZiZWRlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDU2MTYwMDBhMTJmYWQ2M2UyZmRkYzU3M2UzNDc5NTMwMGY0NjdjYjJmMmVhYjkzZWU3YTQ2OWFlZjJiMzNmYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWQ5MjY3NTA1YTNhMWIyNzFmMzQ4YmZiMWM5NGVkNjNkMDVhYmQ4NDE1OGY2YzY5MGM4ZjExZGFmYTNiM2QyZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzgxNjNhZjdkMTM0NzhkMGVmZmY3NWU4NTY0ODI5ODFiMDczNzZmOTg4MjM3YmE4OWUxZTRkNzRmMmViNDYzZiJ9"
         },
         {
@@ -479,7 +483,7 @@
       "statement": "Test quality rules: verify observable behavior through public contracts (port methods, view selectors, reducer outputs) not implementation details; keep tests deterministic with no wall-clock, sleeps, real network, or ordering dependence; one behavior per test; never weaken production behavior (e.g. loosening a Zod schema) to pass; and prefer the narrowest quiet validation that proves the changed behavior while preserving complete failure output.",
       "evidence": [
         {
-          "resource": "repo://.agent-harness/testing/overview.md#L46-L69",
+          "resource": "repo://.issueops/testing/overview.md#L46-L69",
           "version": "repo-lines-v1:sha256:8f0f043182cfc117e9b316457cf0a2439211b99f237ec924d55ffd09dd490ba5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiZTUzNzg4NzFlYTk4ODljMGIzY2QyZTQwMjU1ZmU0ODYyNmE1YWU4ZjVhYzc5ODIzZWU3NmM0MzhlOGFhOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0ZjIwOWZjYzkwNzI2YWQ3M2Q4NmY0OTc5NmU4NzEwMjkzNDQxZjgyYjE4OWRhNGQ4MGI5ODY1MDYzMDg3OWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3MjBkMjI4MzMxNDJhNjI5MTFkZjdhNmI3YzdmZmQ5NjlhYmYxNTZjZWNlNzhiYWU4ZTFhNTg5OTA5Y2VlZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2ZTJiZTc1ZjA0YWZiMzg4OGM2Zjc2ODA0OTNjZDIwMzc3YjQwMTZhODVhYWUxZjliNTg1NWQ5YTNkOGZhNmYifQ"
         },
         {
@@ -505,10 +509,24 @@
           "version": "repo-lines-v1:sha256:7b80b7907571071f48cb428151a5ddcaa00fef99899810bd8975e279fb298328:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhZDFiMjViMjM1ZDlhMzBlZjM0MTUwMWE0MTExMTk0Njk3ZmVmMjc3ZDIzNTk0N2EwNzFjNmQwYTk2Mzg5NjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyMzUyNTg5YzM0ZDNjNjA2ODU5MzFiNmVjYzRkNTA5OTFhN2M1NmM4ZmJhMjg5NDExNDY1NzY5MDI3MmNhYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZjBiOWRjMmI1ZTFiOWFiZWNiZjJmMTAxNWE0NTIzY2IyYTc1MWVlZDgyNDQyYTBhNzA4ODBmZmNhZjliZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQwNTM3MjgxZWJhMmE5ZmI0MzE2OWQ5NzFkODg3ZTM5M2NjZjdmYzQyMmM0NmQwMTcxYWQ3NmRlYTA4MzUxMTIifQ"
         }
       ]
+    },
+    {
+      "id": "claim_545b0a6b302547679c5106ab43a8e653",
+      "statement": "The project's verification-gate commands, test-structure conventions, and test-quality rules live in `.issueops/testing/overview.md`, whose canonical index is `.issueops/TESTING.md` (the family root that links the focused testing module).",
+      "evidence": [
+        {
+          "resource": "repo://.issueops/TESTING.md#L6-L10",
+          "version": "repo-lines-v1:sha256:ae925b355cfa8906d27f00bf9b0490d640fef1337ca17e9783804d63f8e64df3:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM0ZDM3YTkxMzM0YmNlMjAxODU4NzBlZWFmZGZkMDllMmUzNDE1NzNiODAzMWZhMDlkZTI1Njg4Y2Y1ZmRjNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmIwNzEyYmJjOTkyODc5Y2YxMDNhYzc2YzNmOTNjMmU5MGU4MjBiYzI4NThmYmIzMDAwZmNlNjI0OGVjYTkzZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODJjNTBjOGRlYWUzYzc0NDM0YWYzYjE5OWVjZDAzMjBhMmY0ZGFjMDY0ZWE2MDg4ODU5MmE2MjQ1ZWNiYjJlNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTc0NDc1Y2M1ZDAxYWQyZTAwMGNkNmIyNjlkMzU5YmI1MGIyZWY2ZWNkMmUyMjEzYzhlNGY4NGI4Y2NiZTMzOSJ9"
+        },
+        {
+          "resource": "repo://.issueops/testing/overview.md#L6-L9",
+          "version": "repo-lines-v1:sha256:50f8396d853713c2887adbd5a58d31a9d4921de28575538901c8f1df61b09d1a:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGFiZTQ0Yjg2MmM5ZjJiNTA2OTI0ZTBiYzdmZDY0NGE2ZGI3OTk0ZTM0YjVkMjVmOWRhOTU4MThkNzFmMDU5MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzAwZWFkMTdiNzhjMGFmYTE1Y2Q3ZGFkYjIyZWE5NDZjZTJjNGI4ZWE0YzU1YTI1ODg3ZTQ0YmQwNmEzYTQ5MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjE2YmYyZGEyYmI0NzIwODY5ODYxZWJkYmRlZDU2Y2Y1OTBhNDg4Mzk4ZGEwNWNkYWRiMTE3Y2YzNWM0N2ZkNCJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-29T12:09:06.549Z"
+    "at": "2026-09-29T14:35:32.287Z"
   }
 }

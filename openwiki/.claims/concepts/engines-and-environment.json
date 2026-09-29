@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:941e96546d40e23d26212836ec1845925295becbc742c03552a6e96945ed47f1",
+  "pageVersion": "sha256:779333ae6c6e82a4af7deea6302cea9c090c12b2f18614f9030f9abe5f039d40",
   "claims": [
     {
       "id": "claim_035b9acaf530400080c5ebd2f5c6bff9",
@@ -43,7 +43,7 @@
       "statement": "The engine preset persists in settings.json inside the app data root through LocalSettingsStore's load_engine_preset/save_engine_preset, exposed to the webview via the save_engine_preset IPC command.",
       "evidence": [
         {
-          "resource": "repo://src-tauri/src/adapters/inbound/tauri.rs#L64-L70",
+          "resource": "repo://src-tauri/src/adapters/inbound/tauri.rs#L74-L80",
           "version": "repo-lines-v1:sha256:6fd235cf6be19af6c60435d0bc7f97ac2570bbc63b3315fa0eb37230ef0a9e2f:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWUxZWUzM2VlOTVmYWVlMWMxMGU5ZWJmM2QzZGU0MWJiMTkyNTE1Y2FkNzdjZGEyMDVlNTQ2ZGExNzAwMWE2NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmM4ZTNlYjRkOGM1ZjE3NGEwNDA4MGExNDVjYmFkMzk0NmQzZTRjZDg2MThhNWEyYjRhZGU1NzQyODU4MTUxYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTk3ZTZlZTNmMDJjOGIyZDI2ZjljMDg4MzdlY2VkMzgxYzJmMTZhOWNlNTlmMWYwMGMxYTk2MDViMWJhY2JlOSJ9"
         },
         {
@@ -288,7 +288,7 @@
     },
     {
       "id": "claim_5a76548aeb574127848d2e3948e28458",
-      "statement": "process_environment builds the spawned worker's environment deterministically rather than inheriting the shell's: HOME (with /tmp fallback), ko_KR.UTF-8 locale, PYTHONUTF8/PYTHONSAFEPATH/PYTHONDONTWRITEBYTECODE, PYTHONPATH at the worker root, HF_HOME/TORCH_HOME/UV_CACHE_DIR/UV_PYTHON_INSTALL_DIR inside app data, telemetry and implicit-token opt-outs (HF_HUB_DISABLE_TELEMETRY, HF_HUB_DISABLE_IMPLICIT_TOKEN, PYANNOTE_METRICS_ENABLED=false, DO_NOT_TRACK), PATH prepending the preset's engine bin for the linked ffmpeg, preserved TMPDIR, and an optional trimmed HF_TOKEN; assistant_environment extends it with GALPI_ASSISTANT_API_KEY and optional base URL and reasoning-effort overrides.",
+      "statement": "process_environment builds the spawned worker's environment deterministically rather than inheriting the shell's: HOME (with /tmp fallback), ko_KR.UTF-8 locale, PYTHONUTF8/PYTHONSAFEPATH/PYTHONDONTWRITEBYTECODE, PYTHONPATH at the worker root, HF_HOME/TORCH_HOME/UV_CACHE_DIR/UV_PYTHON_INSTALL_DIR inside app data, telemetry and implicit-token opt-outs (HF_HUB_DISABLE_TELEMETRY, HF_HUB_DISABLE_IMPLICIT_TOKEN, PYANNOTE_METRICS_ENABLED=false, DO_NOT_TRACK), PATH prepending the WhisperX engine bin dir (engine/bin, where prepare links ffmpeg — the entry does not switch with the preset), preserved TMPDIR, and an optional trimmed HF_TOKEN; assistant_environment extends it with GALPI_ASSISTANT_API_KEY and optional base URL and reasoning-effort overrides.",
       "evidence": [
         {
           "resource": "repo://src-tauri/src/adapters/outbound/environment.rs#L88-L166",
@@ -355,7 +355,7 @@
           "version": "repo-lines-v1:sha256:3c1f4533700daff9fc97ca3e5b3ffad21ab5ba1e1a600b56afd5af9ad55bd91e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2YmI4ZDA5ZDcwODFhOTYzYTY3NDBkOTk5ZjI2Y2RjYzMwOGM4M2JkZGY3ZTRiYzljNmRjMTJjZGMzNTQ2ZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1ODBiNzY1MThkYWU5NzlmYWViZDAyMzY3YTI5MjkyYTUwZDk3NjA5MjI1MWEzOGE2Y2UzMDg4MGJhNDI4MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmNGNkMDgxNDYyZjZiNWVjYzYyYzY4MjM1NmZhODkxNmI5ZjM2ZGViNzQ5NzVmOTFiYzJiMjcwZmY4NjUwZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhYjgzYzM3MzJjNGQzYTg4ZDkxMmZkMDdmMDliYjhlNDFiMDBhODJiZDBmYmUzNWM0OTIzZWQwMGFhMGQ3ODYifQ"
         },
         {
-          "resource": "repo://src/adapters/tauri-backend.ts#L283-L297",
+          "resource": "repo://src/adapters/tauri-backend.ts#L287-L301",
           "version": "repo-lines-v1:sha256:c120c5420c3fe0cd9ee6d01e9f5324f44a03f6161c5becedc77e84ec448fd6b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmY2E4MTEzY2Y5MzY0MTkyNThkM2QwNDJkOTExNjQxN2Q0MTY5NmVlY2VlY2RkNjRhMjhlYjUwN2ZlMTFjZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2OWZjOTMzZjI1YTRlNDgwY2ZiMWEzZjJkMjVlYzE1NjUyY2VlYmU3Y2QzY2FlMTNmMWRlOTM2MDE5ODQ2YmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYjIyYTQ3N2U0NDU5ZTIwNDU2YWFlNGRiYWY1YjI0NjIyN2ZmYWZiODdmN2IyMTQ4ZDg4NjM5Y2Y4MDU2Y2QifQ"
         },
         {
@@ -370,7 +370,7 @@
       "evidence": [
         {
           "resource": "repo://src/ui/controller.test.ts#L103-L194",
-          "version": "repo-lines-v1:sha256:27c1851f27a279927359421322d1653dd0852021ace3356f0983bd6ddf969a20:eyJzZWxlY3RlZExpbmVDb3VudCI6OTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MWNiM2ViMzRhMzVjNTliYjQxMTcwZjgxNGQ2NGU3ODUyMTgyZmJmZGFkNTQxMGZjNjIxNjg3NWNhYTM4MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyMzUyNTg5YzM0ZDNjNjA2ODU5MzFiNmVjYzRkNTA5OTFhN2M1NmM4ZmJhMjg5NDExNDY1NzY5MDI3MmNhYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZjBiOWRjMmI1ZTFiOWFiZWNiZjJmMTAxNWE0NTIzY2IyYTc1MWVlZDgyNDQyYTBhNzA4ODBmZmNhZjliZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhYzc2MjYzMWNiOWYyZmJiMTA1YjA1YjcwNWZkMWQ0OGYyY2IxYWY2MTZmODc2NDU4OGQ2OGIwYzI5MzM2OGQifQ"
+          "version": "repo-lines-v1:sha256:948958fa6e55c1a08064160f68ecdd7e22f8139911e4891e2868efa805483e32:eyJzZWxlY3RlZExpbmVDb3VudCI6OTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MWNiM2ViMzRhMzVjNTliYjQxMTcwZjgxNGQ2NGU3ODUyMTgyZmJmZGFkNTQxMGZjNjIxNjg3NWNhYTM4MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyMzUyNTg5YzM0ZDNjNjA2ODU5MzFiNmVjYzRkNTA5OTFhN2M1NmM4ZmJhMjg5NDExNDY1NzY5MDI3MmNhYzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlZjBiOWRjMmI1ZTFiOWFiZWNiZjJmMTAxNWE0NTIzY2IyYTc1MWVlZDgyNDQyYTBhNzA4ODBmZmNhZjliZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhYzc2MjYzMWNiOWYyZmJiMTA1YjA1YjcwNWZkMWQ0OGYyY2IxYWY2MTZmODc2NDU4OGQ2OGIwYzI5MzM2OGQifQ"
         },
         {
           "resource": "repo://src/ui/controller.ts#L114-L148",
@@ -378,7 +378,7 @@
         },
         {
           "resource": "repo://src/ui/controller.ts#L38-L72",
-          "version": "repo-lines-v1:sha256:a2523e15d8d04e6c4a66ad09c26fbb91995667ac33ab45c5453986da4da16388:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNjA1OWY2MTEyODMxNzViNjEwZTY3YzA3YzdhZDNmNDI4ZDNiYjBjZTNiNjViZGI2NTdlZjQyYjBmZTFiN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNzlmNjZkZTFhMGY2NmIwZWU2MzVhNDc5OTI2MTJhMzZkMjA2YWEyMzcxODY0M2E4ZTFjMDQxYzM5YTNkZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3ZDEwZGJjOTljMjM3OTc4YjE2NDk0ZDIzNjk4NDIwNjc5ODQ5OWEwOThjMzYzYzc2MzE5MTkzNGE4MjE4YjIifQ"
+          "version": "repo-lines-v1:sha256:667c387fe02202cd93810d7d2e202f2c31d4c31b986c54d95ce6479527700278:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNjA1OWY2MTEyODMxNzViNjEwZTY3YzA3YzdhZDNmNDI4ZDNiYjBjZTNiNjViZGI2NTdlZjQyYjBmZTFiN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljNzlmNjZkZTFhMGY2NmIwZWU2MzVhNDc5OTI2MTJhMzZkMjA2YWEyMzcxODY0M2E4ZTFjMDQxYzM5YTNkZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3ZDEwZGJjOTljMjM3OTc4YjE2NDk0ZDIzNjk4NDIwNjc5ODQ5OWEwOThjMzYzYzc2MzE5MTkzNGE4MjE4YjIifQ"
         }
       ]
     },
@@ -425,10 +425,42 @@
           "version": "repo-lines-v1:sha256:774dd51ff82c2f15f028c50fc71046ba12ecd7b4bcc30cd36ff345009c66a292:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1Y2Y1ZmMyM2YyYTZkMjNjM2VhNTFlNzJmNWU4OTZjNzU1NWZiYWEwNWNkNWIxZWExODJiZjk2MThhOGU4MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         }
       ]
+    },
+    {
+      "id": "claim_d88e7414e3894f09be9f7d5e07010f22",
+      "statement": "The uv engine installs run with UV_PYTHON_PREFERENCE=only-managed, so only interpreters uv itself installed into the app-managed UV_PYTHON_INSTALL_DIR are candidates; a system Python 3.12 that happens to be on PATH is never selected.",
+      "evidence": [
+        {
+          "resource": "repo://src-tauri/src/adapters/outbound/environment.rs#L123-L125",
+          "version": "repo-lines-v1:sha256:0683380d985ffa1cdc82d2a184efeeebf8ce1a99d1564e1ac1e358430dbdc393:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQ0MzZlM2ZjNDk3ZTQ2ZjYyZTMyOTNjYmJjODE4ZjZlMWYwMWViMzBlYmY1YWJjMTkyYjFiMzYzOTIyN2FmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDY1NDg3ZTM1YzZlOWE0NTdiMmIyOTc0MWY1ZWMxNDdkNGY2MGYwODczZDNmMTgzNWJiMmU3OTYwMTNmNzg1MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjgxOGI4ZjA1NTVkMmM3Mzk2YjNmYWJlOGY4MzM5OTAwOGIzOTEyYWM0YzEwYjgxYmI2MTU5NDdjM2U4MzMzZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjQxOGQyMjE3NTM1YTUyZmQwODNmMmZmYTFhMTEwZDM5MGU5N2Q2YzQyNmRiMmIzZTdiYjRjZDg3YmUyNmI2MCJ9"
+        },
+        {
+          "resource": "repo://src-tauri/src/adapters/outbound/setup.rs#L194-L202",
+          "version": "repo-lines-v1:sha256:79f0e6ffbdc7c30553044bdda2a9c5ec1a6b288efea3b3bff14747e00af51a3b:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTBjMDhlYmE3ZWFhNGZhODJhZDJlN2VmMGM1OWU0NGZiYTIxNWEzYmQxNDIwYjUwNGJjODRkZTRkMjE3MTMyNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzQ2MjQyYTlkNjkzZWExNWRmYmJjZGQ3Yjc2ZjFiY2FjM2M0ZWUwZWUxZjgxZTlhYzZiYTE4MTlhNDZkNDE5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzRlNTRmY2ZjMGQyOGQ3ZGRjZTE3Mjg0YWExOTYzMmViNzk0NWEwMmI4ZGQxMTgwODk2MzMyNWNlOTQxNzcwYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmM5NjllNjk2NGI2MjY5YjUwZDFkNzgzNjhiNjlkYWIyN2IxOThhY2YzMjk5Njk3MzNmZjg5MTRmNDkwY2ExZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_d82fc52f51994a7aae364695850cd119",
+      "statement": "The PATH entry in process_environment always prepends the WhisperX engine bin (engine/bin) regardless of the selected preset, so WhisperX transcription resolves the linked ffmpeg from PATH, while the Qwen3 stack does not depend on that entry and invokes the imageio-ffmpeg binary directly through ffmpeg_executable().",
+      "evidence": [
+        {
+          "resource": "repo://src-tauri/src/adapters/outbound/environment.rs#L126-L133",
+          "version": "repo-lines-v1:sha256:e0dd2c9211b27595d2f291e7df8a942163875660ab7d0b7acf9f88880d2914ca:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzc0YzY2ZGE0NmNhODE5NWRlNTFkNzUzZmRjZTMxNTEzZTdiODRiZDJjY2E4ZTI3NTA1OGIxY2JkZDFhOGFhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTQzM2QwZWE5ZWNmMmYzOWM5YTUwNDA3Mzk1ZWU0MTE3MmZlNjgyYzljODg1YTM1MDhmNzViZGVlMTUxZWZmZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDY4MzM4MGQ5ODVmZmExY2RjODJkMmExODRlZmVlZWJmOGNlMWE5OWQxNTY0ZTFhYzFlMzU4NDMwZGJkYzM5MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTI5YjVlODU0MzliZmE3ZWY0NDc2OGNjMmYxYzM5YWU1NjBkZmI3ZDI2YWZhMTk1NGJiNWZjMDg0MThkZWE2MiJ9"
+        },
+        {
+          "resource": "repo://worker/galpi_worker/qwen3.py#L347-L360",
+          "version": "repo-lines-v1:sha256:dc83ee1cff876d78c73e30982c1f5b7474e2102c49e322c185ebc3506a3ae9e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMTQ5M2U2OTZiNDg3M2E1M2M0ODk4YjhjODIzZjBhMzk1NDU0ZjM1MjUyMzg2MmI1Njc2MTc0OGVhNzg0YTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhODJlYmU5ZWQ0MDdjM2E2YmE0YjAwMzQyOTJiYWE1MmMxMWNlNWFlMjg2MTA3NDAyZGU0NzkyZWVlY2FjZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0Zjg1OTcwZDQ3ZTZiNWRiNDUzZjgyY2MxNTEyY2U3NzljNWUzYTdmMDVmMGEwNmRhNTNjMDgwOGY3M2Y5NDAifQ"
+        },
+        {
+          "resource": "repo://worker/galpi_worker/runtime.py#L16-L26",
+          "version": "repo-lines-v1:sha256:904c0c2ae1428814485486e394a7b17544622ef685c662f0c85ae0411b2e9c1a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjMDFmOTcxNDA0NTVmMWQ4ZTNjMDg3YzkxNzUxM2U1YzY0Yzg1MDAyY2UyNWU3N2NjMzZkZGQ4OWUyMDNkM2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwMzViZDJjMWZjZjlhNzcxNTEwZGRmZTE0MTE2N2ZiMzFlNjFiNzc0OWUxNzhmMzc3OGYxYzllMDc4OGE2ZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MTU0YzE1NjVkNzEzYjFhNGI5N2U5ZDYzNjFiNTdhMmY4MTY3N2YwMWIzZGI4Njc2Y2FhNzNkYjRhY2RlNWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyY2ViNmJhMTE1NjY5NTU4YzM4OGQyZmY0ODQwZWQyMDY4MDgyMzgyNjdiYTA4NmM2Yjc2ODEyMTQ1NmJhYTIifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-29T12:09:06.549Z"
+    "at": "2026-09-29T14:35:32.287Z"
   }
 }

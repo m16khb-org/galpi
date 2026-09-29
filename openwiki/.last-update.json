@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-08-29T18:11:41.169Z",
-  "command": "init",
+  "updatedAt": "2026-09-29T20:21:43.270Z",
+  "command": "update",
   "model": "glm-5.3-flash",
   "status": "interrupted",
   "language": "en"

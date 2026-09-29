@@ -3,9 +3,6 @@ type: architecture
 title: Rust Host Architecture (Tauri)
 description: The Tauri host's hexagonal layers — framework-free domain value objects and worker-protocol parser, the Application facade composing seven ports with the JobRegistry single-job slot, and the inbound command surface plus outbound DesktopAdapter/NativeRecorder/settings wiring in composition.rs.
 tags: [rust, tauri, hexagonal-architecture, ports-and-adapters, ddd, ipc, jobs, cancellation, macos]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-e8e61d605125cac4d909755e
     resource: repo://docs/ARCHITECTURE.md
