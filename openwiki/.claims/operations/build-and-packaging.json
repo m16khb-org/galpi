@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:867071bf7faf968724fffce0e668f81a01f1df07992f6dc1b957958788d5a4b4",
+  "pageVersion": "sha256:be35baac34daafe0d2a19dfc8820cf964b5b9a5f453d21698e39cc5349f515c1",
   "claims": [
     {
       "id": "claim_343765dc3b7d4551abeb08cc62c5d1c3",
@@ -32,7 +32,7 @@
       "evidence": [
         {
           "resource": "repo://.gitignore#L1-L11",
-          "version": "repo-lines-v1:sha256:cb4fc10cf669ddc62dcb03f852a9b68a4797ec7bfa017da1a94b25fe969dbb62:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMjM3YzdhZmY0NGVmYmU2ZTUwMmU2NDVjM2UwNmRhMDNhNjlkN2JkZWI0MzM5MjEwOGVmMzM0ODE0MzQxN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MzYxMGYwODk0YWQyYjBhYWFkZTgwMTdkYzFmZjA0Mjg0MDBiNGJmNDZkMWJmNWQ1MmE0M2U2NWU3Mzc0N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:5ec03d5756866f198b7cf20966006b3cf378a186d2ff4b993abb26cca42a40d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMjM3YzdhZmY0NGVmYmU2ZTUwMmU2NDVjM2UwNmRhMDNhNjlkN2JkZWI0MzM5MjEwOGVmMzM0ODE0MzQxN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MzYxMGYwODk0YWQyYjBhYWFkZTgwMTdkYzFmZjA0Mjg0MDBiNGJmNDZkMWJmNWQ1MmE0M2U2NWU3Mzc0N2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://scripts/stage-sidecars.ts#L56-L78",
@@ -237,10 +237,30 @@
           "version": "repo-lines-v1:sha256:ce6fa7aa3e83b1020666104da8c30b024b27ba2d49a5eb325b7baa83e5d169fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmZlMTZmOTg3Yjg3ZDkzNzk2YTExMDY5NWYxZmY0ZDZmMzcyYTdjZTcwZTQ2NGYzMDAwZGU4ZTZhMWVhMzczNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODU4MGI3NjUxOGRhZTk3OWZhZWJkMDIzNjdhMjkyOTJhNTBkOTc2MDkyMjUxYTM4YTZjZTMwODgwYmE0MjgyNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         }
       ]
+    },
+    {
+      "id": "claim_4f563f4b6844429ebee4115c028573fe",
+      "statement": "src-tauri/Info.plist carries the NSMicrophoneUsageDescription string macOS shows when Galpi first requests microphone access for recording.",
+      "evidence": [
+        {
+          "resource": "repo://src-tauri/Info.plist#L4-L7",
+          "version": "repo-lines-v1:sha256:23985fef30c95640abfaca02968ae14fe4e7d3fcc53bc591ccb0083b388c40e2:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTYzYjY3NWY1ZWM0ZGUyZmE3OGIwM2M1ZDRiZTAxZTA1MzZkZWZlYmI0MzcwYmJjZjdiNzQ5ZjQ5ZDFmN2Y2NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGJjMTAwMmRlZGI1MTg0MjZjYjBmNTRkMGMxYjQ4NmVkMmQxNTc1NDUxNjgwMjg0YzM3MDQxZTQwMjM5ODU4YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTA5OTgxYWI3MWNiZWUzOWZjYzAxMTUzNzZhM2YzOGY5ZmZiYTU4OWU1NTZhZDMyMjNhNWZiMzI0ODE5NjFhYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTIwMmJkZDdhZmJmOTE1YzRjZjBlOWI1MGVkZTk1NzFkN2RjMmRjYmVkZjhmNTQ2N2IyZWZkODc5M2JiY2RiNCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c73dcca1e5874d009b061aba64df4f0c",
+      "statement": "src-tauri/capabilities/default.json scopes the main window's Tauri permissions to event listen/unlisten, the dialog open permission, and the opener plugin restricted to https://huggingface.co/* URLs — the only remote URLs the webview is allowed to open.",
+      "evidence": [
+        {
+          "resource": "repo://src-tauri/capabilities/default.json#L5-L14",
+          "version": "repo-lines-v1:sha256:d0a7feb959d29c842ce62c76318b74a685fedc5c8aab205c59db5dd96692701a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzODY2ZGYwYTA2OWNhMTlmMWYyNmI4MjljY2VkZTM0ZjU5NGNkNjgwMDVhNmIxMmEyNzBkNWVmNmE0MTE1YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwNjQ4Zjc3ZmQ1YTljNjNiM2NkZDBhZjQ5ZGFhMTI5OTIyMGI3NTQxZTg4Y2ExN2VmZTFhNmExMTRiOWZmMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExOWI4NTAzYjZmOWYyMTY2MzNjNWNkY2U5NmE3NmI0YTY2MGVkYjcwNTQ1NWIxMDljN2FlMjczNGU2ZmY5NzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-29T12:09:06.549Z"
+    "at": "2026-09-29T14:35:32.287Z"
   }
 }

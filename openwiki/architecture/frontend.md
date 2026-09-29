@@ -3,9 +3,6 @@ type: architecture
 title: Frontend Architecture (TypeScript)
 description: How Galpi's framework-light DOM frontend is layered into domain contracts, pure state machines, controller orchestration, and the Zod-parsed Tauri adapter, plus the ordering, error-copy, and markup/style invariants that keep it changeable.
 tags: [frontend, typescript, architecture, tauri, hexagonal-architecture, state-machines, zod]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md

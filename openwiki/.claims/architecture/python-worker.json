@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:1a47e397a038081b0ec5f6e73964f9fbfddaec409127cc5412406402dc175145",
+  "pageVersion": "sha256:1150934dadfda06482683f624a84614747cddee656a3472f42ac10efee5bc2ee",
   "claims": [
     {
       "id": "claim_c8385daca23145f3a7d64a31d3d45832",
@@ -664,7 +664,7 @@
     },
     {
       "id": "claim_d6dd00c23358449b9496696f4b0f863c",
-      "statement": "assistant_stream.py implements OpenAI-compatible streaming chat completions with stdlib urllib (no SDK): base URL from GALPI_ASSISTANT_BASE_URL (default https://api.z.ai/api/coding/paas/v4), default model glm-5.3, reasoning_effort included only when set to a known value, temperature 0.2, and GLM models on the default endpoint get 131072 max output tokens while others get 32768.",
+      "statement": "assistant_stream.py's module-constant block is the source of truth for the assistant API defaults, which other code reads by name instead of restating the numbers: base URL from GALPI_ASSISTANT_BASE_URL (default DEFAULT_BASE_URL, https://api.z.ai/api/coding/paas/v4), default model glm-5.3-flash, reasoning_effort included only when set to a value in REASONING_EFFORTS (low/medium/high/max), temperature 0.2, a 600-second request timeout, and GLM models on the default endpoint get 131072 max output tokens while everything else gets 32768.",
       "evidence": [
         {
           "resource": "repo://src-tauri/src/adapters/outbound/environment.rs#L145-L166",
@@ -672,7 +672,7 @@
         },
         {
           "resource": "repo://worker/galpi_worker/assistant_stream.py#L15-L27",
-          "version": "repo-lines-v1:sha256:efc86f2421802c2bb7d69a87f1695bfeea56717169cfdc0293e65eab1b96dfa7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiZjkyN2I5Mjg5NDcyZGU3YTcxOTU5ZWM3NGE2MTg1OGQ1YWVhMzk3NDliZTc0YTc4NjRlNGU4YTk0Y2I0ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzMmM4Y2YwOGY4ZGNkMzhmYmM0ZmFkMDBlMjBlY2Y4MDQ2OTA3MzNmODUwY2Y1Y2M3NDg0YjEwOWI5NTY3YjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmY2RiZDAwMGNjMTRjNDdlMTU4MmY2OWFhNGRhY2FjNmE3ZjYwZDNlN2U3YWM1YzA5N2YwN2FkOTY1ZDhlMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0OWRjM2ZiYThhZDc4M2M0ZGU4ZjQzNjc1NDA4ZTRhNmU2YmEyYmIxMjQ3NWE3OWZmYWE5YWYyMTg4NWI0ZmMifQ"
+          "version": "repo-lines-v1:sha256:21d3501f70676d9e079ccc47a073120673dc41e9f364c4b7c42846cdc3582b8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiZjkyN2I5Mjg5NDcyZGU3YTcxOTU5ZWM3NGE2MTg1OGQ1YWVhMzk3NDliZTc0YTc4NjRlNGU4YTk0Y2I0ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzMmM4Y2YwOGY4ZGNkMzhmYmM0ZmFkMDBlMjBlY2Y4MDQ2OTA3MzNmODUwY2Y1Y2M3NDg0YjEwOWI5NTY3YjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmY2RiZDAwMGNjMTRjNDdlMTU4MmY2OWFhNGRhY2FjNmE3ZjYwZDNlN2U3YWM1YzA5N2YwN2FkOTY1ZDhlMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0OWRjM2ZiYThhZDc4M2M0ZGU4ZjQzNjc1NDA4ZTRhNmU2YmEyYmIxMjQ3NWE3OWZmYWE5YWYyMTg4NWI0ZmMifQ"
         },
         {
           "resource": "repo://worker/galpi_worker/assistant_stream.py#L195-L219",
@@ -789,6 +789,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.3",
-    "at": "2026-08-29T12:09:06.549Z"
+    "at": "2026-09-29T14:35:32.287Z"
   }
 }

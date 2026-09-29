@@ -1,18 +1,20 @@
 ---
 type: testing
 title: Verification Gates & Test Architecture
-description: The per-runtime verification commands, the three-job CI pipeline, the executable architecture fences in scripts/check-architecture.ts, and where Galpi's TypeScript, Rust, and Python tests live with the rules for extending them.
+description: The three per-runtime gate sets plus the executable architecture fence, the three-job CI pipeline and release packaging split, and where Galpi's TypeScript, Rust, and Python tests live with the rules for extending them safely.
 tags: [testing, verification, ci, architecture-fences, bun-test, cargo-test, unittest, happy-dom, clippy, ruff]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
+    at: 2026-09-29T14:35:32.287Z
 sources:
-  - id: openwiki-source-38c9363b476c5e76a0e836c5
-    resource: repo://.agent-harness/testing/overview.md
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-4d1d392666be6dfdd7a91a2e
     resource: repo://.github/workflows/release.yml
+  - id: openwiki-source-ea0bb019df4b57ddbc27ea09
+    resource: repo://.issueops/TESTING.md
+  - id: openwiki-source-bfe5cb5ac7b61e3287b5de31
+    resource: repo://.issueops/testing/overview.md
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-59f729b67c0a733dbed55b7f
@@ -75,7 +77,7 @@ sources:
     resource: repo://worker/tests/test_core.py
   - id: openwiki-source-e82676118198cdf74313a8e0
     resource: repo://worker/tests/test_qwen3.py
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
 ---
 
 # Verification Gates & Test Architecture
@@ -89,6 +91,11 @@ Python worker uses stdlib `unittest` over pure modules that never import the ML
 stack. On top of the unit gates sits an executable architecture fence —
 `scripts/check-architecture.ts` — that makes layering violations a build
 failure rather than a review comment.
+
+The project's testing knowledge itself lives in `.issueops/`: `.issueops/TESTING.md`
+is the family index, and `.issueops/testing/overview.md` holds the gate
+commands, test-structure rules, and test-quality rules cited throughout this
+page. (An earlier `.agent-harness/` directory no longer exists.)
 
 ## The gate commands
 
@@ -154,10 +161,10 @@ Two job details matter for anyone touching CI:
   environment is installed. Keeping the tests ML-stack-free is what makes this
   job fast; do not break that invariant.
 
-The tag-triggered release workflow is a different pipeline: on `v*` tags it
-builds the DMG and optionally signs/notarizes it (with conditional
-`codesign`/`spctl` verification), but it runs none of the check gates —
-verification is CI's job, the release workflow only packages.
+The tag-triggered release workflow is a different pipeline: on `v*` tags (or a
+manual dispatch) it builds the DMG and optionally signs/notarizes it (with
+conditional `codesign`/`spctl` verification), but it runs none of the check
+gates — verification is CI's job, the release workflow only packages.
 
 ## The architecture fence
 
@@ -198,14 +205,17 @@ Violations from both passes are aggregated and thrown as a single
 `ArchitectureError` listing every offending file, so one run reports the
 complete violation set and fails the gate. `docs/ARCHITECTURE.md` §8 states
 the rule plainly: architecture violations are gate failures, and the fence is
-the authority. Run the fence before claiming any layering change is safe.
+the authority. Run the fence before claiming any layering change is safe, and
+treat a fence rejection as design feedback — adjust the design, never weaken
+the fence to admit the change (the forbidden lists change only with an
+explicit architecture decision).
 
 The TypeScript fences exist because the placement was wrong once: `BackendPort`
 and related contracts originally lived in `adapters/tauri-backend.ts`, which
 forced `ui/` and `application/` to import an adapter module. The 2026-08
-refactor moved the contracts to `src/domain/backend.ts` and added the TS
-fences so the mistake cannot return (documented as violation #3 in
-`docs/ARCHITECTURE.md` §6).
+refactor moved the contracts to `src/domain/backend.ts` (violation #1 in
+`docs/ARCHITECTURE.md` §6) and added the TS fences so the mistake cannot
+return (violation #3).
 
 ## Frontend tests: `bun test` + happy-dom
 
@@ -403,12 +413,12 @@ New behavior arrives with its test as one change set; `docs/ARCHITECTURE.md`
    fence (the forbidden lists change only with an explicit architecture
    decision).
 
-Test quality rules from `.agent-harness/testing/overview.md`: verify
-observable behavior through public contracts (port methods, view selectors,
-reducer outputs), not implementation details; keep tests deterministic (no
-wall-clock dependence, sleeps, real network, or ordering coupling); one
-behavior per test; and never weaken production behavior — for example,
-loosening a Zod schema — to make a test pass. Failure output is evidence:
-preserve it completely rather than summarizing, and prefer the narrowest quiet
-command (`bun test`, a single `cargo test` filter, or one unittest module)
-that proves the changed behavior.
+Test quality rules from `.issueops/testing/overview.md`: verify observable
+behavior through public contracts (port methods, view selectors, reducer
+outputs), not implementation details; keep tests deterministic (no wall-clock
+dependence, sleeps, real network, or ordering coupling); one behavior per
+test; and never weaken production behavior — for example, loosening a Zod
+schema — to make a test pass. Failure output is evidence: preserve it
+completely rather than summarizing, and prefer the narrowest quiet command
+(`bun test`, a single `cargo test` filter, or one unittest module) that proves
+the changed behavior.

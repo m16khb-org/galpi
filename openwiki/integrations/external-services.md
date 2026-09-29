@@ -3,9 +3,6 @@ type: integration
 title: External Services & Bundled Runtimes
 description: Catalog of every outside dependency Galpi touches — Hugging Face model downloads and their gating, the OpenAI-compatible minutes API, the bundled uv/Python/ffmpeg runtimes — plus credential storage and the CSP that keeps everything else local.
 tags: [integrations, hugging-face, openai-compatible, zai, glm, uv, python, ffmpeg, secrets, keychain, csp, offline, setup]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-6229fc7315005e295371fb06
     resource: repo://scripts/stage-sidecars.ts
@@ -55,7 +52,10 @@ sources:
     resource: repo://worker/galpi_worker/refine.py
   - id: openwiki-source-756f49236467f760abc5144f
     resource: repo://worker/requirements-qwen3.txt
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T14:35:32.287Z
 ---
 
 # External Services & Bundled Runtimes
@@ -179,7 +179,8 @@ outbound action the webview performs itself.
 Readiness is file-based, not history-based: `models_ready` for each preset
 requires its manifest (`models/ready.json` / `models/qwen3-ready.json`,
 `protocol == 1` plus the engine version string) **and** the presence of the
-expected hub directories inside the app cache. Directory names are derived
+expected hub directories inside the app cache — for Qwen3, additionally the
+converted MLX weights file. Directory names are derived
 mechanically from repo ids (`Org/Name` → `models--Org--Name` via
 `cache_dir_name`), which is why a setup test pins the `Qwen/…` repo-id shape.
 
@@ -270,8 +271,8 @@ Hugging Face problems never fail silently:
   `GALPI_ASSISTANT_BASE_URL` and defaults to
   `https://api.z.ai/api/coding/paas/v4`; any OpenAI-compatible endpoint
   works (the UI suggests OpenRouter as `https://openrouter.ai/api/v1`).
-- **Model**: defaults to `glm-5.3` (the worker CLI's `--model` default and the
-  frontend's `DEFAULT_ASSISTANT_MODEL` agree).
+- **Model**: defaults to `glm-5.3-flash` (the worker CLI's `--model` default
+  and the frontend's `DEFAULT_ASSISTANT_MODEL` agree).
 - **Timeout**: 600 seconds (`REQUEST_TIMEOUT_SECONDS`).
 - **Body**: `stream: true`, `temperature: 0.2`, and `max_tokens` of **131072**
   for GLM models on the default z.ai endpoint (the budget must cover
@@ -457,18 +458,16 @@ When Galpi talks to Hugging Face, and when it deliberately refuses to.
 - `src/ui/app-view.dom.test.ts` — a refinement failure (e.g.
   `assistant request failed (401)`) surfaces in the augment panel and
   survives the busy reset.
-- `src/ui/token-guide.dom.test.ts` — the HF token guide popover's open/close
-  and focus behavior.
+- `src/ui/token-guide.dom.test.ts` — the HF token guide popover closing with
+  focus returned to its trigger.
 
 ## Related pages
 
 - [Engine Presets & Environment Readiness](../concepts/engines-and-environment.md)
   — the markers, manifests, and prepare orchestration these runtimes feed.
-<!-- openwiki: broken internal link [../concepts/roster-and-assistant-settings.md] file "../concepts/roster-and-assistant-settings.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Roster & Assistant Settings](../concepts/roster-and-assistant-settings.md)
-  — what travels to the minutes API besides the transcript.
 - [AI Minutes Workflow](../workflows/ai-minutes.md) — the product flow around
-  refinement.
+  refinement, including the roster and glossary context that travels to the
+  minutes API beside the transcript.
 - [Engine Setup Workflow](../workflows/engine-setup.md) — the user-facing
   setup walkthrough.
 - [Python Worker Architecture](../architecture/python-worker.md) — the

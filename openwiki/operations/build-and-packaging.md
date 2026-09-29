@@ -3,9 +3,6 @@ type: operations
 title: Build, Staging & Packaging
 description: The Bun/Tauri build pipeline for Galpi — checksum-verified staging of the uv sidecar and Python worker, Tauri bundle configuration, custom hdiutil DMG assembly, the tag-triggered release workflow with optional signing and notarization, and the build-time requirements fingerprint that invalidates installed engines.
 tags: [build, packaging, release, tauri, dmg, staging, sidecars, uv, codesign, notarization, ci, arm64, fingerprint, vite]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
 sources:
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
@@ -23,10 +20,14 @@ sources:
     resource: repo://scripts/stage-sidecars.ts
   - id: openwiki-source-7d9c2c95cd6f848332130fbd
     resource: repo://src-tauri/build.rs
+  - id: openwiki-source-00ff4b2512b6dbfa268cbfa4
+    resource: repo://src-tauri/capabilities/default.json
   - id: openwiki-source-ca67060e890937010b96de80
     resource: repo://src-tauri/Cargo.toml
   - id: openwiki-source-4c1f575b7fe2cf41eccc776e
     resource: repo://src-tauri/Entitlements.plist
+  - id: openwiki-source-3603704595d6f088d32021e8
+    resource: repo://src-tauri/Info.plist
   - id: openwiki-source-87d1f8af141955ca8bda47d2
     resource: repo://src-tauri/src/adapters/outbound/environment.rs
   - id: openwiki-source-e1ec47b0582abc13e4d0936f
@@ -39,7 +40,10 @@ sources:
     resource: repo://src-tauri/tauri.conf.json
   - id: openwiki-source-5e1b077422a94ae165e88e4e
     resource: repo://vite.config.ts
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-29T14:35:32.287Z
 ---
 
 # Build, Staging & Packaging
@@ -302,10 +306,12 @@ builds exercise exactly what `stage-sidecars.ts` staged.
   `strip = true`. `panic` stays at the default unwind on purpose: aborting
   would turn a panic in the audio writer thread into a lost recording instead
   of a failed one.
-- **Generated trees are not source.** `dist/`, `src-tauri/target/`,
-  `src-tauri/gen/`, `src-tauri/binaries/`, and `src-tauri/resources/worker/`
-  are gitignored; only `worker/`, `tauri.conf.json`, `build.rs`, and the
-  scripts are edited by hand.
+- **Generated trees are not source.** `.gitignore` excludes every output the
+  pipeline regenerates — `node_modules/`, `dist/`, `src-tauri/target/`,
+  `src-tauri/gen/`, `src-tauri/binaries/`, `src-tauri/resources/worker/`, and
+  the Python caches (`**/__pycache__/`, `*.pyc`). All of these are
+  never-source, never-edit outputs; only `worker/`, `tauri.conf.json`,
+  `build.rs`, the workflow files, and the scripts are edited by hand.
 
 ## Bundle metadata
 

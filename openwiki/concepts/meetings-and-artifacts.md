@@ -5,7 +5,7 @@ description: The per-meeting folder model under the user-chosen output root, the
 tags: [meetings, artifacts, folders, naming, checkpoint, import, minutes, transcript, output-root, tauri]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-08-29T12:09:06.549Z
+    at: 2026-09-29T14:35:32.287Z
 sources:
   - id: openwiki-source-e8e61d605125cac4d909755e
     resource: repo://docs/ARCHITECTURE.md
@@ -55,7 +55,7 @@ sources:
     resource: repo://worker/galpi_worker/refine.py
   - id: openwiki-source-e82676118198cdf74313a8e0
     resource: repo://worker/tests/test_qwen3.py
-generated: { by: "openwiki/0.4.3", at: "2026-08-29T12:09:06.549Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-29T14:35:32.287Z" }
 ---
 
 # Meetings & Artifacts
@@ -81,10 +81,8 @@ handle — so "open minutes" works within a session, and durability is a
 This page documents the folder model, the aggregate, the naming contract,
 checkpoint reuse across engines and runs, and the import path. The single-slot
 registry that hands out the job ids is covered in
-[jobs and cancellation](jobs-and-cancellation.md); the run walkthroughs live in
-<!-- openwiki: broken internal link [../workflows/transcription.md] file "../workflows/transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-[transcription](../workflows/transcription.md), [AI
-minutes](../workflows/ai-minutes.md), and
+[jobs and cancellation](jobs-and-cancellation.md); the minutes and recording
+walkthroughs live in [AI minutes](../workflows/ai-minutes.md) and
 [recording](../workflows/recording.md).
 
 ## Three producers, one folder rule
@@ -341,11 +339,7 @@ design.
 
 - [Jobs, Cancellation & State Machines](jobs-and-cancellation.md) — the
   registry that owns the artifacts map and the slot every producer claims.
-<!-- openwiki: broken internal link [../workflows/transcription.md] file "../workflows/transcription.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-- [Transcription workflow](../workflows/transcription.md) — the run that fills
-  srt, txt, and the checkpoint.
 - [AI minutes workflow](../workflows/ai-minutes.md) — refinement, minutes_path,
   and meeting-date grounding.
 - [Recording workflow](../workflows/recording.md) — capture, writer, and the
   partial-file lifecycle behind `<name>.wav`.
->.wav`.
