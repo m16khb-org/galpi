@@ -187,6 +187,34 @@ summary:focus-visible {
   font-size: 11px;
 }
 
+/* State text beside the color: completed and current steps also carry a glyph. */
+.step-list .step-state {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.step-list li[data-state="current"] .step-state {
+  color: var(--accent-text);
+}
+
+.step-list li[data-state="complete"] .step-state {
+  color: var(--status-success);
+}
+
+.step-list li[data-state="current"] .step-state::before,
+.phase-list li[data-state="current"]::before {
+  content: "● " / "";
+}
+
+.step-list li[data-state="complete"] .step-state::before,
+.phase-list li[data-state="complete"]::before {
+  content: "✓ " / "";
+}
+
 .rail-note {
   display: flex;
   gap: var(--space-3);
@@ -243,6 +271,13 @@ summary:focus-visible {
   font-weight: 500;
   line-height: 1.12;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.task-status {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .topbar-actions {
@@ -1026,6 +1061,31 @@ button:disabled {
   border-color: var(--accent-primary);
 }
 
+/* A chosen transcript reads as the augment target, with replacing it as the action. */
+.picker-cta {
+  display: none;
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.file-picker[data-selected="true"] .picker-cta {
+  display: inline;
+}
+
+.file-picker[data-selected="true"]:has(.picker-cta) {
+  border-style: solid;
+}
+
+.file-picker[data-selected="true"]:has(.picker-cta) > .ph-caret-right {
+  display: none;
+}
+
+.augment-panel > .augment-hint,
+.augment-panel > .file-picker {
+  margin-top: var(--space-4);
+}
+
 .file-icon {
   display: grid;
   place-items: center;
@@ -1090,10 +1150,18 @@ button:disabled {
   border-radius: 12px;
 }
 
+/* Floated so the title sits inside the card instead of on its edge. */
 .speaker-panel legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-1);
   padding: 0;
   font-size: 12px;
   font-weight: 700;
+}
+
+.speaker-panel legend + * {
+  clear: both;
 }
 
 .segmented-control {
@@ -1161,13 +1229,19 @@ button:disabled {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* Fixed height: the clear button appearing must not push the chips down. */
 .participant-picker-header {
   display: flex;
   gap: var(--space-3);
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  min-height: 40px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.participant-picker-header .text-button {
+  margin-top: 0;
 }
 
 .participant-chips {
@@ -1355,6 +1429,11 @@ button:disabled {
   margin-top: 14px;
 }
 
+.number-fields label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .number-fields.range {
   grid-template-columns: auto 54px auto auto 54px;
 }
@@ -1464,18 +1543,18 @@ button:disabled {
   font-weight: 600;
 }
 
+/* The cancel button leads; the log always takes its own row below it. */
 .job-actions {
   display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
   align-items: flex-start;
   margin-top: var(--space-4);
 }
 
 .job-actions details {
-  flex: 1 1 320px;
+  flex: 1 0 100%;
   min-width: 0;
-  max-width: 440px;
 }
 
 .job-actions > button {
@@ -1503,6 +1582,54 @@ button:disabled {
     Menlo,
     monospace;
   white-space: pre-wrap;
+}
+
+/* A finished transcription folds into one summary row beside its log. */
+.job-summary {
+  display: none;
+}
+
+.setup-progress-card[data-status="completed"]:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--surface-secondary);
+  border-color: transparent;
+}
+
+.setup-progress-card[data-status="completed"] .job-summary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.job-summary i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--accent-on-primary);
+  background: var(--status-success);
+  border-radius: 50%;
+  font-size: 13px;
+}
+
+.setup-progress-card[data-status="completed"] :is(.job-header, .wave-progress, .phase-list, .job-message) {
+  display: none;
+}
+
+.setup-progress-card[data-status="completed"] .job-actions {
+  margin: 0 0 0 auto;
+}
+
+.setup-progress-card[data-status="completed"] .job-actions:has(details[open]) {
+  flex-basis: 100%;
+  margin-left: 0;
 }
 
 .artifact-list {

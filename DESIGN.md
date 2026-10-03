@@ -53,7 +53,7 @@ Values below are the implemented compact scale, px-locked to `src/styles.css`
 | Level | Size | Weight | Line Height | Tracking | Usage |
 |---|---:|---:|---:|---:|---|
 | Display | `clamp(24px, 3vw, 36px)` | 500 | 1.12 | `-0.03em` | Topbar task heading |
-| H2 | `21px` | 700 | 1.3 | `-0.015em` | Panel heading |
+| H2 | `21px` | 700 | 1.3 | `-0.015em` | Panel heading, left-aligned under its eyebrow |
 | Brand | `19px` | 700 | normal | `-0.02em` | Rail brand lockup |
 | Step title | `14px` | 700 | normal | 0 | Rail step names |
 | Status label | `13px` | 400 | normal | 0 | Status rows, job messages |
@@ -109,15 +109,26 @@ All spacing derives from 4px.
 
 - **Structure**: three user stages — `01 회의 전사`, `02 전사 결과`, `03 전사 결과 AI 증강` — each with a state label and short explanation. The rail lockup shows the app icon (`assets/app-icon.svg`, the same mark as the bundled DMG/app icon) in a 42px rounded tile above the `갈피` brand; it is decorative (`aria-hidden`) because the adjacent text carries the name. Engine and model preparation are a pre-gate panel (`00 / 준비`), not rail stages; they disappear once the local environment is ready.
 - **Stage mapping**: `01` completes when transcription artifacts render; `02` becomes current with the results panel; `03` completes when augmented minutes render. The augment stage hint links to Settings when no assistant key is saved and otherwise waits for a transcription, or starts directly from an imported transcript file (`전사문 파일 가져오기`) which registers the transcript as the meeting result without a new recording. Augmentation streams progress: the refine phase emits `N자 작성됨` updates on the existing phase-event channel while the provider generates.
-- **States**: pending, current, completed, blocked.
+- **States**: pending, current, completed, blocked. Each item carries a text state label under its subtitle — `대기`, `● 현재 단계`, `✓ 완료` — so the state never rests on color; the glyph is decorative (CSS `content` with empty alt text).
 - **Accessibility**: `aria-current="step"` on the current item; text accompanies every state color.
 - **Motion**: current marker fades and translates no more than 4px; no motion under reduced motion.
 - **Layout**: fixed shell rail; never owns scroll.
+
+### Top Bar Task Heading
+
+- **Structure**: `LOCAL AUDIO WORKSPACE` eyebrow, the Display heading, and one 13px secondary status line.
+- **Content**: the heading names the task, not a slogan — `로컬 엔진을 준비해 주세요` before setup, `새 회의 전사` when idle, then the meeting name (the chosen audio or imported transcript file name without its extension). The status line follows the work: `녹음 중`, `전사 중 · 정렬 단계`, `전사 완료 · 회의록 작성 대기`, `회의록 작성 중`, `회의록 완료`.
+- **Layout**: long names wrap with `overflow-wrap: anywhere`; the engine chip and settings button keep their place.
+
+### Panel Heading
+
+- **Structure**: eyebrow (`00 / 준비`, `01 / 녹음·파일`, `02 / 산출물`, `03 / AI 증강`) over a left-aligned H2; the description sits right-aligned beside it. The eyebrow names the panel's material and never repeats the title.
 
 ### Status Button
 
 - **Structure**: one label plus optional progress/status glyph from Phosphor Icons.
 - **Variants**: primary, secondary, quiet, destructive.
+- **Emphasis follows the task**: one primary action per stage. After a transcription renders, `전사 시작` steps down to a secondary `새 전사 시작` until new audio arrives; after minutes render, `회의록 열기` becomes primary and the augment action steps down to a secondary `다시 증강`.
 - **States**: idle, loading, success, error, disabled.
 
 ### Participant Chips
@@ -158,8 +169,9 @@ All spacing derives from 4px.
 
 ### Phase Timeline
 
-- **Structure**: waveform progress rule plus four named phases and live phase message.
-- **States**: waiting, active, completed, failed, cancelled.
+- **Structure**: waveform progress rule plus four named phases and live phase message. Completed phases carry `✓` and the current phase `●` beside their color.
+- **States**: waiting, active, completed, failed, cancelled. The card title states the outcome (`회의를 전사하고 있습니다` → `전사를 마쳤습니다` / `전사하지 못했습니다` / `전사를 취소했습니다`); setup and augmentation cards follow the same rule.
+- **Completion**: a finished transcription folds the card into one summary row on the secondary surface — success check, `전사 완료 · N개 발화 보존 · N개 환각 제거`, and the log disclosure on the right — and keeps it until the next run. Failed and cancelled runs keep the full card so the error stays in view.
 - **Accessibility**: `role="progressbar"` with phase-local value; no fabricated time estimate.
 - **Motion**: waveform fill uses transform only and stops under reduced motion.
 
@@ -170,9 +182,13 @@ All spacing derives from 4px.
 - **Accessibility**: action labels include artifact kind; paths remain selectable.
 - **Layout**: cluster that wraps actions before the path overflows.
 
+### Augment Target
+
+- **Structure**: before any transcript exists, a waiting hint followed by the `전사문 파일 가져오기` picker (no "또는" divider — there is no option before it). Once a transcript is chosen or produced, the same control reads `대상 전사문` with its path and a `다른 파일 가져오기` text action, on a solid border.
+
 ### Log Disclosure
 
-- **Structure**: native `details` with capped mono output.
+- **Structure**: native `details` with capped mono output, always on its own row below the job's cancel action.
 - **States**: collapsed by default, expanded, error-highlighted.
 - **Accessibility**: raw diagnostics remain copyable; user-facing error summary sits outside the disclosure.
 - **Layout**: the log body owns its own bounded scroll only when expanded.

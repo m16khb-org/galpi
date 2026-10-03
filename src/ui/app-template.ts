@@ -9,16 +9,16 @@ export const appTemplate = `
         <div><strong>갈피</strong><span>LOCAL TRANSCRIPTION</span></div>
       </div>
       <ol class="step-list">
-        <li id="step-transcribe" data-state="current" aria-current="step"><span>01</span><div><strong>회의 전사</strong><small>오디오에서 결과까지</small></div></li>
-        <li id="step-results" data-state="pending"><span>02</span><div><strong>전사 결과</strong><small>자막 · 화자별 텍스트</small></div></li>
-        <li id="step-augment" data-state="pending"><span>03</span><div><strong>전사 결과 AI 증강</strong><small>회의록 자동 작성</small></div></li>
+        <li id="step-transcribe" data-state="current" aria-current="step"><span>01</span><div><strong>회의 전사</strong><small>오디오에서 결과까지</small><em class="step-state" data-step-state>현재 단계</em></div></li>
+        <li id="step-results" data-state="pending"><span>02</span><div><strong>전사 결과</strong><small>자막 · 화자별 텍스트</small><em class="step-state" data-step-state>대기</em></div></li>
+        <li id="step-augment" data-state="pending"><span>03</span><div><strong>전사 결과 AI 증강</strong><small>회의록 자동 작성</small><em class="step-state" data-step-state>대기</em></div></li>
       </ol>
       <div class="rail-note"><i class="ph ph-shield-check" aria-hidden="true"></i><p>녹음과 전사는 이 Mac 안에서만 처리됩니다. AI 증강을 실행할 때만 전사본이 증강 제공자로 전송됩니다.</p></div>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <div><span class="eyebrow">LOCAL AUDIO WORKSPACE</span><h1>회의에서 중요한 갈피를 찾으세요.</h1></div>
+        <div><span class="eyebrow">LOCAL AUDIO WORKSPACE</span><h1 id="task-title">새 회의 전사</h1><p id="task-status" class="task-status">로컬 환경을 확인하는 중입니다.</p></div>
         <div class="topbar-actions">
           <div class="engine-chip"><span id="setup-state" data-state="pending">확인 중</span><small id="engine-version">확인 중</small></div>
           <button class="settings-button" type="button" data-action="open-settings" aria-label="설정 열기"><i class="ph ph-gear" aria-hidden="true"></i></button>
@@ -46,7 +46,7 @@ export const appTemplate = `
             </div>
           </div>
           <div id="setup-progress-panel" class="setup-progress-card" hidden>
-            <div class="job-header"><div><span class="section-index">앱 전용 환경 설치</span><h3>로컬 환경 준비 중</h3></div><strong id="setup-job-percent">0%</strong></div>
+            <div class="job-header"><div><span class="section-index">앱 전용 환경 설치</span><h3 id="setup-job-title">로컬 환경을 준비하고 있습니다</h3></div><strong id="setup-job-percent">0%</strong></div>
             <div id="setup-job-progress" class="wave-progress" role="progressbar" aria-label="로컬 환경 준비 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
             <ol class="phase-list setup-phase-list">
               <li data-setup-phase="engine" data-state="pending">Python 런타임</li>
@@ -67,7 +67,7 @@ export const appTemplate = `
 
         <section id="transcription-panel" class="panel transcription-panel" aria-labelledby="transcription-title">
           <div class="section-heading">
-            <div><span id="transcription-index" class="section-index">01 / 전사</span><h2 id="transcription-title">새 회의 전사</h2></div>
+            <div><span id="transcription-index" class="section-index">01 / 녹음·파일</span><h2 id="transcription-title">새 회의 전사</h2></div>
             <p>참석 인원을 알려주면 겹치는 목소리와 짧은 발화를 더 안정적으로 분리합니다.</p>
           </div>
           <div class="transcription-grid">
@@ -118,7 +118,8 @@ export const appTemplate = `
               <div id="range-fields" class="number-fields range" hidden><label for="min-speakers">최소</label><input id="min-speakers" type="number" min="1" max="30" value="3" /><span>–</span><label for="max-speakers">최대</label><input id="max-speakers" type="number" min="1" max="30" value="7" /></div>
             </fieldset>
           </div>
-          <div id="job-panel" class="setup-progress-card" hidden>
+          <div id="job-panel" class="setup-progress-card" data-status="idle" hidden>
+            <p class="job-summary"><i class="ph ph-check" aria-hidden="true"></i><span id="job-summary-text">전사 완료</span></p>
             <div class="job-header"><div><span id="busy-label" class="section-index"></span><h3 id="job-title">회의를 전사하고 있습니다</h3></div><strong id="job-percent">0%</strong></div>
             <div id="job-progress" class="wave-progress" role="progressbar" aria-label="현재 단계 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
             <ol id="job-phase-list" class="phase-list">
@@ -135,13 +136,13 @@ export const appTemplate = `
             </div>
           </div>
           <div class="panel-actions">
-            <button id="start-button" class="primary-button" type="button" data-action="transcribe" disabled><i class="ph ph-play" aria-hidden="true"></i><span>전사 시작</span></button>
+            <button id="start-button" class="primary-button" type="button" data-action="transcribe" disabled><i class="ph ph-play" aria-hidden="true"></i><span id="start-label">전사 시작</span></button>
             <span class="action-note">체크포인트가 있으면 전사·정렬을 재사용합니다.</span>
           </div>
         </section>
 
         <section id="results-panel" class="panel results-panel" hidden aria-labelledby="results-title">
-          <div class="section-heading"><div><span id="results-index" class="section-index">02 / 전사 결과</span><h2 id="results-title">전사 결과</h2></div><p id="result-summary"></p></div>
+          <div class="section-heading"><div><span id="results-index" class="section-index">02 / 산출물</span><h2 id="results-title">전사 결과</h2></div><p id="result-summary"></p></div>
           <div class="artifact-list">
             <div id="result-srt-row" class="artifact-row"><i class="ph ph-subtitles" aria-hidden="true"></i><div><strong>자막 파일</strong><code id="result-srt"></code></div><button type="button" data-action="open-srt" aria-label="자막 파일 열기">열기</button></div>
             <div class="artifact-row"><i class="ph ph-users-three" aria-hidden="true"></i><div><strong>화자별 텍스트</strong><code id="result-txt"></code></div><button type="button" data-action="open-txt" aria-label="화자별 텍스트 열기">열기</button></div>
@@ -154,7 +155,7 @@ export const appTemplate = `
 
         <section id="augment-panel" class="panel augment-panel" aria-labelledby="augment-title">
           <div class="section-heading">
-            <div><span class="section-index">03 / AI 증강</span><h2 id="augment-title">전사 결과 AI 증강</h2></div>
+            <div><span class="section-index">03 / AI 증강</span><h2 id="augment-title">회의록 작성</h2></div>
             <p>등록한 OpenAI 호환 API 토큰으로 전사 결과를 회의록으로 정리합니다. 결정사항과 실행·추적 항목을 놓치지 않습니다.</p>
           </div>
           <div id="augment-key-hint" class="augment-hint" hidden>
@@ -162,14 +163,14 @@ export const appTemplate = `
             <p>AI 증강에는 OpenAI 호환 API 키가 필요합니다. <button class="text-button" type="button" data-action="open-settings">설정에서 등록</button></p>
           </div>
           <p id="augment-waiting" class="augment-hint"><i class="ph ph-hourglass" aria-hidden="true"></i>전사를 마치거나 전사문을 가져오면 이 단계에서 바로 회의록을 증강할 수 있습니다.</p>
-          <div class="choice-divider"><span>또는 이미 완성된 전사문</span></div>
           <button id="transcript-selection" class="file-picker" type="button" data-action="import-transcript" data-selected="false">
             <span class="file-icon"><i class="ph ph-file-text" aria-hidden="true"></i></span>
-            <span><strong>전사문 파일 가져오기</strong><small id="transcript-path">txt, md</small></span>
+            <span><strong id="transcript-title">전사문 파일 가져오기</strong><small id="transcript-path">txt, md</small></span>
+            <span class="picker-cta">다른 파일 가져오기</span>
             <i class="ph ph-caret-right" aria-hidden="true"></i>
           </button>
           <div id="augment-progress" class="setup-progress-card" hidden>
-            <div class="job-header"><div><span class="section-index">AI 증강 진행 중</span><h3>회의록을 작성하고 있습니다</h3></div><strong id="augment-job-percent">0%</strong></div>
+            <div class="job-header"><div><span class="section-index">AI 증강 진행 중</span><h3 id="augment-job-title">회의록을 작성하고 있습니다</h3></div><strong id="augment-job-percent">0%</strong></div>
             <div id="augment-job-progress" class="wave-progress" role="progressbar" aria-label="AI 증강 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
             <p id="augment-job-message" class="job-message" aria-live="polite"></p>
             <p id="augment-error-message" class="error-message" role="alert" hidden></p>
@@ -181,7 +182,8 @@ export const appTemplate = `
             <div id="result-minutes-row" class="artifact-row" hidden><i class="ph ph-note-pencil" aria-hidden="true"></i><div><strong>증강 회의록</strong><code id="result-minutes"></code></div><button type="button" data-action="open-minutes" aria-label="증강 회의록 열기">열기</button></div>
           </div>
           <div class="panel-actions">
-            <button id="refine-button" class="primary-button" type="button" data-action="refine" disabled><i class="ph ph-sparkle" aria-hidden="true"></i><span>AI 증강 실행</span></button>
+            <button id="open-minutes-button" class="primary-button" type="button" data-action="open-minutes" hidden><i class="ph ph-file-text" aria-hidden="true"></i><span>회의록 열기</span></button>
+            <button id="refine-button" class="primary-button" type="button" data-action="refine" disabled><i class="ph ph-sparkle" aria-hidden="true"></i><span id="refine-label">AI 증강 실행</span></button>
             <span class="action-note">사전 정보 · 참석자 명부 · 단어집이 함께 적용됩니다.</span>
           </div>
         </section>

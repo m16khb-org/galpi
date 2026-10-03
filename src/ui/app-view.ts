@@ -1,4 +1,4 @@
-import type { JobViewState } from "../application/job-machine"
+import type { JobStatus, JobViewState } from "../application/job-machine"
 import type { RecordingViewState } from "../application/recording-machine"
 import type {
   EnginePreset,
@@ -24,6 +24,7 @@ export class AppView {
   readonly participantSettings: ParticipantSettingsView
   readonly glossarySettings: GlossarySettingsView
   readonly attendees: ParticipantPickerView
+  private environmentChecked = false
   private engineReady = false
   private jobBusy = false
   private jobKind: BusyKind = null
@@ -35,7 +36,15 @@ export class AppView {
   private renderedPhase: string | null = null
   private recordingActive = false
   private hasResult = false
+  private importedResult = false
   private minutesReady = false
+  /// A finished transcription keeps its one-line summary until the next run.
+  private transcriptionSummary = false
+  private jobPhase = ""
+  /// The meeting the top bar names: the chosen audio, or an imported transcript.
+  private meetingName: string | null = null
+  /// New audio chosen after a result makes starting the main task again.
+  private audioSinceResult = false
   private assistantKeyReady = false
   private settingsChangeHandler: (() => void) | null = null
 
@@ -138,6 +147,7 @@ export class AppView {
     this.statusRow("#model-check", status.modelsReady, "전사·정렬·화자분리 모델")
     this.statusRow("#ffmpeg-check", status.ffmpegReady, "내장 ffmpeg")
     const ready = status.engineReady && status.modelsReady && status.ffmpegReady
+    this.environmentChecked = true
     this.engineReady = ready
     this.element("#setup-state").textContent = ready ? "준비 완료" : "설정 필요"
     this.element("#setup-state").dataset["state"] = ready ? "ready" : "pending"
@@ -160,11 +170,17 @@ export class AppView {
   setAudio(path: string): void {
     this.path("#audio-path", path)
     this.element("#audio-selection").dataset["selected"] = "true"
+    this.meetingName = meetingName(path)
+    this.audioSinceResult = this.hasResult
+    this.refreshStages()
+    this.refreshActions()
   }
 
+  /** Once a transcript is chosen the picker shows it as the augment target. */
   setTranscript(path: string): void {
     this.path("#transcript-path", path)
     this.element("#transcript-selection").dataset["selected"] = "true"
+    this.element("#transcript-title").textContent = "대상 전사문"
   }
 
   setOutput(path: string): void {
@@ -181,10 +197,14 @@ export class AppView {
     this.jobBusy = busy
     if (kind !== null) {
       this.jobKind = kind
+      if (kind === "transcription") {
+        this.transcriptionSummary = false
+        this.element("#job-panel").dataset["status"] = "running"
+      }
       this.element("#setup-progress-panel").hidden = kind !== "setup"
       // Each stage renders its own progress card in place: refinement inside
       // the augment panel, transcription inside the transcription panel.
-      this.element("#job-panel").hidden = kind !== "transcription"
+      this.element("#job-panel").hidden = kind !== "transcription" && !this.transcriptionSummary
       this.element("#job-phase-list").hidden = kind !== "transcription"
       this.element("#augment-progress").hidden = kind !== "refinement"
     }
@@ -218,6 +238,7 @@ export class AppView {
       state.status === "starting" || state.status === "stopping"
     this.element<HTMLButtonElement>("#cancel-recording-button").disabled =
       state.status === "starting" || state.status === "stopping"
+    this.refreshStages()
     this.refreshActions()
   }
 
@@ -232,9 +253,14 @@ export class AppView {
     this.element("#setup-progress-panel").hidden =
       state.status === "idle" || this.jobKind !== "setup"
     this.element("#job-panel").hidden =
-      state.status === "idle" || this.jobKind !== "transcription"
+      (state.status === "idle" || this.jobKind !== "transcription") && !this.transcriptionSummary
     this.element("#augment-progress").hidden =
       state.status === "idle" || this.jobKind !== "refinement"
+    if (!this.transcriptionSummary && this.jobKind === "transcription") {
+      this.element("#job-panel").dataset["status"] = state.status
+    }
+    this.jobPhase = state.phase
+    this.renderJobTitle(state.status)
     this.refreshStages()
     this.element("#job-message").textContent = state.message
     this.element("#setup-job-message").textContent = state.message
@@ -270,8 +296,11 @@ export class AppView {
 
   renderResult(result: TranscriptionResult): void {
     this.element("#results-panel").hidden = false
-    this.element("#result-summary").textContent =
-      `${result.segments}개 발화 보존 · ${result.filtered}개 환각 제거`
+    const summary = `${result.segments}개 발화 보존 · ${result.filtered}개 환각 제거`
+    this.element("#result-summary").textContent = summary
+    this.element("#job-summary-text").textContent = `전사 완료 · ${summary}`
+    this.element("#job-panel").dataset["status"] = "completed"
+    this.transcriptionSummary = true
     this.element("#result-srt-row").hidden = false
     const hasCheckpoint = result.checkpoint !== null
     this.element("#result-checkpoint-row").hidden = !hasCheckpoint
@@ -283,12 +312,7 @@ export class AppView {
     if (hasCheckpoint) {
       this.path("#result-checkpoint", result.checkpoint)
     }
-    this.element("#result-minutes-row").hidden = true
-    this.element("#augment-panel").hidden = false
-    this.element("#augment-waiting").hidden = true
-    this.hasResult = true
-    this.refreshStages()
-    this.refreshActions()
+    this.startMeeting(false)
   }
 
   /** An imported transcript is a result too: augmentation starts from it. */
@@ -298,12 +322,11 @@ export class AppView {
     this.element("#result-srt-row").hidden = true
     this.element("#result-checkpoint-row").hidden = true
     this.path("#result-txt", result.txt)
-    this.element("#result-minutes-row").hidden = true
-    this.element("#augment-panel").hidden = false
-    this.element("#augment-waiting").hidden = true
-    this.hasResult = true
-    this.refreshStages()
-    this.refreshActions()
+    this.meetingName = meetingName(result.txt)
+    // The summary belongs to the previous meeting's run, not this transcript.
+    this.transcriptionSummary = false
+    this.element("#job-panel").hidden = true
+    this.startMeeting(true)
   }
 
   renderMinutes(minutes: string): void {
@@ -315,6 +338,7 @@ export class AppView {
     this.path("#result-minutes", minutes)
     this.minutesReady = true
     this.refreshStages()
+    this.refreshActions()
   }
 
   clearError(): void {
@@ -367,6 +391,30 @@ export class AppView {
     element.setAttribute("title", value)
   }
 
+  /** A new result is a new meeting: the previous minutes no longer describe it. */
+  private startMeeting(imported: boolean): void {
+    this.element("#result-minutes-row").hidden = true
+    this.element("#augment-panel").hidden = false
+    this.element("#augment-waiting").hidden = true
+    this.hasResult = true
+    this.importedResult = imported
+    this.minutesReady = false
+    this.audioSinceResult = false
+    this.refreshStages()
+    this.refreshActions()
+  }
+
+  /** Only the card of the job that ran is visible, so only its title follows the outcome. */
+  private renderJobTitle(status: JobStatus): void {
+    if (this.jobKind === "setup") {
+      this.element("#setup-job-title").textContent = setupTitles[status]
+    } else if (this.jobKind === "transcription") {
+      this.element("#job-title").textContent = transcriptionTitles[status]
+    } else if (this.jobKind === "refinement") {
+      this.element("#augment-job-title").textContent = refinementTitles[status]
+    }
+  }
+
   private renderProgress(selector: string, percent: number): void {
     const progress = this.element<HTMLElement>(selector)
     progress.setAttribute("aria-valuenow", String(Math.round(percent)))
@@ -392,12 +440,47 @@ export class AppView {
     )
     this.setStage("#step-results", this.hasResult ? "current" : "pending")
     this.setStage("#step-augment", this.minutesReady ? "complete" : "pending")
+    this.refreshTask()
+  }
+
+  /** The top bar names the meeting being worked on and where it stands. */
+  private refreshTask(): void {
+    const [title, status] = this.task()
+    this.element("#task-title").textContent = title
+    this.element("#task-status").textContent = status
+  }
+
+  private task(): readonly [string, string] {
+    if (!this.environmentChecked) return ["새 회의 전사", "로컬 환경을 확인하는 중입니다."]
+    if (!this.engineReady) {
+      return [
+        "로컬 엔진을 준비해 주세요",
+        this.jobBusy && this.jobKind === "setup"
+          ? "로컬 환경을 준비하고 있습니다"
+          : "처음 한 번만 필요합니다 · 모델 약 3GB",
+      ]
+    }
+    const title = this.meetingName ?? "새 회의 전사"
+    if (this.recordingActive) return [title, "녹음 중"]
+    if (this.jobBusy && this.jobKind === "transcription") {
+      const phase = phaseLabels[this.jobPhase]
+      return [title, phase === undefined ? "전사 중" : `전사 중 · ${phase} 단계`]
+    }
+    if (this.jobBusy && this.jobKind === "refinement") return [title, "회의록 작성 중"]
+    if (this.hasResult && !this.audioSinceResult) {
+      if (this.minutesReady) return [title, "회의록 완료"]
+      return [title, this.importedResult ? "전사문 가져옴 · 회의록 작성 대기" : "전사 완료 · 회의록 작성 대기"]
+    }
+    if (this.meetingName !== null) return [title, "전사 준비됨"]
+    return [title, "녹음하거나 오디오 파일을 선택하세요"]
   }
 
   /** data-state drives styling; aria-current carries the same fact to assistive tech. */
   private setStage(selector: string, state: string): void {
     const step = this.element(selector)
     step.dataset["state"] = state
+    const label = step.querySelector<HTMLElement>("[data-step-state]")
+    if (label !== null) label.textContent = stageLabels[state] ?? state
     if (state === "current") {
       step.setAttribute("aria-current", "step")
     } else {
@@ -415,6 +498,13 @@ export class AppView {
       this.jobBusy || this.recordingActive
     this.element<HTMLButtonElement>("#start-button").disabled =
       !this.engineReady || this.jobBusy || this.recordingActive
+    // After a result the main task is the result itself, until new audio arrives.
+    const restart = this.hasResult && !this.audioSinceResult
+    setPrimary(this.element("#start-button"), !restart)
+    this.element("#start-label").textContent = restart ? "새 전사 시작" : "전사 시작"
+    this.element("#open-minutes-button").hidden = !this.minutesReady
+    setPrimary(this.element("#refine-button"), !this.minutesReady)
+    this.element("#refine-label").textContent = this.minutesReady ? "다시 증강" : "AI 증강 실행"
     this.attendees.setBusy(this.jobBusy || this.recordingActive)
     this.element<HTMLButtonElement>("#record-button").disabled = this.jobBusy
     this.element<HTMLButtonElement>("#audio-selection").disabled =
@@ -426,6 +516,57 @@ export class AppView {
     this.element<HTMLButtonElement>("#refine-button").disabled =
       !this.hasResult || !this.assistantKeyReady || this.jobBusy || this.recordingActive
   }
+}
+
+const stageLabels: Readonly<Record<string, string>> = {
+  complete: "완료",
+  current: "현재 단계",
+  pending: "대기",
+}
+
+const phaseLabels: Readonly<Record<string, string>> = {
+  transcribing: "전사",
+  aligning: "정렬",
+  diarizing: "화자분리",
+  writing: "결과 저장",
+}
+
+type JobTitles = Readonly<Record<JobStatus, string>>
+
+const setupTitles: JobTitles = {
+  idle: "로컬 환경을 준비하고 있습니다",
+  running: "로컬 환경을 준비하고 있습니다",
+  completed: "로컬 환경을 준비했습니다",
+  failed: "로컬 환경을 준비하지 못했습니다",
+  cancelled: "로컬 환경 준비를 취소했습니다",
+}
+
+const transcriptionTitles: JobTitles = {
+  idle: "회의를 전사하고 있습니다",
+  running: "회의를 전사하고 있습니다",
+  completed: "전사를 마쳤습니다",
+  failed: "전사하지 못했습니다",
+  cancelled: "전사를 취소했습니다",
+}
+
+const refinementTitles: JobTitles = {
+  idle: "회의록을 작성하고 있습니다",
+  running: "회의록을 작성하고 있습니다",
+  completed: "회의록을 작성했습니다",
+  failed: "회의록을 작성하지 못했습니다",
+  cancelled: "회의록 작성을 취소했습니다",
+}
+
+function setPrimary(button: HTMLElement, primary: boolean): void {
+  button.classList.toggle("primary-button", primary)
+  button.classList.toggle("secondary-button", !primary)
+}
+
+/** "/in/2026-10-03 주간 회의.m4a" → "2026-10-03 주간 회의" */
+function meetingName(path: string): string {
+  const file = path.split("/").at(-1) ?? path
+  const dot = file.lastIndexOf(".")
+  return dot > 0 ? file.slice(0, dot) : file
 }
 
 function busyLabel(kind: BusyKind): string {

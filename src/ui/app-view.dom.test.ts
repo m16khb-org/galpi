@@ -175,8 +175,9 @@ describe("AppView stage flow (real DOM)", () => {
       "55",
     )
     expect(hidden(root, "#augment-cancel-button")).toBe(false)
-    // The top job panel stays transcription-only and hidden during refinement
-    expect(hidden(root, "#job-panel")).toBe(true)
+    // The transcription card stays folded into its summary during refinement
+    const jobPanel = root.querySelector("#job-panel") as HTMLElement
+    expect(jobPanel.dataset["status"]).toBe("completed")
     expect(hidden(root, "#cancel-button")).toBe(true)
   })
 
@@ -272,5 +273,183 @@ describe("AppView stage flow (real DOM)", () => {
 
     // Then
     expect(hidden(root, "#augment-key-hint")).toBe(true)
+  })
+})
+
+function text(root: HTMLElement, selector: string): string {
+  return root.querySelector(selector)?.textContent ?? ""
+}
+
+function stepLabel(root: HTMLElement, step: string): string {
+  return text(root, `${step} [data-step-state]`)
+}
+
+function isPrimary(root: HTMLElement, selector: string): boolean {
+  return root.querySelector(selector)?.classList.contains("primary-button") === true
+}
+
+describe("AppView state presentation (real DOM)", () => {
+  let view: AppView
+  let root: HTMLElement
+
+  beforeEach(() => {
+    ;({ view, root } = createView())
+  })
+
+  test("rail steps name their state in text, not color alone", () => {
+    // Given
+    view.setEnvironment(environment(true))
+
+    // Then
+    expect(stepLabel(root, "#step-transcribe")).toBe("현재 단계")
+    expect(stepLabel(root, "#step-results")).toBe("대기")
+
+    // When
+    view.renderResult(result)
+
+    // Then
+    expect(stepLabel(root, "#step-transcribe")).toBe("완료")
+    expect(stepLabel(root, "#step-results")).toBe("현재 단계")
+    expect(stepLabel(root, "#step-augment")).toBe("대기")
+  })
+
+  test("the transcription card title follows the job outcome", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    view.setBusy("transcription")
+
+    for (const [status, title] of [
+      ["running", "회의를 전사하고 있습니다"],
+      ["completed", "전사를 마쳤습니다"],
+      ["failed", "전사하지 못했습니다"],
+      ["cancelled", "전사를 취소했습니다"],
+    ] as const) {
+      // When
+      view.renderJob({ ...initialJobState, status, phase: "aligning" })
+
+      // Then
+      expect(text(root, "#job-title")).toBe(title)
+      expect((root.querySelector("#job-panel") as HTMLElement).dataset["status"]).toBe(status)
+    }
+  })
+
+  test("a finished transcription summarizes itself and steps the start button down", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    view.setAudio("/tmp/in/2026-10-03 주간 회의.m4a")
+    expect(isPrimary(root, "#start-button")).toBe(true)
+
+    // When
+    view.setBusy("transcription")
+    view.renderJob({ ...initialJobState, status: "completed", phase: "writing", percent: 100 })
+    view.renderResult(result)
+    view.setBusy(null)
+
+    // Then
+    expect(text(root, "#job-summary-text")).toBe("전사 완료 · 12개 발화 보존 · 1개 환각 제거")
+    expect(isPrimary(root, "#start-button")).toBe(false)
+    expect(text(root, "#start-label")).toBe("새 전사 시작")
+
+    // When: a new recording or file arrives, starting is the main task again
+    view.setAudio("/tmp/in/다음 회의.m4a")
+
+    // Then
+    expect(isPrimary(root, "#start-button")).toBe(true)
+    expect(text(root, "#start-label")).toBe("전사 시작")
+  })
+
+  test("the top bar names the current task and its status", () => {
+    // When: the environment still needs preparing
+    view.setEnvironment(environment(false))
+
+    // Then
+    expect(text(root, "#task-title")).toBe("로컬 엔진을 준비해 주세요")
+
+    // When: ready and idle
+    view.setEnvironment(environment(true))
+
+    // Then
+    expect(text(root, "#task-title")).toBe("새 회의 전사")
+    expect(text(root, "#task-status")).toBe("녹음하거나 오디오 파일을 선택하세요")
+
+    // When: a file is chosen, the meeting takes over the heading
+    view.setAudio("/tmp/in/2026-10-03 주간 회의.m4a")
+
+    // Then
+    expect(text(root, "#task-title")).toBe("2026-10-03 주간 회의")
+    expect(text(root, "#task-status")).toBe("전사 준비됨")
+
+    // When
+    view.setBusy("transcription")
+
+    // Then
+    expect(text(root, "#task-status")).toBe("전사 중")
+
+    // When
+    view.renderJob({ ...initialJobState, status: "running", phase: "aligning", percent: 46 })
+
+    // Then
+    expect(text(root, "#task-status")).toBe("전사 중 · 정렬 단계")
+
+    // When
+    view.renderResult(result)
+    view.setBusy(null)
+
+    // Then
+    expect(text(root, "#task-status")).toBe("전사 완료 · 회의록 작성 대기")
+
+    // When
+    view.renderMinutes("/tmp/out/meeting_회의록.md")
+
+    // Then
+    expect(text(root, "#task-status")).toBe("회의록 완료")
+  })
+
+  test("finished minutes make opening them the primary action", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    view.setAssistantKeyReady(true)
+    view.renderResult(result)
+    expect(hidden(root, "#open-minutes-button")).toBe(true)
+    expect(isPrimary(root, "#refine-button")).toBe(true)
+
+    // When
+    view.renderMinutes("/tmp/out/meeting_회의록.md")
+
+    // Then
+    expect(hidden(root, "#open-minutes-button")).toBe(false)
+    expect(isPrimary(root, "#refine-button")).toBe(false)
+    expect(text(root, "#refine-label")).toBe("다시 증강")
+  })
+
+  test("a new result clears the previous meeting's minutes", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    view.setAssistantKeyReady(true)
+    view.renderResult(result)
+    view.renderMinutes("/tmp/out/meeting_회의록.md")
+
+    // When
+    view.renderResult({ ...result, jobId: "next" })
+
+    // Then
+    expect(railState(root, "#step-augment")).toBe("pending")
+    expect(hidden(root, "#result-minutes-row")).toBe(true)
+    expect(hidden(root, "#open-minutes-button")).toBe(true)
+    expect(isPrimary(root, "#refine-button")).toBe(true)
+    expect(text(root, "#refine-label")).toBe("AI 증강 실행")
+  })
+
+  test("the augment picker presents the transcript it will use", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    expect(text(root, "#transcript-title")).toBe("전사문 파일 가져오기")
+
+    // When
+    view.renderResult(result)
+
+    // Then
+    expect(text(root, "#transcript-title")).toBe("대상 전사문")
+    expect(root.querySelector("#augment-panel .choice-divider")).toBeNull()
   })
 })
