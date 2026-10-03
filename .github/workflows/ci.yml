@@ -34,6 +34,11 @@ jobs:
       # at; without it the Tauri context macro fails to expand.
       - run: bun install --frozen-lockfile
       - run: bun run vite:build
+      # tauri.conf.json bundles `binaries/uv` and `resources/worker`, which are
+      # generated rather than committed; the build script fails without them.
+      # `cargo tauri dev/build` stage them through before*Command, plain cargo
+      # does not.
+      - run: bun run sidecar:stage
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
