@@ -682,7 +682,9 @@ summary:focus-visible {
 .settings-section-heading p,
 #settings-token-help,
 #settings-assistant-help,
-#settings-background-help {
+#settings-background-help,
+#chatgpt-plan-line,
+#chatgpt-data-notice {
   margin: 7px 0 0;
   color: var(--text-secondary);
   font-size: 11px;
@@ -1219,6 +1221,68 @@ button:disabled {
 
 .engine-segmented em[data-state="ready"] {
   color: var(--status-success);
+}
+
+.assistant-auth-segmented {
+  margin-top: var(--space-4);
+}
+
+/* Status pairs its color with text, so state never rides on color alone. */
+.chatgpt-status {
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.chatgpt-status[data-state="signedIn"] {
+  color: var(--status-success);
+}
+
+.chatgpt-status[data-state="signInRequired"] {
+  color: var(--status-warning);
+}
+
+#chatgpt-account-state[data-state="ready"] {
+  color: var(--status-success);
+}
+
+.chatgpt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.chatgpt-actions button,
+.chatgpt-limit-hint button {
+  min-height: 40px;
+  word-break: keep-all;
+}
+
+#assistant-chatgpt-panel .settings-message {
+  margin-top: var(--space-3);
+}
+
+#chatgpt-welcome {
+  margin-top: var(--space-3);
+}
+
+#chatgpt-welcome p,
+.chatgpt-limit-hint p {
+  margin: 0;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.chatgpt-limit-hint button {
+  margin-top: var(--space-3);
+}
+
+#chatgpt-data-notice {
+  margin-top: var(--space-4);
 }
 
 .participant-picker {

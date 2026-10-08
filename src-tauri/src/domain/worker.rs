@@ -3,6 +3,24 @@ use thiserror::Error;
 
 const PROTOCOL_VERSION: u8 = 1;
 
+/// Assistant failures the worker reports with a stable code the host forwards
+/// as the job error, instead of a generic process failure.
+pub const ASSISTANT_ERROR_CODES: [&str; 9] = [
+    "CHATGPT_USAGE_LIMIT_EXCEEDED",
+    "CHATGPT_USAGE_UNAVAILABLE",
+    "CHATGPT_NOT_ELIGIBLE",
+    "CHATGPT_UNSUPPORTED_REQUEST",
+    "CHATGPT_AUTH_REJECTED",
+    "CHATGPT_ACCESS_FORBIDDEN",
+    "CHATGPT_UNAVAILABLE",
+    "CHATGPT_RESPONSE_INCOMPLETE",
+    "CHATGPT_STREAM_INTERRUPTED",
+];
+
+pub fn is_assistant_error_code(code: &str) -> bool {
+    ASSISTANT_ERROR_CODES.contains(&code)
+}
+
 /// ASR biasing lists handed to the worker as one JSON object on disk.
 /// Keys and list order are the wire contract read by `parse_asr_context`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -96,7 +114,17 @@ pub fn parse_worker_event(line: &str) -> Result<WorkerEnvelope, ProtocolError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProtocolError, WorkerEvent, parse_worker_event};
+    use super::{ProtocolError, WorkerEvent, is_assistant_error_code, parse_worker_event};
+
+    #[test]
+    fn only_the_nine_assistant_codes_are_forwarded() {
+        assert!(is_assistant_error_code("CHATGPT_USAGE_LIMIT_EXCEEDED"));
+        assert!(is_assistant_error_code("CHATGPT_STREAM_INTERRUPTED"));
+        assert_eq!(super::ASSISTANT_ERROR_CODES.len(), 9);
+        assert!(!is_assistant_error_code("PROCESS_FAILED"));
+        assert!(!is_assistant_error_code("CHATGPT_SIGN_IN_REQUIRED"));
+        assert!(!is_assistant_error_code("chatgpt_usage_limit_exceeded"));
+    }
 
     #[test]
     fn parses_phase_event_when_protocol_version_is_supported() -> Result<(), ProtocolError> {

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 
-import { toJobEvent } from "./tauri-backend"
+import {
+  chatGptModelsSchema,
+  chatGptSettingsSchema,
+  chatGptSignOutSchema,
+  parseChatGptEvent,
+  toJobEvent,
+} from "./tauri-backend"
 
 describe("toJobEvent", () => {
   test("renames the worker's engine_version onto the domain field", () => {
@@ -45,5 +51,88 @@ describe("toJobEvent", () => {
     // Then: no throw, and the event is attributed to no job
     expect(event.type).toBe("log")
     expect(event.jobId).toBe("")
+  })
+})
+
+const signedInSettings = {
+  authMode: "chatGpt",
+  model: "gpt-5.5",
+  welcomeAcknowledged: true,
+  account: { state: "signedIn", email: "dev@example.com" },
+}
+
+describe("chatGptSettingsSchema", () => {
+  test("accepts the contract shape", () => {
+    // Given / When
+    const parsed = chatGptSettingsSchema.parse(signedInSettings)
+
+    // Then
+    expect(parsed).toEqual(signedInSettings as typeof parsed)
+  })
+
+  test("rejects a response that smuggles a token in at the top level", () => {
+    // Given: a host bug that leaks a credential next to the settings
+    const leaked = { ...signedInSettings, accessToken: "secret-value" }
+
+    // When / Then: strict parsing refuses the whole payload
+    expect(chatGptSettingsSchema.safeParse(leaked).success).toBe(false)
+  })
+
+  test("rejects a token nested in the account", () => {
+    // Given
+    const leaked = {
+      ...signedInSettings,
+      account: { ...signedInSettings.account, refreshToken: "secret-value" },
+    }
+
+    // When / Then
+    expect(chatGptSettingsSchema.safeParse(leaked).success).toBe(false)
+  })
+
+  test("rejects an account state the contract does not define", () => {
+    const unknown = { ...signedInSettings, account: { state: "pending", email: null } }
+
+    expect(chatGptSettingsSchema.safeParse(unknown).success).toBe(false)
+  })
+})
+
+describe("chatGptSignOutSchema", () => {
+  test("carries the settings and whether the server confirmed the revocation", () => {
+    // Given / When
+    const parsed = chatGptSignOutSchema.parse({
+      settings: { ...signedInSettings, authMode: "apiKey", model: null, account: { state: "signedOut", email: null } },
+      remoteRevocationConfirmed: false,
+    })
+
+    // Then
+    expect(parsed.remoteRevocationConfirmed).toBe(false)
+    expect(parsed.settings.account.state).toBe("signedOut")
+  })
+})
+
+describe("chatGptModelsSchema", () => {
+  test("keeps the server order and the slug/displayName pair", () => {
+    // Given
+    const models = [
+      { slug: "b-model", displayName: "B" },
+      { slug: "a-model", displayName: "A" },
+    ]
+
+    // When / Then
+    expect(chatGptModelsSchema.parse(models)).toEqual(models)
+  })
+})
+
+describe("parseChatGptEvent", () => {
+  test("reads both sign-in phases", () => {
+    expect(parseChatGptEvent({ phase: "awaitingBrowser" })).toBe("awaitingBrowser")
+    expect(parseChatGptEvent({ phase: "exchanging" })).toBe("exchanging")
+  })
+
+  test("drops a payload this build does not know instead of throwing", () => {
+    // Given: the listener runs inside Tauri's callback, where a throw vanishes
+    expect(parseChatGptEvent({ phase: "teleporting" })).toBeNull()
+    expect(parseChatGptEvent("nonsense")).toBeNull()
+    expect(parseChatGptEvent(null)).toBeNull()
   })
 })

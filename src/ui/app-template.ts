@@ -160,7 +160,14 @@ export const appTemplate = `
           </div>
           <div id="augment-key-hint" class="augment-hint" hidden>
             <i class="ph ph-key" aria-hidden="true"></i>
-            <p>AI 증강에는 OpenAI 호환 API 키가 필요합니다. <button class="text-button" type="button" data-action="open-settings">설정에서 등록</button></p>
+            <p>AI 증강에는 OpenAI 호환 API 키 또는 ChatGPT 로그인이 필요합니다. <button class="text-button" type="button" data-action="open-settings">설정에서 등록</button></p>
+          </div>
+          <div id="chatgpt-limit-hint" class="augment-hint chatgpt-limit-hint" role="alert" hidden>
+            <i class="ph ph-info" aria-hidden="true"></i>
+            <div>
+              <p>ChatGPT 사용량 한도에 도달해 회의록을 만들지 못했습니다. 한도가 초기화된 뒤 다시 실행해 주세요. 앱은 자동으로 다시 시도하지 않습니다.</p>
+              <button class="primary-button" type="button" data-action="open-chatgpt-usage">사용량 관리</button>
+            </div>
           </div>
           <p id="augment-waiting" class="augment-hint"><i class="ph ph-hourglass" aria-hidden="true"></i>전사를 마치거나 전사문을 가져오면 이 단계에서 바로 회의록을 증강할 수 있습니다.</p>
           <button id="transcript-selection" class="file-picker" type="button" data-action="import-transcript" data-selected="false">
@@ -256,9 +263,14 @@ export const appTemplate = `
         </section>
         <section class="settings-section" aria-labelledby="assistant-settings-title">
           <div class="settings-section-heading">
-            <div><strong id="assistant-settings-title">AI 증강</strong><span id="assistant-configured-state">API 키 없음</span></div>
-            <p>OpenAI 호환 API 토큰으로 전사본을 회의록으로 가공합니다. 이 단계에서만 전사본이 증강 제공자로 전송됩니다.</p>
+            <div><strong id="assistant-settings-title">AI 증강</strong><span id="assistant-configured-state">API 키 없음</span><span id="chatgpt-account-state" data-state="pending" hidden>로그인 안 됨</span></div>
+            <p>API 키 또는 ChatGPT 로그인으로 전사본을 회의록으로 가공합니다. 이 단계에서만 전사본이 증강 제공자로 전송됩니다.</p>
           </div>
+          <div class="segmented-control engine-segmented assistant-auth-segmented" role="radiogroup" aria-label="AI 증강 인증 방식">
+            <label><input type="radio" name="assistant-auth-mode" value="apiKey" checked /><span>API 키</span></label>
+            <label><input type="radio" name="assistant-auth-mode" value="chatGpt" /><span>ChatGPT</span></label>
+          </div>
+          <div id="assistant-api-key-panel">
           <label class="sr-only" for="settings-assistant-key">AI 증강 API 키</label>
           <div class="secret-field">
             <input id="settings-assistant-key" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="API 키" aria-describedby="settings-assistant-help" data-visible="false" readonly />
@@ -287,6 +299,29 @@ export const appTemplate = `
           <label class="settings-field-label" for="settings-assistant-base-url">API 주소 (선택)</label>
           <input id="settings-assistant-base-url" class="settings-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://api.z.ai/api/coding/paas/v4 (기본값)" aria-describedby="settings-base-url-help" />
           <p id="settings-base-url-help">OpenAI 호환 엔드포인트라면 모두 사용할 수 있습니다. OpenRouter는 https://openrouter.ai/api/v1 를 입력하세요. 비워 두면 z.ai 코딩 플랜 주소를 사용합니다.</p>
+          </div>
+          <div id="assistant-chatgpt-panel" hidden>
+            <p id="chatgpt-status" class="chatgpt-status" data-state="signedOut">ChatGPT에 로그인하지 않았습니다.</p>
+            <div class="chatgpt-actions">
+              <button id="chatgpt-sign-in-button" class="primary-button" type="button" data-action="sign-in-chatgpt">ChatGPT로 계속하기</button>
+              <button id="chatgpt-cancel-button" class="secondary-button" type="button" data-action="cancel-chatgpt-sign-in" hidden>취소</button>
+              <button id="chatgpt-sign-out-button" class="secondary-button danger" type="button" data-action="sign-out-chatgpt" hidden>ChatGPT 로그아웃</button>
+            </div>
+            <p id="chatgpt-message" class="settings-message" role="status" aria-live="polite" data-state="ready"></p>
+            <div id="chatgpt-welcome" class="augment-hint" hidden>
+              <i class="ph ph-info" aria-hidden="true"></i>
+              <div>
+                <p>ChatGPT 요금제로 회의록을 정제합니다. 사용량은 ChatGPT 요금제의 한도에서 차감되며, 한도는 다른 앱과 함께 씁니다.</p>
+                <button class="text-button" type="button" data-action="acknowledge-chatgpt-welcome">확인</button>
+              </div>
+            </div>
+            <div id="chatgpt-model-field" hidden>
+              <label class="settings-field-label" for="settings-chatgpt-model">가공 모델</label>
+              <select id="settings-chatgpt-model" class="settings-select" aria-describedby="chatgpt-plan-line"></select>
+              <p id="chatgpt-plan-line">ChatGPT 요금제 사용 중 · <button class="text-button" type="button" data-action="open-chatgpt-usage">사용량 관리</button></p>
+            </div>
+            <p id="chatgpt-data-notice">회의록 정제 때 전사문·참석자·단어집·사전 정보가 OpenAI API로 전송됩니다. ChatGPT 대화·계정 정보에는 접근하지 않습니다.</p>
+          </div>
           <label class="settings-field-label" for="settings-assistant-background">사전 정보</label>
           <textarea id="settings-assistant-background" class="settings-textarea" rows="8" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="settings-background-help" placeholder="제품/서비스: 갈피 (회의 녹음·전사 데스크톱 앱)&#10;팀: 하빈(팀리더), 지우(백엔드)&#10;별칭: 프로님 = 하빈&#10;도메인 용어: 화자분리, 정렬 체크포인트"></textarea>
           <p id="settings-background-help">참석자·제품명·약어·도메인 용어를 적어 두면 잘못 들린 단어와 화자를 보정합니다. 이 Mac에만 저장되고 회의록을 만들 때 함께 전송됩니다.</p>

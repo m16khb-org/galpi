@@ -11,6 +11,7 @@ from .engine import transcribe
 from .preparation import prepare_models
 from .protocol import EventWriter
 from .refine import refine
+from .responses_stream import AssistantError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -89,6 +90,9 @@ def main() -> int:
     except InvalidInput as error:
         events.fail("INVALID_INPUT", str(error))
         return 2
+    except AssistantError as error:
+        events.fail(error.code, str(error))
+        return 1
     except Exception as error:  # noqa: BLE001 - the host needs an event, not a traceback
         # Every abnormal exit must still reach the host as one error event;
         # an unlisted exception type would otherwise die silently on stderr.

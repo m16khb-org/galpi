@@ -1,11 +1,13 @@
+use super::chatgpt::ChatGptAccounts;
 use super::error::AppError;
 use super::model::{CompletedTranscription, EnvironmentStatus};
 use super::ports::{
-    ArtifactPort, EnginePort, RecordingPort, RefinementJob, RefinementPort, SettingsPort,
-    TranscriptImportPort, TranscriptionPort,
+    ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, EnginePort, RecordingPort,
+    RefinementJob, RefinementPort, SettingsPort, TranscriptImportPort, TranscriptionPort,
 };
 use super::use_cases::Application;
 use crate::domain::artifact::{ArtifactKind, Artifacts};
+use crate::domain::chatgpt::AssistantTransport;
 use crate::domain::engine::EnginePreset;
 use crate::domain::job::{
     SetupRequest, SpeakerHint, TranscriptImportRequest, TranscriptionRequest,
@@ -32,6 +34,7 @@ struct SeenRefinement {
     reasoning_effort: Option<String>,
     background: Option<String>,
     participants: Vec<String>,
+    transport: AssistantTransport,
     glossary: Vec<String>,
 }
 
@@ -68,6 +71,7 @@ struct FakePort {
     seen_prepare_engines: Mutex<Vec<EnginePreset>>,
     ready_presets: Mutex<Vec<EnginePreset>>,
     behavior: TranscriptionBehavior,
+    chatgpt: chatgpt::ChatGptFake,
 }
 
 impl FakePort {
@@ -85,6 +89,7 @@ impl FakePort {
             seen_engines: Mutex::new(Vec::new()),
             seen_prepare_engines: Mutex::new(Vec::new()),
             ready_presets: Mutex::new(vec![EnginePreset::Qwen3, EnginePreset::WhisperX]),
+            chatgpt: chatgpt::ChatGptFake::new(),
             behavior,
         }
     }
@@ -97,6 +102,9 @@ impl FakePort {
         let recording: Arc<dyn RecordingPort> = self.clone();
         let settings: Arc<dyn SettingsPort> = self.clone();
         let refinement: Arc<dyn RefinementPort> = self.clone();
+        let chatgpt_auth: Arc<dyn ChatGptAuthPort> = self.clone();
+        let chatgpt_store: Arc<dyn ChatGptStore> = self.clone();
+        let clock: Arc<dyn ClockPort> = self.clone();
         Application::new(
             engine,
             transcription,
@@ -105,6 +113,7 @@ impl FakePort {
             recording,
             settings,
             refinement,
+            ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock),
         )
     }
 }
@@ -123,6 +132,7 @@ impl RefinementPort for FakePort {
             .push(SeenRefinement {
                 transcript: job.transcript.to_owned(),
                 api_key: job.api_key.to_owned(),
+                transport: job.transport,
                 model: job.model.map(str::to_owned),
                 base_url: job.base_url.map(str::to_owned),
                 reasoning_effort: job.reasoning_effort.map(str::to_owned),
@@ -138,6 +148,7 @@ impl RefinementPort for FakePort {
                     .map(|entry| entry.term.clone())
                     .collect(),
             });
+        self.chatgpt.refine_outcome()?;
         Ok(job.output.to_owned())
     }
 }
@@ -761,4 +772,5 @@ async fn prepare_prepares_the_selected_preset() -> Result<(), AppError> {
     Ok(())
 }
 
+mod chatgpt;
 mod recording;

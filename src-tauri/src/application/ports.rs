@@ -3,6 +3,11 @@ use crate::application::model::{
     CompletedTranscription, EnvironmentStatus, RecordingFailure, RecordingResult, RecordingStatus,
 };
 use crate::domain::artifact::Artifacts;
+use crate::domain::chatgpt::{
+    AgentHostId, AssistantTransport, ChatGptModel, ChatGptPreferences, ChatGptRegistration,
+    ChatGptSettings, ChatGptSignInEvent, ChatGptTokens, RefreshFailure, RevocationOutcome,
+    SignInGrant, SignInRequest,
+};
 use crate::domain::engine::EnginePreset;
 use crate::domain::job::{SetupRequest, SpeakerHint};
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
@@ -112,7 +117,10 @@ pub struct RefinementJob<'a> {
     pub model: Option<&'a str>,
     pub base_url: Option<&'a str>,
     pub reasoning_effort: Option<&'a str>,
+    /// The bearer credential: the saved API key, or a ChatGPT access token
+    /// when `transport` is `Responses`.
     pub api_key: &'a str,
+    pub transport: AssistantTransport,
 }
 
 #[async_trait]
@@ -123,4 +131,60 @@ pub trait RefinementPort: Send + Sync {
         cancel: &mut oneshot::Receiver<()>,
         job: RefinementJob<'_>,
     ) -> Result<PathBuf, AppError>;
+}
+
+/// The Sign in with ChatGPT authorization server and the account's model list.
+#[async_trait]
+pub trait ChatGptAuthPort: Send + Sync {
+    /// Run the browser sign-in until the callback is exchanged, the user
+    /// cancels, or it times out.
+    async fn sign_in(
+        &self,
+        request: &SignInRequest,
+        cancel: &mut oneshot::Receiver<()>,
+    ) -> Result<SignInGrant, AppError>;
+    /// Exchange the refresh token; the result carries the rotated refresh token.
+    async fn refresh(
+        &self,
+        registration: &ChatGptRegistration,
+        refresh_token: &str,
+    ) -> Result<ChatGptTokens, RefreshFailure>;
+    /// Best-effort server-side revocation; never fails the caller.
+    async fn revoke(
+        &self,
+        registration: &ChatGptRegistration,
+        refresh_token: &str,
+    ) -> RevocationOutcome;
+    /// Listed models in server order.
+    async fn list_models(&self, access_token: &str) -> Result<Vec<ChatGptModel>, AppError>;
+}
+
+/// Persistent ChatGPT account state. Only `load_tokens`, `save_session`,
+/// `replace_tokens`, and the clears touch the secret store.
+#[async_trait]
+pub trait ChatGptStore: Send + Sync {
+    async fn load_settings(&self) -> Result<ChatGptSettings, AppError>;
+    async fn save_preferences(&self, preferences: ChatGptPreferences) -> Result<(), AppError>;
+    async fn load_or_create_host_id(&self) -> Result<AgentHostId, AppError>;
+    async fn load_registration(&self) -> Result<Option<ChatGptRegistration>, AppError>;
+    async fn load_tokens(&self) -> Result<Option<ChatGptTokens>, AppError>;
+    /// Store the registration, and the tokens when the grant allows plan use.
+    async fn save_session(
+        &self,
+        registration: ChatGptRegistration,
+        tokens: Option<ChatGptTokens>,
+    ) -> Result<(), AppError>;
+    async fn replace_tokens(&self, tokens: ChatGptTokens) -> Result<(), AppError>;
+    /// Drop the tokens and keep the registration.
+    async fn clear_tokens(&self) -> Result<(), AppError>;
+    /// Drop registration, tokens, and model, return to API-key mode, keep the host id.
+    async fn clear_session(&self) -> Result<(), AppError>;
+}
+
+pub trait ChatGptEvents: Send + Sync {
+    fn emit(&self, event: ChatGptSignInEvent) -> Result<(), AppError>;
+}
+
+pub trait ClockPort: Send + Sync {
+    fn now_unix(&self) -> u64;
 }

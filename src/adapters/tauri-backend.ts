@@ -23,6 +23,13 @@ import type {
   RefinementResult,
   TranscriptionResult,
 } from "../domain/job"
+import type {
+  ChatGptModel,
+  ChatGptPreferences,
+  ChatGptSettings,
+  ChatGptSignInPhase,
+  ChatGptSignOutResult,
+} from "../domain/chatgpt"
 
 const enginePresetSchema = z.enum(["qwen3", "whisperx"])
 
@@ -81,6 +88,30 @@ const refinementResultSchema = z.object({
   jobId: z.string(),
   minutes: z.string(),
 })
+
+// Strict on purpose: the host promises that no token, client id or host id
+// ever reaches the window, so an unknown key is a contract breach to refuse
+// rather than a field to quietly drop.
+export const chatGptSettingsSchema = z.strictObject({
+  authMode: z.enum(["apiKey", "chatGpt"]),
+  model: z.string().nullable(),
+  welcomeAcknowledged: z.boolean(),
+  account: z.strictObject({
+    state: z.enum(["signedOut", "signInRequired", "signedIn"]),
+    email: z.string().nullable(),
+  }),
+})
+
+export const chatGptModelsSchema = z.array(
+  z.strictObject({ slug: z.string(), displayName: z.string() }),
+)
+
+export const chatGptSignOutSchema = z.strictObject({
+  settings: chatGptSettingsSchema,
+  remoteRevocationConfirmed: z.boolean(),
+})
+
+const chatGptEventSchema = z.object({ phase: z.enum(["awaitingBrowser", "exchanging"]) })
 
 const transcriptImportSchema = z.object({
   jobId: z.string(),
@@ -274,6 +305,41 @@ export class TauriBackend implements BackendPort {
       handler(toJobEvent(payload))
     })
   }
+
+  async loadChatGptSettings(): Promise<ChatGptSettings> {
+    return chatGptSettingsSchema.parse(await invoke<unknown>("load_chatgpt_settings"))
+  }
+
+  async saveChatGptPreferences(preferences: ChatGptPreferences): Promise<void> {
+    await invoke("save_chatgpt_preferences", { preferences })
+  }
+
+  async signInWithChatGpt(): Promise<ChatGptSettings> {
+    return chatGptSettingsSchema.parse(await invoke<unknown>("sign_in_with_chatgpt"))
+  }
+
+  async cancelChatGptSignIn(): Promise<void> {
+    await invoke("cancel_chatgpt_sign_in")
+  }
+
+  async listChatGptModels(): Promise<readonly ChatGptModel[]> {
+    return chatGptModelsSchema.parse(await invoke<unknown>("list_chatgpt_models"))
+  }
+
+  async signOutOfChatGpt(): Promise<ChatGptSignOutResult> {
+    return chatGptSignOutSchema.parse(await invoke<unknown>("sign_out_of_chatgpt"))
+  }
+
+  async openChatGptUsagePage(): Promise<void> {
+    await openUrl("https://chatgpt.com/settings/usage")
+  }
+
+  async listenToChatGptEvents(handler: (phase: ChatGptSignInPhase) => void): Promise<() => void> {
+    return listen<unknown>("chatgpt-event", ({ payload }) => {
+      const phase = parseChatGptEvent(payload)
+      if (phase !== null) handler(phase)
+    })
+  }
 }
 
 /**
@@ -298,6 +364,17 @@ export function toJobEvent(payload: unknown): JobEvent {
   return raw.type === "prepared"
     ? { jobId: raw.jobId, type: raw.type, engineVersion: raw.engine_version }
     : raw
+}
+
+/**
+ * Read the phase out of a `chatgpt-event` payload. An unrecognized payload is
+ * dropped: the listener runs inside Tauri's callback where a throw is
+ * swallowed, and a missing progress hint costs nothing — the sign-in command's
+ * own result still decides the outcome.
+ */
+export function parseChatGptEvent(payload: unknown): ChatGptSignInPhase | null {
+  const parsed = chatGptEventSchema.safeParse(payload)
+  return parsed.success ? parsed.data.phase : null
 }
 
 function payloadJobId(payload: unknown): string {

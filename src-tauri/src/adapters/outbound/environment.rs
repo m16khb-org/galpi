@@ -1,6 +1,7 @@
 use super::paths::{AppPaths, QWEN3_ENGINE_VERSION};
 use crate::application::error::AppError;
 use crate::application::model::EnvironmentStatus;
+use crate::domain::chatgpt::AssistantTransport;
 use crate::domain::engine::EnginePreset;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -142,25 +143,34 @@ pub fn process_environment(
     env
 }
 
-/// Worker environment for assistant calls, carrying the assistant credential
-/// and, when configured, an OpenAI-compatible endpoint override.
+/// Worker environment for assistant calls, carrying the assistant credential.
+/// Chat Completions may also override the endpoint and reasoning effort; a
+/// Responses call is named explicitly and uses neither.
 pub fn assistant_environment(
     paths: &AppPaths,
     worker_root: &Path,
     api_key: &str,
     base_url: Option<&str>,
     reasoning_effort: Option<&str>,
+    transport: AssistantTransport,
 ) -> HashMap<OsString, OsString> {
     let mut env = process_environment(paths, worker_root, None);
     env.insert("GALPI_ASSISTANT_API_KEY".into(), api_key.into());
-    if let Some(base_url) = base_url {
-        env.insert("GALPI_ASSISTANT_BASE_URL".into(), base_url.into());
-    }
-    if let Some(reasoning_effort) = reasoning_effort {
-        env.insert(
-            "GALPI_ASSISTANT_REASONING_EFFORT".into(),
-            reasoning_effort.into(),
-        );
+    match transport {
+        AssistantTransport::Responses => {
+            env.insert("GALPI_ASSISTANT_TRANSPORT".into(), "responses".into());
+        }
+        AssistantTransport::ChatCompletions => {
+            if let Some(base_url) = base_url {
+                env.insert("GALPI_ASSISTANT_BASE_URL".into(), base_url.into());
+            }
+            if let Some(reasoning_effort) = reasoning_effort {
+                env.insert(
+                    "GALPI_ASSISTANT_REASONING_EFFORT".into(),
+                    reasoning_effort.into(),
+                );
+            }
+        }
     }
     env
 }
@@ -213,4 +223,111 @@ fn cache_dir_name(repo_id: &str) -> String {
 
 fn home_directory() -> PathBuf {
     std::env::var_os("HOME").map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::assistant_environment;
+    use crate::adapters::outbound::paths::AppPaths;
+    use crate::domain::chatgpt::AssistantTransport;
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+
+    fn paths() -> AppPaths {
+        let root = PathBuf::from("/tmp/galpi-environment-test");
+        let engine = root.join("engine");
+        let qwen3_root = engine.join("qwen3");
+        AppPaths {
+            python: engine.join(".venv/bin/python"),
+            engine_manifest: engine.join("ready"),
+            models_manifest: root.join("models/ready.json"),
+            engine_bin: engine.join("bin"),
+            cache: root.join("cache"),
+            python_installations: root.join("python"),
+            qwen3_python: qwen3_root.join(".venv/bin/python"),
+            qwen3_engine_manifest: qwen3_root.join("ready"),
+            qwen3_models_manifest: root.join("models/qwen3-ready.json"),
+            qwen3_engine_bin: qwen3_root.join("bin"),
+            root,
+            engine,
+            qwen3_root,
+        }
+    }
+
+    fn environment(
+        base_url: Option<&str>,
+        reasoning_effort: Option<&str>,
+        transport: AssistantTransport,
+    ) -> HashMap<OsString, OsString> {
+        assistant_environment(
+            &paths(),
+            Path::new("/tmp/worker"),
+            "bearer-value",
+            base_url,
+            reasoning_effort,
+            transport,
+        )
+    }
+
+    fn value<'a>(env: &'a HashMap<OsString, OsString>, key: &str) -> Option<&'a OsString> {
+        env.get(&OsString::from(key))
+    }
+
+    #[test]
+    fn responses_transport_is_named_and_drops_endpoint_and_effort() {
+        // Given: a ChatGPT job that still carries stale API-key settings
+        let env = environment(
+            Some("https://example.invalid/v1"),
+            Some("max"),
+            AssistantTransport::Responses,
+        );
+
+        // Then: the worker is told to use Responses and gets only the credential
+        assert_eq!(
+            value(&env, "GALPI_ASSISTANT_TRANSPORT"),
+            Some(&OsString::from("responses"))
+        );
+        assert_eq!(
+            value(&env, "GALPI_ASSISTANT_API_KEY"),
+            Some(&OsString::from("bearer-value"))
+        );
+        assert_eq!(value(&env, "GALPI_ASSISTANT_BASE_URL"), None);
+        assert_eq!(value(&env, "GALPI_ASSISTANT_REASONING_EFFORT"), None);
+    }
+
+    #[test]
+    fn chat_completions_transport_keeps_the_existing_keys() {
+        // Given
+        let env = environment(
+            Some("https://example.invalid/v1"),
+            Some("max"),
+            AssistantTransport::ChatCompletions,
+        );
+
+        // Then: the three assistant keys are unchanged and no transport is named
+        assert_eq!(
+            value(&env, "GALPI_ASSISTANT_API_KEY"),
+            Some(&OsString::from("bearer-value"))
+        );
+        assert_eq!(
+            value(&env, "GALPI_ASSISTANT_BASE_URL"),
+            Some(&OsString::from("https://example.invalid/v1"))
+        );
+        assert_eq!(
+            value(&env, "GALPI_ASSISTANT_REASONING_EFFORT"),
+            Some(&OsString::from("max"))
+        );
+        assert_eq!(value(&env, "GALPI_ASSISTANT_TRANSPORT"), None);
+    }
+
+    #[test]
+    fn chat_completions_without_overrides_sets_only_the_key() {
+        let env = environment(None, None, AssistantTransport::ChatCompletions);
+
+        assert!(value(&env, "GALPI_ASSISTANT_API_KEY").is_some());
+        assert_eq!(value(&env, "GALPI_ASSISTANT_BASE_URL"), None);
+        assert_eq!(value(&env, "GALPI_ASSISTANT_REASONING_EFFORT"), None);
+        assert_eq!(value(&env, "GALPI_ASSISTANT_TRANSPORT"), None);
+    }
 }
