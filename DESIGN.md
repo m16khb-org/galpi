@@ -14,58 +14,89 @@ Galpi is a calm local audio workbench: technically precise, quiet during long wo
 
 ## 2. Color
 
+Values come from `@seed-design/css` 3.0.2 (`base.css`), pinned to the light palette by
+`data-seed-color-mode="light-only"` on `<html>`. This table names the semantic tokens in use; SEED owns
+the values, so none are copied here.
+
 ### Palette
 
-| Role | Token | Light | Usage |
-|---|---|---:|---|
-| Surface/primary | `--surface-primary` | `#f7f6f2` | Window canvas |
-| Surface/secondary | `--surface-secondary` | `#efede7` | Setup rail, grouped controls |
-| Surface/elevated | `--surface-elevated` | `#fffefa` | Task and result surfaces |
-| Surface/inverse | `--surface-inverse` | `#20201e` | Log panel |
-| Surface/sunken | `--surface-sunken` | `#dedbd3` | Segmented-control track behind raised options |
-| Text/primary | `--text-primary` | `#24231f` | Headings and body |
-| Text/secondary | `--text-secondary` | `#666159` | Supporting copy |
-| Text/inverse | `--text-inverse` | `#f7f6f2` | Log panel text |
-| Border/default | `--border-default` | `#d8d4ca` | Inputs and dividers |
-| Border/subtle | `--border-subtle` | `#e8e4da` | Surface separation |
-| Accent/primary | `--accent-primary` | `#b75b37` | Primary action and current phase |
-| Accent/hover | `--accent-hover` | `#98482c` | Primary action hover |
-| Accent/on-primary | `--accent-on-primary` | `#fffefa` | Label on an accent-filled button |
-| Accent/text | `--accent-text` | `#98482c` | Small accent labels and text links (eyebrow, section index, phase label, text buttons) |
-| Status/success | `--status-success` | `#3f7356` | Ready and completed |
-| Status/warning | `--status-warning` | `#8a5e1c` | Setup attention |
-| Status/error | `--status-error` | `#a63f3f` | Failures |
-| Focus | `--focus-ring` | `#246b9b` | Keyboard focus only |
+| Role | Token | SEED step (light) | Usage |
+|---|---|---|---|
+| Canvas | `--seed-color-bg-neutral-muted` | gray-100 | Window canvas, status and artifact rows, file pickers, footer |
+| Grouped surface | `--seed-color-bg-neutral-weak` | gray-200 | Setup rail, token, speaker, and settings sections, path display, completed job row |
+| Layer | `--seed-color-bg-layer-default` | gray-00 | Panels, settings sheet, popover, inputs, selected segment, engine chip |
+| Inverse | `--seed-color-bg-neutral-inverted` | gray-900 | Log panel |
+| Track | `--seed-color-bg-neutral-weak-alpha` | black alpha-200 | Segmented-control track behind the selected option |
+| Overlay | `--seed-color-bg-overlay` | black alpha-700 | Settings dialog backdrop |
+| Text | `--seed-color-fg-neutral` | gray-1000 | Headings and body (17.1:1 on white) |
+| Text/muted | `--seed-color-fg-neutral-muted` | gray-800 | Supporting copy (6.6:1 on white, 6.0:1 on gray-200) |
+| Placeholder | `--seed-color-fg-neutral-subtle` | gray-700 | Input placeholders only, never copy (3.4:1) |
+| Text/inverse | `--seed-color-fg-neutral-inverted` | gray-00 | Log text (13.3:1) |
+| Stroke | `--seed-color-stroke-neutral-weak` | gray-400 | Inputs, dividers, sheet and popover edges, waveform track |
+| Stroke/subtle | `--seed-color-stroke-neutral-muted` | black alpha-300 | Surface separation, selected-segment edge, chip edge |
+| Brand fill | `--seed-color-bg-brand-solid` | carrot-800 (AA override) | Primary action, selected chip, record button, waveform fill |
+| Brand pressed | `--seed-color-bg-brand-solid-pressed` | carrot-900 (AA override) | Primary action hover, read by the recipe |
+| Brand text | `--seed-color-fg-brand` | carrot-800 (AA override) | Eyebrows, section indices, phase labels, ghost buttons, file and artifact icons (5.8:1 on white, 5.2:1 on gray-200) |
+| Brand stroke | `--seed-color-stroke-brand-solid` | carrot-700 | Current rail step marker, file-picker hover border |
+| Brand tint | `--seed-color-bg-brand-weak`, `--seed-color-stroke-brand-weak` | carrot-100, carrot-300 | Recorder and progress-card surface and edge, file icon tile |
+| On brand | `--seed-color-fg-on-brand-solid` | white | Label and glyph on a brand fill (5.8:1) |
+| Success | `--seed-color-fg-positive-contrast` | green-900 | Ready and completed text (8.9:1) |
+| Success badge | `--seed-color-bg-positive-solid`, `--seed-color-fg-on-positive-solid` | green-700, white | Completion check glyph (non-text, 4.0:1) |
+| Warning | `--seed-color-fg-warning-contrast` | yellow-900 | Setup attention, saving state (10.3:1) |
+| Error | `--seed-color-fg-critical-contrast` | red-900 | Failures and destructive labels (8.9:1, 8.1:1 on its tint) |
+| Error surface | `--seed-color-bg-critical-weak`, `--seed-color-stroke-critical-solid`, `--seed-color-bg-critical-solid` | red-100, red-700, red-700 | Error banners, banner edge, recording dot |
+| Disabled | `--seed-color-bg-disabled`, `--seed-color-fg-disabled` | gray-200, gray-500 | Disabled inputs; recipe buttons use the same pair |
+| Focus | `--seed-color-stroke-focus-ring` | blue-700 (AA override) | Keyboard focus only (3.95:1 on white, 3.6:1 on gray-200) |
+
+### AA overrides
+
+SEED's light defaults miss §8 for four pairs. One `:root[data-seed-color-mode="light-only"]` block placed
+after the imports in `src/styles.css` points them at a darker step of the same SEED palette; it has the
+same specificity as `base.css`, so source order makes it win.
+
+| Token | SEED default | Override | Reason |
+|---|---|---|---|
+| `--seed-color-bg-brand-solid` | carrot-600 (white label 2.9:1) | `--seed-color-palette-carrot-800` | White label reaches 5.8:1 |
+| `--seed-color-bg-brand-solid-pressed` | carrot-700 | `--seed-color-palette-carrot-900` | Hover stays darker than rest |
+| `--seed-color-fg-brand` | carrot-600 (2.9:1 on white) | `--seed-color-palette-carrot-800` | Small brand text reaches 5.8:1 |
+| `--seed-color-stroke-focus-ring` | blue-600 (2.8:1 on white) | `--seed-color-palette-blue-700` | Focus indicator clears 3:1 |
+| `--seed-feedback-scale` | 1 | `--seed-scale-s98` | Recipe press feedback without SEED's JS hook; SEED sets the scale to 1 under reduced motion |
 
 ### Rules
 
 - Accent marks an action or current pipeline state; it is never decorative.
-- Surfaces use warm tonal shifts. New colors must be added here first.
+- Colors come from SEED tokens: semantic tokens in rules, palette steps only inside the AA overrides.
+  Hex, `rgb()`, and `hsl()` literals are not allowed; a new token joins this table in the same change,
+  and `src/styles.test.ts` fails when the table and the stylesheet differ.
+- The two translucent surfaces (topbar, current rail step) mix a SEED token with `transparent`.
 - Status colors always pair with text or a state label, never color alone.
 
 ## 3. Typography
 
 ### Scale
 
-Values below are the implemented compact scale, px-locked to `src/styles.css`
-(the stylesheet is authoritative; this table documents it — drift is a defect).
+Sizes are SEED type tokens (`rem`-based on the default 16px root). Off-scale sizes moved to the nearest
+step: 10px captions became 11px, 17px and 19px became 18px, 21px became 22px.
 
-| Level | Size | Weight | Line Height | Tracking | Usage |
-|---|---:|---:|---:|---:|---|
-| Display | `clamp(24px, 3vw, 36px)` | 500 | 1.12 | `-0.03em` | Topbar task heading |
-| H2 | `21px` | 700 | 1.3 | `-0.015em` | Panel heading, left-aligned under its eyebrow |
-| Brand | `19px` | 700 | normal | `-0.02em` | Rail brand lockup |
-| Step title | `14px` | 700 | normal | 0 | Rail step names |
-| Status label | `13px` | 400 | normal | 0 | Status rows, job messages |
-| Body | `12px` | 400 | 1.55 | normal | Default UI prose |
-| Body/sm | `11px` | 400 | normal | 0 | Supporting copy, small labels |
-| Caption/eyebrow | `10px` | 700 | normal | `0.12em` | Eyebrows, section indices, footer |
-| Mono | `10–12px` | 400 | 1.5 | 0 | Logs, paths, inline code |
+| Level | Size | Weight | Line height | Tracking | Usage |
+|---|---|---|---|---|---|
+| Display | `clamp(var(--seed-font-size-t9), 3vw, var(--seed-font-size-t12))` | `--seed-font-weight-medium` | 1.12 | `-0.03em` | Topbar task heading |
+| H2 | `--seed-font-size-t8` | `--seed-font-weight-bold` | `--seed-line-height-t8` | `-0.015em` | Panel heading, left-aligned under its eyebrow |
+| Sheet title, job percent | `--seed-font-size-t9` | bold, medium | normal | `-0.025em` (sheet title) | Settings title, progress percent |
+| Card title, brand | `--seed-font-size-t6` | bold | normal | `-0.02em` (brand) | Rail brand lockup, progress-card title |
+| Artifact icon | `--seed-font-size-t7` | — | — | — | Artifact row glyph |
+| Step title | `--seed-font-size-t4` | bold | normal | 0 | Rail step names, recording clock (mono) |
+| Status label | `--seed-font-size-t3` | regular | normal; `--seed-line-height-t3` for panel descriptions | 0 | Status rows, job messages, chips, roster rows, panel descriptions |
+| Body | `--seed-font-size-t2` | regular | `--seed-line-height-t2` | normal | Default UI prose, field labels, settings fields |
+| Body/sm, Caption | `--seed-font-size-t1` | regular, bold | `--seed-line-height-t1` | `0.12em` eyebrows; `0.04em` rail brand caption (fits one line) | Supporting copy; eyebrows, section indices, footer |
+| Mono | `--seed-font-size-t1` | regular | `--seed-line-height-t1` | 0 | Logs, paths, inline code |
+
+Former 600 weights round up to bold; SEED has no letter-spacing tokens, so tracking stays in `em`.
 
 ### Font Stack
 
-- Primary: `"Avenir Next", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif`
-- Mono: `"SFMono-Regular", "JetBrains Mono", Menlo, monospace`
+- Primary: `var(--seed-font-family)` (SEED system stack: `-apple-system`, Apple SD Gothic Neo, Pretendard).
+- Mono: `"SFMono-Regular", Menlo, monospace`; SEED ships no mono token.
 
 ### Korean line breaking
 
@@ -77,18 +108,28 @@ Values below are the implemented compact scale, px-locked to `src/styles.css`
 
 ### Base Unit
 
-All spacing derives from 4px.
+Padding, margin, and gap use SEED's 4px dimension scale with half steps. Off-scale values moved to the
+nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px chip area, icon tiles) stay literal.
 
 | Token | Value | Usage |
 |---|---:|---|
-| `--space-1` | 4px | Tight icon/label spacing |
-| `--space-2` | 8px | Compact inline groups |
-| `--space-3` | 12px | Input interior spacing |
-| `--space-4` | 16px | Standard grouping |
-| `--space-5` | 20px | Panel interior spacing |
-| `--space-6` | 24px | Primary panel padding |
-| `--space-8` | 32px | Section separation |
-| `--space-10` | 40px | Major task separation |
+| `--seed-dimension-x0_5` | 2px | Hairline gaps, focus-ring width and offset |
+| `--seed-dimension-x1` | 4px | Tight icon and label spacing |
+| `--seed-dimension-x1_5` | 6px | Chip and row gaps |
+| `--seed-dimension-x2` | 8px | Compact inline groups |
+| `--seed-dimension-x2_5` | 10px | Row padding, text-button top gap |
+| `--seed-dimension-x3` | 12px | Input interior spacing |
+| `--seed-dimension-x3_5` | 14px | Card and row interior spacing |
+| `--seed-dimension-x4` | 16px | Standard grouping |
+| `--seed-dimension-x4_5` | 18px | Popover padding, settings status line |
+| `--seed-dimension-x5` | 20px | Panel interior spacing |
+| `--seed-dimension-x6` | 24px | Section padding |
+| `--seed-dimension-x7` | 28px | Panel padding |
+| `--seed-dimension-x8` | 32px | Section separation |
+| `--seed-dimension-x9` | 36px | Speaker-count number inputs |
+| `--seed-dimension-x10` | 40px | Touch targets, control height, workspace gutter |
+| `--seed-dimension-x12` | 48px | Status row height |
+| `--seed-dimension-x14` | 56px | Rail step offset, workspace bottom padding |
 
 ### Grid
 
@@ -126,10 +167,19 @@ All spacing derives from 4px.
 
 ### Status Button
 
-- **Structure**: one label plus optional progress/status glyph from Phosphor Icons.
-- **Variants**: primary, secondary, quiet, destructive.
-- **Emphasis follows the task**: one primary action per stage. After a transcription renders, `전사 시작` steps down to a secondary `새 전사 시작` until new audio arrives; after minutes render, `회의록 열기` becomes primary and the augment action steps down to a secondary `다시 증강`.
-- **States**: idle, loading, success, error, disabled.
+- **Structure**: one label plus optional progress/status glyph from Phosphor Icons, rendered with the SEED
+  `action-button` recipe. `src/ui/seed.ts` composes the recipe classes; the Galpi classes
+  (`primary-button`, `secondary-button`, `text-button`, …) stay alongside them as selectors.
+- **Variants**: primary → `brandSolid`; secondary → `neutralOutline`; quiet → `ghost`, whose text color
+  is set through the recipe hook `--seed-box-color` (`--seed-color-fg-brand` for text actions); destructive →
+  `neutralOutline` with a `--seed-color-fg-critical-contrast` label, because SEED has no critical outline.
+- **Sizes**: `medium` (40px) everywhere a touch target is required; `xsmall` (32px pill) only for the
+  recorder stop/discard pair and the token-guide close button, which were already compact.
+- **Text actions**: ghost text buttons (`text-button`, the token-guide trigger) start-align and narrow the
+  recipe's inline padding through `--seed-box-padding-left` / `--seed-box-padding-right`
+  (`--seed-dimension-x1_5`) so the label keeps the left edge of the copy above it.
+- **Emphasis follows the task**: one primary action per stage. After a transcription renders, `전사 시작` steps down to a secondary `새 전사 시작` until new audio arrives; after minutes render, `회의록 열기` becomes primary and the augment action steps down to a secondary `다시 증강`. The step-down swaps the recipe variant together with the Galpi class.
+- **States**: idle, loading, success, error, disabled. Disabled recipe buttons use SEED's disabled colors instead of opacity.
 
 ### Participant Chips
 
@@ -144,7 +194,7 @@ All spacing derives from 4px.
 - **Behavior**: entries reach the worker as a `<단어집>` prompt block so misheard terms are corrected against the saved spelling; an empty glossary states that no terms are registered.
 - **States**: the section header carries a `N개` counter (or `비어 있음`); rows are removed individually with a labeled X button.
 - **Accessibility**: `aria-busy` while loading and polite live label updates.
-- **Motion**: 100ms press scale, 180ms opacity label swap; instant under reduced motion.
+- **Motion**: row removal buttons follow the recipe press feedback; instant under reduced motion.
 
 ### Field Group
 
@@ -196,28 +246,33 @@ All spacing derives from 4px.
 ## 6. Motion & Interaction
 
 | Type | Duration | Easing | Usage |
-|---|---:|---|---|
-| Micro | 100ms | `ease-out` | Press feedback |
-| Standard | 180ms | `cubic-bezier(0.16, 1, 0.3, 1)` | State swaps |
-| Emphasis | 320ms | `cubic-bezier(0.16, 1, 0.3, 1)` | Phase transition |
+|---|---|---|---|
+| Micro | `--seed-duration-d2` | `--seed-timing-function-easing` | Chip selection color |
+| Press | recipe-owned | `--seed-feedback-scale` (`--seed-scale-s98`) | Action-button press |
+| Emphasis | `--seed-duration-d6` | `--seed-timing-function-enter-expressive` | Waveform fill |
 
 - Animate only transform, opacity, and progress clip/scale.
+- The recording pulse keeps its 1.6s loop; SEED has no looping-duration token.
 - Subscribe to Tauri events before invoking setup or transcription.
 - Running work always exposes a cancel action.
-- `prefers-reduced-motion: reduce` removes transforms and keeps instant state changes.
+- `prefers-reduced-motion: reduce` collapses transition and animation durations and caps iteration at one
+  with `!important`, because recipe class transitions outrank a universal rule; SEED drops the press scale to 1.
 
 ## 7. Depth & Surface
 
-Strategy: mixed tonal shift and whisper-level warm shadows.
+Strategy: tonal layers plus SEED shadow tokens only.
 
-| Level | Value | Usage |
+| Level | Token | Usage |
 |---|---|---|
-| Edge | `inset 0 0 0 1px rgb(89 72 51 / 0.08)` | Inputs and compact controls |
-| Rest | `0 1px 2px rgb(78 50 23 / 0.05), 0 8px 24px rgb(78 50 23 / 0.04)` | Main surfaces |
-| Raised | `0 2px 6px rgb(78 50 23 / 0.07), 0 18px 42px rgb(78 50 23 / 0.07)` | Modal or active result |
+| Edge | 1px `--seed-color-stroke-neutral-weak` border | Inputs and compact controls |
+| Rest | `--seed-shadow-s1` | Panels, engine chip, brand mark |
+| Raised | `--seed-shadow-s3` | Settings sheet, token-guide popover |
 
-- Cards use 14px radius; inputs use 10px; primary buttons are pills.
-- No glass blur, outer glow, or pure black shadow.
+- Radius: `--seed-radius-r3_5` panels; `--seed-radius-r4` settings sheet; `--seed-radius-r3` sections,
+  cards, and pickers; `--seed-radius-r2_5` rows, engine chip, segmented track, and log; `--seed-radius-r2`
+  inputs, recipe buttons, segment options, and banners; `--seed-radius-r1` waveform track;
+  `--seed-radius-full` chips and the settings close button.
+- No glass blur or outer glow.
 
 ## 8. Accessibility Constraints & Accepted Debt
 
@@ -234,5 +289,5 @@ Strategy: mixed tonal shift and whisper-level warm shadows.
 
 | Item | Location | Why accepted | Owner / Exit |
 |---|---|---|---|
-| No dark theme in first release | Whole app | The desktop utility uses one controlled warm-light workspace; a second theme would double initial visual QA without changing task completion. | Add only after a user preference request. |
+| No dark theme in first release | Whole app | The desktop utility uses one controlled light workspace (`data-seed-color-mode="light-only"`); a second theme would double initial visual QA without changing task completion. | Add only after a user preference request. |
 | macOS ARM64 packaging first | Build pipeline | Current target workstation is Apple Silicon and ML dependencies are platform-heavy. | Add signed Intel/Windows packages with platform-specific QA. |
