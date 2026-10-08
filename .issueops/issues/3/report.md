@@ -91,3 +91,15 @@
   - `cargo clippy --all-targets -D warnings`가 mac과 Windows 타깃(가짜 RC) 모두에서 통과.
   - `cargo test --all-targets` 105 passed / 1 ignored.
 - **보고서 위치:** `artifact/`는 git이 무시하는 디렉터리라, 보고서를 커밋되는 `.issueops/issues/3/report.md`로 옮겼다.
+
+## draft PR CI 1차 (run 37829566909, head 0636d22)
+
+- **통과:** `bundle-windows`, `windows-engine`, `windows-install-smoke`, `frontend`(macos-15·windows-latest), `worker`(macos-15·windows-latest), `rust (macos-15)`.
+- **실패:** `rust (windows-latest)` 하나. 테스트는 105 passed, 1 failed, 2 ignored였다.
+  - Job Object 트리 종료, Credential Manager 왕복, Power Request 테스트는 통과했다.
+  - 실패한 테스트는 `a_disarmed_guard_still_clears_the_job_when_it_closes`이다. 기대와 달리 `!status.success()` 단언이 실패했다.
+- **원인:** `KILL_ON_JOB_CLOSE`로 종료된 프로세스는 종료 코드 0을 남긴다. 10초 timeout 안에 끝났으므로 종료 자체는 일어났고(30회 ping은 약 29초가 걸린다), 틀린 것은 테스트의 종료 코드 단언이었다.
+- **수정:** 종료 코드 단언을 지우고, 10초 timeout 안에 끝나는지로 판정한다.
+- **재검증:**
+  - `cargo fmt --check` 통과.
+  - `cargo clippy --all-targets -D warnings`가 mac과 Windows 타깃(가짜 RC) 모두에서 통과.

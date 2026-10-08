@@ -243,9 +243,10 @@ mod windows_job {
         guard.disarm();
         drop(guard);
 
-        // Then: KILL_ON_JOB_CLOSE still ends the stragglers
+        // Then: KILL_ON_JOB_CLOSE ends the stragglers well before 30 pings.
+        // The kernel uses exit code 0 for that kill, so only the timing proves it.
         let status = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await?;
-        assert!(!status?.success());
+        status?;
         Ok(())
     }
 }
