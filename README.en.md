@@ -122,8 +122,21 @@ Setup:
 3. Select the participants for this meeting and review the glossary and background context.
 4. Finish transcription, then select `AI 증강 실행`.
 
+### Use ChatGPT sign-in
+
+You can sign in with a ChatGPT account instead of an API key to use it as the minutes refinement model.
+
+1. In `설정` (Settings) → **AI 증강** (AI augmentation), choose **ChatGPT** and select `ChatGPT로 계속하기` (Continue with ChatGPT).
+2. Sign in and approve access in the system browser that opens. You return to the app when approval finishes.
+3. Pick a model from the signed-in account's `/v1/models` list.
+
+- Usage limits are shared with your ChatGPT plan; the app does not resend a request when a limit is hit.
+- The app does not access your ChatGPT conversations or account information.
+- Signing out attempts to revoke the token on the server and deletes the local tokens. You can also remove access under connected apps in ChatGPT settings.
+- Tokens are currently stored in `settings.json` with `0600` permissions (see "Local data and privacy" below). The refresh token is valid for 30 days and rotates on each refresh.
+
 > [!WARNING]
-> Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on the Mac. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API. Review the provider's security and retention policy before using this feature with sensitive meetings.
+> Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on the Mac. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API (the OpenAI API when ChatGPT sign-in is used). Review the provider's security and retention policy before using this feature with sensitive meetings.
 
 ## Outputs
 
@@ -159,7 +172,7 @@ The completion screen can open each artifact or reveal its output folder in Find
 
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
-- Every setting, including the Hugging Face token and the AI augmentation API key, is stored in an Application Support settings file with `0600` permissions.
+- Every setting, including the Hugging Face token, the AI augmentation API key, and the ChatGPT sign-in tokens, is stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
 - Credentials are not encrypted with the macOS Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The move lands together with Developer ID signing; the implementation is ready in `src-tauri/src/adapters/outbound/secrets.rs`.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.

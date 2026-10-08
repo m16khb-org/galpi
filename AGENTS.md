@@ -46,7 +46,11 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 | Frontend backend port | `src/domain/backend.ts` | Port contract owned by the inner layer; `TauriBackend` implements it |
 | Tauri IPC client | `src/adapters/tauri-backend.ts` | `invoke`/`listen` plus Zod boundary parsing |
 | Native composition | `src-tauri/src/composition.rs` | Only concrete port wiring and Tauri registration |
-| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | Sixteen frontend commands and event bridges |
+| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | 23 frontend commands and event bridges (`job-event`, `recording-event`, `chatgpt-event`) |
+| ChatGPT sign-in (use cases) | `src-tauri/src/application/chatgpt.rs` | Session, token refresh, model list, sign-out behind `ChatGptAuthPort`/`ChatGptStore` |
+| ChatGPT sign-in (adapters) | `src-tauri/src/adapters/outbound/chatgpt/` | OAuth/PKCE, loopback callback, ID-token, models, system browser |
+| ChatGPT sign-in (UI) | `src/ui/chatgpt-controller.ts` | Sign-in/out, model choice, `chatgpt-event` handling |
+| Responses API stream | `worker/galpi_worker/responses_stream.py` | Worker-side refinement transport for ChatGPT sign-in |
 | Backend use cases | `src-tauri/src/application/use_cases.rs` | Central `Application` facade |
 | Port contracts | `src-tauri/src/application/ports.rs` | Add platform behavior behind a port |
 | Roster value objects | `src-tauri/src/domain/roster.rs` | `AssistantSettings`, `Participant`, `GlossaryEntry`, trimming rules |
@@ -66,7 +70,7 @@ call sites, not semantic workspace references.
 |--------|------|----------|------|------|
 | `AppController` | class | `src/ui/controller.ts` | 1 construction | Frontend workflow coordinator |
 | `TauriBackend` | class | `src/adapters/tauri-backend.ts` | 1 construction | IPC and runtime-validation boundary |
-| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 16 command paths | Backend use-case facade |
+| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 23 command paths | Backend use-case facade |
 | `run` | function | `src-tauri/src/composition.rs` | 1 entry call | Native composition root |
 | `run_process` | async function | `src-tauri/src/adapters/outbound/process.rs` | 3 production calls | Worker/process supervisor |
 | `NativeRecorder` | struct | `src-tauri/src/adapters/outbound/recording/mod.rs` | 1 production wiring | Recording port implementation |

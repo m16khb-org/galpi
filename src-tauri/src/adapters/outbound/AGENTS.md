@@ -10,6 +10,8 @@ cleanup, and stable error codes are the contract here.
 
 ```text
 outbound/
+├── chatgpt/          # ChatGptAuthPort: OAuth/PKCE, loopback callback, ID-token, /v1/models, system browser; SystemClock
+├── settings/chatgpt.rs # ChatGptStore on LocalSettingsStore (tokens in 0600 settings.json)
 ├── desktop.rs        # EnginePort, TranscriptionPort, TranscriptImportPort, ArtifactPort facade
 ├── environment.rs    # Readiness probe and worker environment
 ├── import.rs         # Transcript import into a per-meeting folder
@@ -33,6 +35,7 @@ outbound/
 | Change backpressure/RIFF caps | `recording/writer.rs` |
 | Change error mapping | `recording/cleanup.rs`, `recording/failure.rs` |
 | Change worker variables | `process_environment` in `environment.rs` |
+| Change refinement transport variables | `assistant_environment` in `environment.rs`; `GALPI_ASSISTANT_TRANSPORT=responses` is set only for the ChatGPT Responses transport |
 | Change meeting folder or artifact naming | `paths.rs` (`meeting_stem`, `create_meeting_directory`, `recording_folder_name`, `sanitize_name`); default root in `environment.rs` (`~/Documents/Galpi`) |
 | Change debug/release paths | `uv_binary`, `worker_root` in `paths.rs` |
 
