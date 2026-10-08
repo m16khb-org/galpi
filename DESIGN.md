@@ -64,8 +64,8 @@ Values below are the implemented compact scale, px-locked to `src/styles.css`
 
 ### Font Stack
 
-- Primary: `"Avenir Next", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif`
-- Mono: `"SFMono-Regular", "JetBrains Mono", Menlo, monospace`
+- Primary: `"Avenir Next", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", sans-serif`
+- Mono: `"SFMono-Regular", Menlo, Consolas, monospace`
 
 ### Korean line breaking
 
@@ -235,4 +235,4 @@ Strategy: mixed tonal shift and whisper-level warm shadows.
 | Item | Location | Why accepted | Owner / Exit |
 |---|---|---|---|
 | No dark theme in first release | Whole app | The desktop utility uses one controlled warm-light workspace; a second theme would double initial visual QA without changing task completion. | Add only after a user preference request. |
-| macOS ARM64 packaging first | Build pipeline | Current target workstation is Apple Silicon and ML dependencies are platform-heavy. | Add signed Intel/Windows packages with platform-specific QA. |
+| macOS ARM64 and Windows x64 only | Build pipeline | Apple Silicon macOS and Windows 10/11 x64 are the supported targets; ML dependencies are platform-heavy. | Intel macOS and Linux remain unsupported; Windows x64 ships as an unsigned NSIS installer. Add signing and further targets with platform-specific QA. |

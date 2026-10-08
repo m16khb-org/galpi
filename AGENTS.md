@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-Galpi is an Apple Silicon macOS desktop app for local Korean meeting recording and
+Galpi is a macOS (Apple Silicon) and Windows x64 desktop app for local Korean meeting recording and
 transcription. It spans a Bun/Vite TypeScript frontend, a Rust/Tauri host, and a
 bundled Python/WhisperX worker connected by a versioned JSONL protocol.
 
@@ -46,7 +46,7 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 | Frontend backend port | `src/domain/backend.ts` | Port contract owned by the inner layer; `TauriBackend` implements it |
 | Tauri IPC client | `src/adapters/tauri-backend.ts` | `invoke`/`listen` plus Zod boundary parsing |
 | Native composition | `src-tauri/src/composition.rs` | Only concrete port wiring and Tauri registration |
-| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | Sixteen frontend commands and event bridges |
+| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | Eighteen frontend commands and event bridges |
 | Backend use cases | `src-tauri/src/application/use_cases.rs` | Central `Application` facade |
 | Port contracts | `src-tauri/src/application/ports.rs` | Add platform behavior behind a port |
 | Roster value objects | `src-tauri/src/domain/roster.rs` | `AssistantSettings`, `Participant`, `GlossaryEntry`, trimming rules |
@@ -54,7 +54,7 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 | Native recording | `src-tauri/src/adapters/outbound/recording/` | CPAL callback, bounded queue, WAV writer |
 | Worker pipeline | `worker/galpi_worker/engine.py` | ASR, alignment, diarization, output publication |
 | Worker protocol | `worker/galpi_worker/protocol.py`, `src-tauri/src/domain/worker.rs` | Coupled cross-language contract |
-| Build staging | `scripts/stage-sidecars.ts` | Verified ARM64 `uv`; copies worker resources |
+| Build staging | `scripts/stage-sidecars.ts` | Verified per-target `uv` (`scripts/sidecar-targets.ts`); copies worker resources |
 | Architecture fences | `scripts/check-architecture.ts` | Authoritative dependency/locality check |
 
 ## CODE MAP
@@ -66,7 +66,7 @@ call sites, not semantic workspace references.
 |--------|------|----------|------|------|
 | `AppController` | class | `src/ui/controller.ts` | 1 construction | Frontend workflow coordinator |
 | `TauriBackend` | class | `src/adapters/tauri-backend.ts` | 1 construction | IPC and runtime-validation boundary |
-| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 16 command paths | Backend use-case facade |
+| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 18 command paths | Backend use-case facade |
 | `run` | function | `src-tauri/src/composition.rs` | 1 entry call | Native composition root |
 | `run_process` | async function | `src-tauri/src/adapters/outbound/process.rs` | 3 production calls | Worker/process supervisor |
 | `NativeRecorder` | struct | `src-tauri/src/adapters/outbound/recording/mod.rs` | 1 production wiring | Recording port implementation |
@@ -142,12 +142,12 @@ bun run build
 
 ## NOTES
 
-- Supported distribution target: macOS 14+ on Apple Silicon; Rust 1.88+, Bun 1.3+.
+- Supported distribution targets: macOS 14+ (Apple Silicon) and Windows 10/11 x64; Rust 1.88+, Bun 1.3+.
 - `bun run check` covers architecture, Biome, and TypeScript only; `bun run check:all` adds the
   Rust and Python gates.
-- Dev/build staging may download the pinned ARM64 `uv` archive before compiling Tauri.
-- `bun run build` expects macOS `hdiutil`; signing and notarization remain separate.
-- Build scripts hardcode ARM64; the DMG name follows `tauri.conf.json`'s version.
+- Dev/build staging may download the pinned `uv` archive for the host target (`scripts/sidecar-targets.ts`; override with `GALPI_SIDECAR_TARGET`) before compiling Tauri.
+- `bun run build` (`scripts/build.ts`) builds `.app` + DMG via macOS `hdiutil`, or an unsigned NSIS installer on Windows; signing and notarization remain separate.
+- Only `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` sidecars exist; the DMG name follows `tauri.conf.json`'s version.
 - Worker protocol, Rust parser, frontend event schema, and job reducer form one change set.
 
 <!-- AGENT_HARNESS:START -->

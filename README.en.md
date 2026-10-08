@@ -5,7 +5,7 @@
 <h1 align="center">Galpi · 갈피</h1>
 
 <p align="center">
-  A local-first desktop app that records meetings on Apple Silicon Macs,<br />
+  A local-first desktop app that records meetings on Apple Silicon Macs and Windows x64,<br />
   separates speakers, transcribes Korean audio, and optionally produces AI meeting minutes
 </p>
 
@@ -16,8 +16,8 @@
 </p>
 
 > [!IMPORTANT]
-> Galpi 0.1.0 is a development build for **Apple Silicon Macs running macOS 14 or later**.
-> The current DMG is unsigned and not notarized. Intel Macs, Windows, and Linux are not supported.
+> Galpi 0.1.0 is a development build for **Apple Silicon Macs running macOS 14 or later** and **Windows 10/11 x64**.
+> The macOS DMG is unsigned and not notarized, and the Windows installer is unsigned. Intel Macs and Linux are not supported.
 
 ## At a glance
 
@@ -25,7 +25,7 @@ Galpi records audio inside the app or imports an existing meeting file, then run
 
 | Capability | What it does |
 |---|---|
-| Direct recording | Records CoreAudio microphone input to a 16-bit PCM WAV |
+| Direct recording | Records microphone input (CPAL: CoreAudio/WASAPI) to a 16-bit PCM WAV |
 | File import | `m4a`, `mp3`, `wav`, `mp4`, `mov`, `aac`, `flac`, `ogg` |
 | Local transcription | Korean ASR on the `Qwen3` (default) or `WhisperX` preset |
 | Speaker diarization | pyannote diarization with automatic, exact, or min/max speaker-count hints |
@@ -41,7 +41,8 @@ Galpi records audio inside the app or imports an existing meeting file, then run
 
 Requirements:
 
-- macOS 14 or later on Apple Silicon
+- macOS 14 or later on Apple Silicon, or Windows 10/11 x64
+- Windows: Microsoft Visual C++ 2015–2022 x64 redistributable (not bundled)
 - Rust 1.88 or later
 - Bun 1.3 or later
 - Tauri CLI 2.11.4
@@ -52,7 +53,15 @@ bun install
 bun run dev
 ```
 
-`bun run dev` stages the verified arm64 `uv` binary, the Python worker, the frontend, and the Tauri app. You do not need to preinstall Python, ffmpeg, or WhisperX globally.
+`bun run dev` stages the verified `uv` binary for the current platform, the Python worker, the frontend, and the Tauri app. You do not need to preinstall Python, ffmpeg, or WhisperX globally. Use the same command in Windows PowerShell.
+
+### Windows quick start
+
+1. Install the [Microsoft Visual C++ 2015–2022 x64 redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist). The app does not bundle it.
+2. Run the unsigned NSIS installer (`.exe`). If SmartScreen warns, choose **More info → Run anyway**.
+3. Follow "2. Prepare the local engine" below.
+
+On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. ASR itself stays on CTranslate2 CPU int8; CUDA accelerates only alignment and diarization.
 
 ### 2. Prepare the local engine
 
@@ -81,7 +90,7 @@ Write access and Inference Providers access are not required.
 **Record inside Galpi**
 
 1. Confirm the output folder.
-2. Select `마이크로 바로 녹음` (Record with microphone) and grant macOS microphone access.
+2. Select `마이크로 바로 녹음` (Record with microphone) and grant microphone access. On Windows, Settings → Privacy → Microphone must allow microphone access and "Let desktop apps access your microphone".
 3. Select `정지` (Stop) when the meeting ends.
 4. The completed WAV is selected automatically as the transcription input.
 
@@ -159,8 +168,7 @@ The completion screen can open each artifact or reveal its output folder in Find
 
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
-- Every setting, including the Hugging Face token and the AI augmentation API key, is stored in an Application Support settings file with `0600` permissions.
-- Credentials are not encrypted with the macOS Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The move lands together with Developer ID signing; the implementation is ready in `src-tauri/src/adapters/outbound/secrets.rs`.
+- The Hugging Face token and the AI augmentation API key are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token` and `com.m16khb.galpi:assistant-api-key`. On macOS they are stored in the Application Support settings file with `0600` permissions and are not encrypted with the Keychain: the Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The macOS move to the Keychain lands together with Developer ID signing.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.
 
@@ -172,7 +180,7 @@ TypeScript UI
     ▼
 Rust application
     │ ports
-    ├── CoreAudio recorder
+    ├── microphone recorder (CPAL: CoreAudio/WASAPI)
     ├── filesystem / opener
     └── supervised Python worker
             │ versioned JSONL
@@ -210,7 +218,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 uvx ruff check worker
 uvx ruff format --check worker
 uvx basedpyright --pythonpath <WhisperX Python path>
-PYTHONPATH=. python3 -m unittest discover -s worker/tests -t . -v
+PYTHONPATH=. python3 -m unittest discover -s worker/tests -t . -v   # macOS
+# Windows PowerShell
+$env:PYTHONPATH='.'; python3 -m unittest discover -s worker/tests -t . -v
 ```
 
 ### Production build
@@ -226,7 +236,13 @@ src-tauri/target/release/bundle/macos/Galpi.app
 src-tauri/target/release/bundle/dmg/Galpi_0.1.0_aarch64.dmg
 ```
 
-The build creates the `.app` first, then packages the DMG with `hdiutil`.
+On macOS this produces the two files above; on Windows x64 it produces an NSIS installer:
+
+```text
+src-tauri/target/release/bundle/nsis/*.exe
+```
+
+The macOS build creates the `.app` first, then packages the DMG with `hdiutil`. The Windows build produces an unsigned NSIS `.exe`. CI verifies both platforms.
 
 #### Distributing to other people
 

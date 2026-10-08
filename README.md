@@ -5,7 +5,7 @@
 <h1 align="center">Galpi · 갈피</h1>
 
 <p align="center">
-  Apple Silicon Mac에서 회의를 녹음하고, 화자를 구분해 전사하고,<br />
+  Mac(Apple Silicon)과 Windows x64에서 회의를 녹음하고, 화자를 구분해 전사하고,<br />
   필요한 경우 AI로 회의록까지 정리하는 로컬 우선 데스크톱 앱
 </p>
 
@@ -16,8 +16,8 @@
 </p>
 
 > [!IMPORTANT]
-> Galpi 0.1.0은 **macOS 14 이상 Apple Silicon(M1 이상)** 전용 개발 빌드입니다.
-> 현재 DMG는 서명·공증되지 않았으며 Intel Mac, Windows, Linux는 지원하지 않습니다.
+> Galpi 0.1.0은 **macOS 14 이상 Apple Silicon(M1 이상)** 과 **Windows 10/11 x64** 를 지원하는 개발 빌드입니다.
+> macOS DMG는 서명·공증되지 않았고 Windows 설치 프로그램은 서명되지 않았습니다. Intel Mac과 Linux는 지원하지 않습니다.
 
 ## 한눈에 보기
 
@@ -25,7 +25,7 @@ Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져�
 
 | 기능 | 내용 |
 |---|---|
-| 바로 녹음 | CoreAudio 마이크 입력을 16-bit PCM WAV로 저장 |
+| 바로 녹음 | 마이크 입력(CPAL: CoreAudio/WASAPI)을 16-bit PCM WAV로 저장 |
 | 파일 가져오기 | `m4a`, `mp3`, `wav`, `mp4`, `mov`, `aac`, `flac`, `ogg` |
 | 로컬 전사 | `Qwen3`(기본) 또는 `WhisperX` 프리셋 한국어 ASR |
 | 화자분리 | pyannote 기반 분리, 자동·정확히·최소/최대 화자 수 힌트 |
@@ -41,7 +41,8 @@ Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져�
 
 필수 환경:
 
-- macOS 14 이상, Apple Silicon
+- macOS 14 이상 Apple Silicon 또는 Windows 10/11 x64
+- Windows: Microsoft Visual C++ 2015–2022 x64 재배포 패키지(앱에 포함되지 않음)
 - Rust 1.88 이상
 - Bun 1.3 이상
 - Tauri CLI 2.11.4
@@ -52,7 +53,15 @@ bun install
 bun run dev
 ```
 
-`bun run dev`는 검증된 arm64 `uv`, Python worker, 프론트엔드, Tauri 앱을 준비해 실행합니다. Python, ffmpeg, WhisperX를 전역으로 미리 설치할 필요는 없습니다.
+`bun run dev`는 해당 플랫폼의 검증된 `uv`, Python worker, 프론트엔드, Tauri 앱을 준비해 실행합니다. Python, ffmpeg, WhisperX를 전역으로 미리 설치할 필요는 없습니다. Windows에서도 PowerShell에서 같은 명령을 사용합니다.
+
+### Windows 빠른 시작
+
+1. [Microsoft Visual C++ 2015–2022 x64 재배포 패키지](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)를 설치합니다. 앱에 포함되어 있지 않습니다.
+2. 서명되지 않은 NSIS 설치 프로그램(`.exe`)을 실행합니다. SmartScreen 경고가 나오면 **추가 정보 → 실행**을 누릅니다.
+3. 아래 '최초 엔진 준비'를 진행합니다.
+
+Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. ASR 자체는 CTranslate2 CPU int8로 동작하며 CUDA는 정렬·화자분리만 가속합니다.
 
 ### 2. 최초 엔진 준비
 
@@ -81,7 +90,7 @@ bun run dev
 **앱에서 녹음**
 
 1. 출력 폴더를 확인합니다.
-2. **마이크로 바로 녹음**을 누르고 macOS 마이크 권한을 허용합니다.
+2. **마이크로 바로 녹음**을 누르고 마이크 권한을 허용합니다. Windows에서는 설정 → 개인 정보 → 마이크에서 마이크 접근과 '데스크톱 앱이 마이크에 액세스하도록 허용'이 켜져 있어야 합니다.
 3. 회의가 끝나면 **정지**를 누릅니다.
 4. 완성된 WAV가 자동으로 전사 입력에 선택됩니다.
 
@@ -159,8 +168,7 @@ bun run dev
 
 - 음성과 전사 산출물은 사용자가 선택한 로컬 폴더에 저장됩니다.
 - 전사·정렬·화자분리 모델(Qwen3, WhisperX, pyannote)은 Galpi의 앱 전용 Hugging Face 캐시에 저장됩니다.
-- Hugging Face 토큰과 AI 증강 API 키를 포함한 모든 설정은 Application Support 아래 설정 파일에 `0600` 권한으로 저장됩니다.
-- 자격 증명은 아직 macOS Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다(구현은 `src-tauri/src/adapters/outbound/secrets.rs`에 준비되어 있습니다).
+- Hugging Face 토큰과 AI 증강 API 키는 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key` 항목에 저장됩니다. macOS에서는 Application Support 아래 설정 파일에 `0600` 권한으로 저장되며 Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. macOS의 Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다.
 - AI 회의록을 실행하지 않으면 전사문은 외부 LLM API로 전송되지 않습니다.
 - worker는 고정된 프로그램과 argv로 실행되며 셸 문자열을 실행하지 않습니다.
 
@@ -172,7 +180,7 @@ TypeScript UI
     ▼
 Rust application
     │ ports
-    ├── CoreAudio recorder
+    ├── 마이크 녹음기 (CPAL: CoreAudio/WASAPI)
     ├── filesystem / opener
     └── supervised Python worker
             │ versioned JSONL
@@ -210,7 +218,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 uvx ruff check worker
 uvx ruff format --check worker
 uvx basedpyright --pythonpath <WhisperX Python 경로>
-PYTHONPATH=. python3 -m unittest discover -s worker/tests -t . -v
+PYTHONPATH=. python3 -m unittest discover -s worker/tests -t . -v   # macOS
+# Windows PowerShell
+$env:PYTHONPATH='.'; python3 -m unittest discover -s worker/tests -t . -v
 ```
 
 ### 프로덕션 빌드
@@ -226,7 +236,13 @@ src-tauri/target/release/bundle/macos/Galpi.app
 src-tauri/target/release/bundle/dmg/Galpi_0.1.0_aarch64.dmg
 ```
 
-빌드는 `.app`을 만든 뒤 `hdiutil`로 DMG를 생성합니다.
+macOS에서는 위 두 파일을, Windows x64에서는 NSIS 설치 프로그램을 만듭니다.
+
+```text
+src-tauri/target/release/bundle/nsis/*.exe
+```
+
+macOS 빌드는 `.app`을 만든 뒤 `hdiutil`로 DMG를 생성합니다. Windows 빌드는 서명되지 않은 NSIS `.exe`를 만듭니다. CI는 두 플랫폼을 모두 검증합니다.
 
 #### 다른 사람에게 배포할 때
 

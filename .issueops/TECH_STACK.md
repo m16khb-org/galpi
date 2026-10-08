@@ -46,8 +46,18 @@ high unless noted.
 
 ## Platform target
 
-- macOS 14+ on Apple Silicon only; distribution as `.app` + DMG via `hdiutil`
-  (`bun run build`). Signing and notarization are separate manual steps.
+- macOS 14+ on Apple Silicon and Windows 10/11 x64; Intel macOS and Linux are
+  unsupported. macOS ships as `.app` + DMG via `hdiutil`; Windows x64 ships as
+  an unsigned NSIS installer (`bun run build`, `scripts/build.ts`). Signing and
+  notarization are separate manual steps.
+- Sidecar `uv` targets: `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`
+  (`scripts/sidecar-targets.ts`).
+- Worker locks per platform/device: macOS `requirements.lock` (WhisperX) and
+  `requirements-qwen3.lock` (Qwen3); Windows `requirements-windows-cpu.lock`
+  (default) and `requirements-windows-cuda.lock` (PyTorch cu128, optional).
+  Windows has no Qwen3 preset (MLX requires Apple Silicon).
+- Rust platform deps: `dunce` (all targets), `windows-sys` (`cfg(windows)`),
+  `nix` (`cfg(unix)`), `security-framework` (`cfg(target_os = "macos")`).
 
 ## Confidence
 

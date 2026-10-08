@@ -16,7 +16,7 @@ Galpi는 세 개의 런타임으로 구성된다. 각각 내부적으로 같은 
 TypeScript (WebView)          Rust (Tauri 호스트)              Python (WhisperX 사이드카)
 ┌────────────────────┐        ┌──────────────────────────┐     ┌────────────────────────┐
 │ ui/        (외부)   │        │ adapters/inbound  (외부)  │     │ __main__.py  (외부)     │
-│ ├─ controller       │  IPC   │ ├─ tauri.rs (14 커맨드)   │     │ engine.py    (유스케이스)│
+│ ├─ controller       │  IPC   │ ├─ tauri.rs (18 커맨드)   │     │ engine.py    (유스케이스)│
 │ ├─ app-view         │ ─────▶ │ └─ TauriEvents            │     │ refine.py             │
 │ └─ settings/…       │        │                          │     │ protocol.py (포트: stdout)│
 ├────────────────────┤        │ application/  (유스케이스) │     ├────────────────────────┤
@@ -50,7 +50,7 @@ TypeScript (WebView)          Rust (Tauri 호스트)              Python (Whispe
 
 | 방향 | Rust | TypeScript | Python |
 |------|------|-----------|--------|
-| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 14개 `#[tauri::command]` + `TauriEvents` 이벤트 브리지 | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
+| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 18개 `#[tauri::command]`(`save_compute_device` 포함) + `TauriEvents` 이벤트 브리지 | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
 | **-driven (outbound)** | `DesktopAdapter`(엔진·전사·산출물), `NativeRecorder`(CPAL), `LocalSettingsStore`, `process.rs`(워커 감독) | (없음 — 프론트엔드는 driven 포트가 없다; 브라우저 API는 어댑터 내부 처리) | `protocol.py` `EventWriter`(stdout), `assistant_stream.py`(HTTP) |
 
 **포트 소유 규칙 (DIP)**: 포트 인터페이스는 사용하는 쪽(내부 계층)이 소유하고,
@@ -62,6 +62,14 @@ TypeScript는 `BackendPort`가 **어댑터 모듈에** 정의되어 있어 위�
 **이벤트는 포트로만 흐른다**: Rust→TS 이벤트(`job-event`, `recording-event`)는
 `JobEvents`/`RecordingEvents` 포트를 통해 발행되고, TS는 구독을 `BackendPort.listenToJobs`
 뒤에 숨긴다. UI 컨트롤러는 Tauri 타입(`UnlistenFn`)을 몰라야 한다.
+
+**플랫폼 분기는 outbound 어댑터와 `composition.rs`에만 둔다.** outbound 코드는
+`adapters/outbound/platform.rs`의 `Os` 값으로 분기하며, `Os::current()`가 유일한
+`cfg!(windows)`다. `#[cfg]`는 다른 플랫폼에서 컴파일할 수 없는 코드에만 쓴다: Win32
+FFI(`process/guard/windows.rs`, `recording/power/windows.rs`,
+`secrets/credential_manager.rs`)와 `nix`(`process/guard/unix.rs`).
+`scripts/check-architecture.ts`는 domain/application/inbound에서 `cfg(windows)`,
+`cfg(unix)`, `target_os`, `cfg!(`를 금지한다.
 
 ## 3. DDD 관점 — 전술적 패턴 매핑
 
@@ -113,7 +121,7 @@ Rust는 전통적 상속이 없으므로 OOP 원칙은 **trait + 조합**으로 
 | 3 | `check-architecture.ts`가 프론트엔드 펜스를 검사하지 않음 | 경계 강제 | TS 펜스 추가: `domain`↔`application` 순수성, `ui`의 `adapters` 구현체/`@tauri-apps` import 금지 (타입 재수출 경유만 허용) |
 | 4 | Rust `use_cases.rs::asr_context`가 `serde_json::json!`으로 워커 와이어 포맷을 생성 | 프로토콜 계약 소재 | 포맷 생성을 `domain/worker.rs::AsrContext::into_wire_json`으로 이동 — 계약이 Rust 파서와 같은 모듈에 |
 | 5 | `Participant`/`GlossaryEntry`/`AssistantSettings` 값 객체 + `trimmed()` 규칙이 `application/model.rs`에 위치 | DDD 값 객체 소재 | `domain/roster.rs`로 이동; `model.rs`는 직렬화 DTO(`EnvironmentStatus`, 결과 래퍼)만 |
-| 6 | AGENTS.md가 "9개 IPC 커맨드"로 기술 (실제 14개) | 문서-코드 일치 | 정정 |
+| 6 | AGENTS.md가 IPC 커맨드 수를 실제와 다르게 기술 (9개로 적혀 있었음) | 문서-코드 일치 | 정정 |
 
 **의도적으로 남겨둔 것 (과잉 리팩토링 회피)**:
 - `DesktopAdapter` 하나가 4개 포트를 구현하는 구조 — 포트 소비자가 모두 `Application`으로

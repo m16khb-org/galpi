@@ -10,7 +10,7 @@ description: Endpoint, DTO, and OpenAPI documentation gate rules.
 Galpi has **no HTTP API and no OpenAPI/Swagger surface**. The contract
 surfaces that do exist:
 
-- 14 Tauri IPC commands in `src-tauri/src/adapters/inbound/tauri.rs`,
+- 18 Tauri IPC commands in `src-tauri/src/adapters/inbound/tauri.rs`,
   consumed through `BackendPort` with Zod-validated responses
   (`src/adapters/tauri-backend.ts`).
 - Versioned JSONL worker protocol v1 (`worker/galpi_worker/protocol.py` ↔
