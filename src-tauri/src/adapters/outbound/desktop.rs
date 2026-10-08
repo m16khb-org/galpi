@@ -1,4 +1,4 @@
-use super::paths::{AppPaths, prepare_job_directory};
+use super::paths::{AppPaths, canonical_blocking, prepare_job_directory};
 use super::{import, refinement, setup, transcription};
 use crate::application::error::AppError;
 use crate::application::model::{CompletedTranscription, EnvironmentStatus};
@@ -7,7 +7,7 @@ use crate::application::ports::{
     TranscriptionPort,
 };
 use crate::domain::artifact::Artifacts;
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{EnginePreset, EngineSelection};
 use crate::domain::job::{SetupRequest, SpeakerHint};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
@@ -30,8 +30,8 @@ impl DesktopAdapter {
 
 #[async_trait]
 impl EnginePort for DesktopAdapter {
-    async fn diagnose(&self, preset: EnginePreset) -> Result<EnvironmentStatus, AppError> {
-        setup::diagnose(&self.app, preset)
+    async fn diagnose(&self, selection: EngineSelection) -> Result<EnvironmentStatus, AppError> {
+        setup::diagnose(&self.app, selection)
     }
 
     async fn prepare(
@@ -39,7 +39,7 @@ impl EnginePort for DesktopAdapter {
         job_id: Uuid,
         cancel: &mut oneshot::Receiver<()>,
         request: &SetupRequest,
-        preset: EnginePreset,
+        selection: EngineSelection,
     ) -> Result<EnvironmentStatus, AppError> {
         setup::prepare(
             &self.app,
@@ -47,7 +47,7 @@ impl EnginePort for DesktopAdapter {
             job_id,
             cancel,
             request,
-            preset,
+            selection,
         )
         .await
     }
@@ -128,9 +128,9 @@ impl TranscriptImportPort for DesktopAdapter {
 
 impl ArtifactPort for DesktopAdapter {
     fn open_file(&self, path: &Path, trusted_root: &Path) -> Result<(), AppError> {
-        let root = std::fs::canonicalize(trusted_root)
+        let root = canonical_blocking(trusted_root)
             .map_err(|error| AppError::io("출력 폴더를 다시 확인하지 못했습니다", &error))?;
-        let path = std::fs::canonicalize(path)
+        let path = canonical_blocking(path)
             .map_err(|error| AppError::io("결과 파일을 다시 확인하지 못했습니다", &error))?;
         if !path.starts_with(root)
             || !std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_file())
@@ -147,7 +147,7 @@ impl ArtifactPort for DesktopAdapter {
     }
 
     fn open_directory(&self, path: &Path) -> Result<(), AppError> {
-        let path = std::fs::canonicalize(path)
+        let path = canonical_blocking(path)
             .map_err(|error| AppError::io("출력 폴더를 다시 확인하지 못했습니다", &error))?;
         self.app
             .opener()

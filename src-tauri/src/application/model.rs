@@ -1,5 +1,5 @@
 use crate::domain::artifact::Artifacts;
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{ComputeDevice, EnginePreset};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -18,6 +18,12 @@ pub struct EnvironmentStatus {
     pub data_directory: String,
     pub default_output_directory: String,
     pub engine_version: String,
+    pub compute_device: ComputeDevice,
+    /// Presets this platform offers; the first one is its default.
+    pub available_presets: Vec<EnginePreset>,
+    /// Devices the user may choose between; empty means there is no choice.
+    pub available_devices: Vec<ComputeDevice>,
+    pub cuda_driver_detected: bool,
 }
 
 impl EnvironmentStatus {

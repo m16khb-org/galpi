@@ -1,4 +1,4 @@
-use super::paths::{create_meeting_directory, meeting_stem, prepare_output_root};
+use super::paths::{canonical, create_meeting_directory, meeting_stem, prepare_output_root};
 use crate::application::error::AppError;
 use crate::domain::artifact::Artifacts;
 use std::path::Path;
@@ -10,7 +10,7 @@ const MAX_TRANSCRIPT_BYTES: u64 = 20 * 1024 * 1024;
 /// Copy an existing transcript into a per-meeting folder so refinement,
 /// reveal, and minutes naming work exactly like a transcribed meeting.
 pub async fn import_transcript(input: &Path, output_root: &Path) -> Result<Artifacts, AppError> {
-    let input = tokio::fs::canonicalize(input)
+    let input = canonical(input)
         .await
         .map_err(|error| AppError::io("가져온 전사문을 확인하지 못했습니다", &error))?;
     let metadata = tokio::fs::metadata(&input)
@@ -66,7 +66,7 @@ async fn canonical_transcript(
     directory: &Path,
     transcript: &Path,
 ) -> Result<std::path::PathBuf, AppError> {
-    let transcript = tokio::fs::canonicalize(transcript)
+    let transcript = canonical(transcript)
         .await
         .map_err(|error| AppError::io("가져온 전사문을 확인하지 못했습니다", &error))?;
     if !transcript.starts_with(directory) {
@@ -80,7 +80,7 @@ async fn canonical_transcript(
 
 #[cfg(test)]
 mod tests {
-    use super::import_transcript;
+    use super::{canonical, import_transcript};
 
     #[tokio::test]
     async fn copies_transcript_into_a_meeting_folder() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,11 +98,11 @@ mod tests {
         // Then: the copy lives in a folder named after the transcript
         assert_eq!(
             artifacts.txt,
-            output.join("팀미팅/팀미팅.txt").canonicalize()?
+            canonical(&output.join("팀미팅/팀미팅.txt")).await?
         );
         assert_eq!(
             artifacts.output_directory,
-            output.join("팀미팅").canonicalize()?
+            canonical(&output.join("팀미팅")).await?
         );
         assert_eq!(artifacts.srt, None);
         assert_eq!(artifacts.checkpoint, None);

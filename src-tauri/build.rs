@@ -4,11 +4,19 @@ use std::path::Path;
 /// still current. Their fingerprints are compiled in so that editing a pinned
 /// dependency invalidates every existing virtualenv on its own, instead of
 /// waiting for someone to remember to bump a version constant by hand.
-const REQUIREMENTS: [(&str, &str); 2] = [
+const REQUIREMENTS: [(&str, &str); 4] = [
     ("GALPI_WHISPERX_REQUIREMENTS", "../worker/requirements.txt"),
     (
         "GALPI_QWEN3_REQUIREMENTS",
         "../worker/requirements-qwen3.txt",
+    ),
+    (
+        "GALPI_WHISPERX_WIN_CPU_LOCK",
+        "../worker/requirements-windows-cpu.lock",
+    ),
+    (
+        "GALPI_WHISPERX_WIN_CUDA_LOCK",
+        "../worker/requirements-windows-cuda.lock",
     ),
 ];
 

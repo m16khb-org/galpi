@@ -6,7 +6,7 @@ use super::ports::{
 };
 use super::use_cases::Application;
 use crate::domain::artifact::{ArtifactKind, Artifacts};
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::job::{
     SetupRequest, SpeakerHint, TranscriptImportRequest, TranscriptionRequest,
 };
@@ -64,6 +64,8 @@ struct FakePort {
     refinements: Mutex<Vec<SeenRefinement>>,
     asr_contexts: Mutex<Vec<String>>,
     engine_preset: Mutex<EnginePreset>,
+    compute_device: Mutex<ComputeDevice>,
+    seen_selections: Mutex<Vec<EngineSelection>>,
     seen_engines: Mutex<Vec<EnginePreset>>,
     seen_prepare_engines: Mutex<Vec<EnginePreset>>,
     ready_presets: Mutex<Vec<EnginePreset>>,
@@ -82,6 +84,8 @@ impl FakePort {
             refinements: Mutex::new(Vec::new()),
             asr_contexts: Mutex::new(Vec::new()),
             engine_preset: Mutex::new(EnginePreset::default()),
+            compute_device: Mutex::new(ComputeDevice::default()),
+            seen_selections: Mutex::new(Vec::new()),
             seen_engines: Mutex::new(Vec::new()),
             seen_prepare_engines: Mutex::new(Vec::new()),
             ready_presets: Mutex::new(vec![EnginePreset::Qwen3, EnginePreset::WhisperX]),
@@ -144,7 +148,12 @@ impl RefinementPort for FakePort {
 
 #[async_trait]
 impl EnginePort for FakePort {
-    async fn diagnose(&self, preset: EnginePreset) -> Result<EnvironmentStatus, AppError> {
+    async fn diagnose(&self, selection: EngineSelection) -> Result<EnvironmentStatus, AppError> {
+        let preset = selection.preset;
+        self.seen_selections
+            .lock()
+            .map_err(|_| AppError::new("TEST_ERROR", "selections lock poisoned"))?
+            .push(selection);
         let ready = self
             .ready_presets
             .lock()
@@ -160,6 +169,10 @@ impl EnginePort for FakePort {
             data_directory: "/tmp/galpi-test".to_owned(),
             default_output_directory: "/tmp/output".to_owned(),
             engine_version: "test".to_owned(),
+            compute_device: selection.device,
+            available_presets: vec![EnginePreset::Qwen3, EnginePreset::WhisperX],
+            available_devices: Vec::new(),
+            cuda_driver_detected: false,
         })
     }
 
@@ -168,9 +181,10 @@ impl EnginePort for FakePort {
         job_id: Uuid,
         _cancel: &mut oneshot::Receiver<()>,
         request: &SetupRequest,
-        preset: EnginePreset,
+        selection: EngineSelection,
     ) -> Result<EnvironmentStatus, AppError> {
         let _ = job_id;
+        let preset = selection.preset;
         *self
             .prepared_token
             .lock()
@@ -181,7 +195,7 @@ impl EnginePort for FakePort {
             .lock()
             .map_err(|_| AppError::new("TEST_ERROR", "prepare engines lock poisoned"))? =
             vec![preset];
-        self.diagnose(preset).await
+        self.diagnose(selection).await
     }
 }
 
@@ -249,6 +263,21 @@ impl SettingsPort for FakePort {
             .engine_preset
             .lock()
             .map_err(|_| AppError::new("TEST_ERROR", "engine preset lock poisoned"))? = preset;
+        Ok(())
+    }
+
+    async fn load_compute_device(&self) -> Result<ComputeDevice, AppError> {
+        self.compute_device
+            .lock()
+            .map(|device| *device)
+            .map_err(|_| AppError::new("TEST_ERROR", "compute device lock poisoned"))
+    }
+
+    async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError> {
+        *self
+            .compute_device
+            .lock()
+            .map_err(|_| AppError::new("TEST_ERROR", "compute device lock poisoned"))? = device;
         Ok(())
     }
 }
@@ -560,7 +589,10 @@ async fn refinement_sends_saved_background_and_publishes_minutes() -> Result<(),
         .await?;
 
     // Then
-    assert_eq!(refined.minutes, "/tmp/output/job/meeting_회의록.md");
+    assert_eq!(
+        Path::new(&refined.minutes),
+        Path::new("/tmp/output/job/meeting_회의록.md")
+    );
     let seen = port
         .refinements
         .lock()
@@ -758,6 +790,53 @@ async fn prepare_prepares_the_selected_preset() -> Result<(), AppError> {
         .lock()
         .map_err(|_| AppError::new("TEST_ERROR", "prepare engines lock poisoned"))?;
     assert_eq!(*seen, [EnginePreset::WhisperX]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_saved_compute_device_reaches_diagnose_prepare_and_the_readiness_gate()
+-> Result<(), AppError> {
+    // Given: a saved preset and a saved device
+    let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
+    let app = port.application();
+    app.save_engine_preset(EnginePreset::WhisperX).await?;
+    app.save_compute_device(ComputeDevice::Cuda).await?;
+    let expected = EngineSelection {
+        preset: EnginePreset::WhisperX,
+        device: ComputeDevice::Cuda,
+    };
+
+    // When: diagnosing, preparing, and starting a transcription
+    let status = app.diagnose().await?;
+    app.prepare(SetupRequest {
+        job_id: Uuid::now_v7(),
+        hugging_face_token: None,
+    })
+    .await?;
+    app.transcribe(request(SpeakerHint::Auto)).await?;
+
+    // Then: every engine call saw the same selection
+    assert_eq!(status.compute_device, ComputeDevice::Cuda);
+    let seen = port
+        .seen_selections
+        .lock()
+        .map_err(|_| AppError::new("TEST_ERROR", "selections lock poisoned"))?;
+    assert_eq!(seen.len(), 3);
+    assert!(seen.iter().all(|selection| *selection == expected));
+    Ok(())
+}
+
+#[tokio::test]
+async fn save_compute_device_is_delegated_to_the_settings_port() -> Result<(), AppError> {
+    // Given
+    let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
+    let app = port.application();
+
+    // When
+    app.save_compute_device(ComputeDevice::Cuda).await?;
+
+    // Then
+    assert_eq!(port.load_compute_device().await?, ComputeDevice::Cuda);
     Ok(())
 }
 

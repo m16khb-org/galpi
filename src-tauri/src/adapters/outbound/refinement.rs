@@ -1,5 +1,5 @@
 use super::environment::assistant_environment;
-use super::paths::{AppPaths, worker_root};
+use super::paths::{AppPaths, canonical, worker_root};
 use super::process::{ProcessSpec, run_process};
 use crate::application::error::AppError;
 use crate::application::ports::{JobEvents, RefinementJob};
@@ -175,10 +175,12 @@ pub(crate) async fn write_private_file(
     // Created private rather than chmod'ed afterwards: between a default-mode
     // create and the chmod, the attendee roster is world-readable on a shared
     // machine. `create_new` also refuses to write through an existing file.
-    let mut file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    // Windows `%TEMP%` is already per-user; there is no mode to set there.
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
         .open(&path)
         .await
         .map_err(|error| AppError::io("사전 정보를 임시로 저장하지 못했습니다", &error))?;
@@ -192,10 +194,10 @@ pub(crate) async fn write_private_file(
 }
 
 async fn canonical_minutes(directory: &Path, minutes: &Path) -> Result<PathBuf, AppError> {
-    let root = tokio::fs::canonicalize(directory)
+    let root = canonical(directory)
         .await
         .map_err(|error| AppError::io("작업 디렉터리를 확인하지 못했습니다", &error))?;
-    let minutes = tokio::fs::canonicalize(minutes)
+    let minutes = canonical(minutes)
         .await
         .map_err(|error| AppError::io("회의록 파일을 확인하지 못했습니다", &error))?;
     if !minutes.starts_with(&root) {

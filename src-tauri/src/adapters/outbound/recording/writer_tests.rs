@@ -1,4 +1,5 @@
 use super::{WriterCommand, spawn};
+use crate::adapters::outbound::recording::cleanup::cancel_and_remove;
 use crate::adapters::outbound::recording::failure;
 use crate::application::error::AppError;
 use crate::application::model::RecordingFailure;
@@ -58,5 +59,30 @@ fn fills_dropped_samples_with_silence_and_reports_them() -> Result<(), Box<dyn s
     assert_eq!(summary.samples, 6);
     assert_eq!(summary.dropped_samples, 4);
     assert_eq!(samples, [0, 0, 1, 2, 0, 0]);
+    Ok(())
+}
+
+#[test]
+fn cancelling_a_recording_leaves_no_partial_file_or_empty_folder()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given: a recording in progress inside its own meeting folder
+    let folder = std::env::temp_dir().join(format!("galpi-cancel-{}", Uuid::now_v7()));
+    std::fs::create_dir_all(&folder)?;
+    let partial = folder.join("x.wav.part");
+    let failure = failure::new(Uuid::now_v7(), Arc::new(NoopEvents));
+    let writer = spawn(&partial, 48_000, 1, failure)?;
+    writer.sender().send(WriterCommand::Samples {
+        samples: vec![1, 2, 3, 4],
+        dropped_before: 0,
+    })?;
+    assert!(partial.exists());
+
+    // When: the recording is cancelled (the writer must release its handle
+    // first, or Windows refuses to delete the file)
+    cancel_and_remove(writer, &partial, &folder)?;
+
+    // Then: neither the partial file nor the empty folder is left
+    assert!(!partial.exists());
+    assert!(!folder.exists());
     Ok(())
 }

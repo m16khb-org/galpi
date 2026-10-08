@@ -1,4 +1,8 @@
-use super::{prepare_job_directory, sanitize_name};
+use super::{
+    AppPaths, canonical, canonical_blocking, prepare_job_directory, sanitize_name, uv_binary_for,
+};
+use crate::adapters::outbound::platform::Os;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 fn temp_root(label: &str) -> std::path::PathBuf {
@@ -19,7 +23,7 @@ async fn creates_a_meeting_folder_named_after_the_recording()
     let (_input, job) = prepare_job_directory(&input, &output).await?;
 
     // Then: the meeting folder carries the recording name, no uuid suffix
-    assert_eq!(job, output.join("팀 미팅").canonicalize()?);
+    assert_eq!(job, canonical_blocking(&output.join("팀 미팅"))?);
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
@@ -39,7 +43,7 @@ async fn reuses_the_folder_a_recording_already_lives_in() -> Result<(), Box<dyn 
     let (_input, job) = prepare_job_directory(&input, &output).await?;
 
     // Then: transcription targets the recording's own folder
-    assert_eq!(job, folder.canonicalize()?);
+    assert_eq!(job, canonical_blocking(&folder)?);
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
@@ -57,7 +61,7 @@ async fn deduplicates_colliding_meeting_folders() -> Result<(), Box<dyn std::err
     let (_input, job) = prepare_job_directory(&input, &output).await?;
 
     // Then
-    assert_eq!(job, output.join("meeting 2").canonicalize()?);
+    assert_eq!(job, canonical_blocking(&output.join("meeting 2"))?);
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
@@ -91,4 +95,70 @@ async fn seeds_new_job_with_latest_matching_checkpoint() -> Result<(), Box<dyn s
 #[test]
 fn sanitize_name_keeps_spaces_and_hangul() {
     assert_eq!(sanitize_name(" 팀 미팅: 8월 "), "팀 미팅- 8월");
+}
+
+#[test]
+fn windows_paths_use_the_scripts_directory_and_documents_galpi() {
+    // Given / When
+    let paths = AppPaths::from_roots(Os::Windows, PathBuf::from("/data"), Path::new("/documents"));
+
+    // Then
+    assert_eq!(
+        paths.python,
+        PathBuf::from("/data/engine/.venv/Scripts/python.exe")
+    );
+    assert_eq!(
+        paths.qwen3_python,
+        PathBuf::from("/data/engine/qwen3/.venv/Scripts/python.exe")
+    );
+    assert_eq!(paths.default_output, PathBuf::from("/documents/Galpi"));
+}
+
+#[test]
+fn macos_paths_keep_the_posix_interpreter_layout() {
+    let paths = AppPaths::from_roots(Os::MacOs, PathBuf::from("/data"), Path::new("/docs"));
+    assert_eq!(paths.python, PathBuf::from("/data/engine/.venv/bin/python"));
+    assert_eq!(paths.default_output, PathBuf::from("/docs/Galpi"));
+}
+
+#[test]
+fn the_uv_binary_is_staged_in_debug_and_installed_beside_the_executable() {
+    let manifest = Path::new("/repo/src-tauri");
+    let executable = Path::new("/apps/Galpi/galpi");
+    for (os, staged, installed) in [
+        (Os::MacOs, "uv-aarch64-apple-darwin", "uv"),
+        (Os::Windows, "uv-x86_64-pc-windows-msvc.exe", "uv.exe"),
+    ] {
+        assert_eq!(
+            uv_binary_for(os, manifest, None).ok(),
+            Some(manifest.join("binaries").join(staged))
+        );
+        assert_eq!(
+            uv_binary_for(os, manifest, Some(executable)).ok(),
+            Some(PathBuf::from("/apps/Galpi").join(installed))
+        );
+    }
+}
+
+#[tokio::test]
+async fn canonical_resolves_the_same_location_without_a_verbatim_prefix()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Given
+    let root = temp_root("canonical");
+    std::fs::create_dir_all(&root)?;
+
+    // When
+    let resolved = canonical(&root).await?;
+    let resolved_blocking = canonical_blocking(&root)?;
+
+    // Then: same file as std's answer, but never the `\\?\` form Windows
+    // returns, which worker argv and UI strings cannot use
+    assert_eq!(resolved, resolved_blocking);
+    assert_eq!(
+        std::fs::canonicalize(&resolved)?,
+        std::fs::canonicalize(&root)?
+    );
+    assert!(!resolved.to_string_lossy().starts_with(r"\\?\"));
+    std::fs::remove_dir_all(root)?;
+    Ok(())
 }

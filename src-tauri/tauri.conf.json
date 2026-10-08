@@ -38,6 +38,12 @@
     ],
     "externalBin": ["binaries/uv"],
     "resources": ["resources/worker"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Korean", "English"]
+      }
+    },
     "macOS": {
       "minimumSystemVersion": "14.0",
       "entitlements": "Entitlements.plist",

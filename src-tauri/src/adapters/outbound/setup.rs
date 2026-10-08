@@ -1,17 +1,18 @@
 pub use super::environment::diagnose;
 use super::environment::{process_environment, qwen3_marker, status, whisperx_marker};
 use super::model_cache::{can_use_offline_cache, import_standard_cache};
+use super::platform::Os;
 use crate::adapters::outbound::paths::{AppPaths, uv_binary, worker_root};
 use crate::adapters::outbound::process::{ProcessSpec, emit, run_process};
 use crate::application::error::AppError;
 use crate::application::model::EnvironmentStatus;
 use crate::application::ports::JobEvents;
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::job::SetupRequest;
 use crate::domain::worker::WorkerEvent;
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::AppHandle;
 use tokio::sync::oneshot;
 use uuid::Uuid;
@@ -22,14 +23,14 @@ pub async fn prepare(
     job_id: Uuid,
     cancel: &mut oneshot::Receiver<()>,
     request: &SetupRequest,
-    preset: EnginePreset,
+    selection: EngineSelection,
 ) -> Result<EnvironmentStatus, AppError> {
     let paths = AppPaths::resolve(app)?;
     paths.create_directories().await?;
     let root = worker_root(app)?;
     let install_env = process_environment(&paths, &root, None);
     let mut model_env = process_environment(&paths, &root, request.hugging_face_token.as_deref());
-    let current = status(&paths, preset);
+    let current = status(&paths, selection);
     if current.is_ready() {
         emit_phase(
             events,
@@ -41,7 +42,7 @@ pub async fn prepare(
         return Ok(current);
     }
 
-    match preset {
+    match selection.preset {
         EnginePreset::WhisperX => {
             prepare_whisperx(
                 events,
@@ -52,6 +53,7 @@ pub async fn prepare(
                 &install_env,
                 &mut model_env,
                 request,
+                selection.device,
             )
             .await
         }
@@ -80,10 +82,15 @@ async fn prepare_whisperx(
     install_env: &HashMap<OsString, OsString>,
     model_env: &mut HashMap<OsString, OsString>,
     request: &SetupRequest,
+    device: ComputeDevice,
 ) -> Result<EnvironmentStatus, AppError> {
-    let current = status(paths, EnginePreset::WhisperX);
+    let selection = EngineSelection {
+        preset: EnginePreset::WhisperX,
+        device,
+    };
+    let current = status(paths, selection);
     if !current.engine_ready {
-        install_whisperx_engine(events, job_id, cancel, paths, root, install_env).await?;
+        install_whisperx_engine(events, job_id, cancel, paths, root, install_env, device).await?;
     }
     let imported = match import_standard_cache(paths).await {
         Ok(imported) if imported > 0 => emit_phase(
@@ -111,7 +118,7 @@ async fn prepare_whisperx(
         model_env.insert("HF_HUB_OFFLINE".into(), "1".into());
         model_env.insert("TRANSFORMERS_OFFLINE".into(), "1".into());
     }
-    let installed = status(paths, EnginePreset::WhisperX);
+    let installed = status(paths, selection);
     if !installed.models_ready || !installed.ffmpeg_ready {
         run_worker_prepare(
             events,
@@ -127,7 +134,7 @@ async fn prepare_whisperx(
         .await?;
     }
 
-    let completed = status(paths, EnginePreset::WhisperX);
+    let completed = status(paths, selection);
     if !completed.is_ready() {
         return Err(AppError::new(
             "SETUP_INCOMPLETE",
@@ -146,11 +153,23 @@ async fn prepare_qwen3(
     install_env: &HashMap<OsString, OsString>,
     model_env: &HashMap<OsString, OsString>,
 ) -> Result<EnvironmentStatus, AppError> {
-    let current = status(paths, EnginePreset::Qwen3);
+    let current = status(
+        paths,
+        EngineSelection {
+            preset: EnginePreset::Qwen3,
+            device: ComputeDevice::Cpu,
+        },
+    );
     if !current.engine_ready {
         install_qwen3_engine(events, job_id, cancel, paths, root, install_env).await?;
     }
-    let installed = status(paths, EnginePreset::Qwen3);
+    let installed = status(
+        paths,
+        EngineSelection {
+            preset: EnginePreset::Qwen3,
+            device: ComputeDevice::Cpu,
+        },
+    );
     if !installed.models_ready || !installed.ffmpeg_ready {
         run_worker_prepare(
             events,
@@ -165,7 +184,13 @@ async fn prepare_qwen3(
         )
         .await?;
     }
-    let completed = status(paths, EnginePreset::Qwen3);
+    let completed = status(
+        paths,
+        EngineSelection {
+            preset: EnginePreset::Qwen3,
+            device: ComputeDevice::Cpu,
+        },
+    );
     if !completed.is_ready() {
         return Err(AppError::new(
             "SETUP_INCOMPLETE",
@@ -182,8 +207,11 @@ async fn install_whisperx_engine(
     paths: &AppPaths,
     root: &Path,
     env: &HashMap<OsString, OsString>,
+    device: ComputeDevice,
 ) -> Result<(), AppError> {
+    let os = Os::current();
     let uv = uv_binary()?;
+    let cwd = os.neutral_working_directory(paths);
     emit_phase(
         events,
         job_id,
@@ -195,6 +223,7 @@ async fn install_whisperx_engine(
         events,
         job_id,
         cancel,
+        &cwd,
         &uv,
         os_args(["python", "install", "3.12"]),
         env,
@@ -212,6 +241,7 @@ async fn install_whisperx_engine(
         events,
         job_id,
         cancel,
+        &cwd,
         &uv,
         vec![
             "venv".into(),
@@ -237,22 +267,37 @@ async fn install_whisperx_engine(
         events,
         job_id,
         cancel,
+        &cwd,
         &uv,
-        vec![
-            "pip".into(),
-            "install".into(),
-            "--python".into(),
-            paths.python.clone().into_os_string(),
-            "-r".into(),
-            root.join("requirements.lock").into_os_string(),
-            "--require-hashes".into(),
-        ],
+        whisperx_install_args(os, device, &paths.python, root),
         env,
     )
     .await?;
-    tokio::fs::write(&paths.engine_manifest, whisperx_marker())
+    tokio::fs::write(&paths.engine_manifest, whisperx_marker(os, device))
         .await
         .map_err(|error| AppError::io("엔진 준비 마커를 쓰지 못했습니다", &error))
+}
+
+/// `uv pip install` arguments for the selected `WhisperX` lock. Every lock is
+/// hash-pinned, so `--require-hashes` is unconditional.
+fn whisperx_install_args(
+    os: Os,
+    device: ComputeDevice,
+    python: &Path,
+    root: &Path,
+) -> Vec<OsString> {
+    let lock = os.whisperx_lock(device);
+    let mut args: Vec<OsString> = vec![
+        "pip".into(),
+        "install".into(),
+        "--python".into(),
+        python.as_os_str().to_owned(),
+        "-r".into(),
+        root.join(lock.file_name).into_os_string(),
+        "--require-hashes".into(),
+    ];
+    args.extend(lock.extra_args.iter().map(OsString::from));
+    args
 }
 
 async fn install_qwen3_engine(
@@ -263,7 +308,9 @@ async fn install_qwen3_engine(
     root: &Path,
     env: &HashMap<OsString, OsString>,
 ) -> Result<(), AppError> {
+    let os = Os::current();
     let uv = uv_binary()?;
+    let cwd = os.neutral_working_directory(paths);
     emit_phase(
         events,
         job_id,
@@ -275,6 +322,7 @@ async fn install_qwen3_engine(
         events,
         job_id,
         cancel,
+        &cwd,
         &uv,
         os_args(["python", "install", "3.12"]),
         env,
@@ -292,6 +340,7 @@ async fn install_qwen3_engine(
         events,
         job_id,
         cancel,
+        &cwd,
         &uv,
         vec![
             "venv".into(),
@@ -315,6 +364,7 @@ async fn install_qwen3_engine(
         events,
         job_id,
         cancel,
+        &cwd,
         &uv,
         vec![
             "pip".into(),
@@ -384,6 +434,7 @@ async fn run_raw(
     events: &dyn JobEvents,
     job_id: Uuid,
     cancel: &mut oneshot::Receiver<()>,
+    working_directory: &Path,
     program: &Path,
     args: Vec<OsString>,
     env: &HashMap<OsString, OsString>,
@@ -393,7 +444,7 @@ async fn run_raw(
         job_id,
         ProcessSpec {
             program: program.to_owned(),
-            current_dir: PathBuf::from("/"),
+            current_dir: working_directory.to_owned(),
             args,
             env: env.clone(),
             worker_protocol: false,
@@ -428,7 +479,48 @@ fn os_args<const N: usize>(values: [&str; N]) -> Vec<OsString> {
 
 #[cfg(test)]
 mod tests {
+    use super::{ComputeDevice, Os, whisperx_install_args};
     use crate::adapters::outbound::environment::QWEN3_ALIGNER_ID;
+    use std::ffi::OsString;
+    use std::path::Path;
+
+    fn args(os: Os, device: ComputeDevice) -> Vec<String> {
+        whisperx_install_args(os, device, Path::new("py"), Path::new("root"))
+            .into_iter()
+            .map(|argument: OsString| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn every_whisperx_lock_installs_with_hashes_and_only_cuda_changes_the_index_strategy() {
+        // Given / When
+        let mac = args(Os::MacOs, ComputeDevice::Cpu);
+        let cpu = args(Os::Windows, ComputeDevice::Cpu);
+        let cuda = args(Os::Windows, ComputeDevice::Cuda);
+
+        // Then
+        for installed in [&mac, &cpu, &cuda] {
+            assert!(installed.contains(&"--require-hashes".to_owned()));
+        }
+        assert!(
+            mac.iter()
+                .any(|argument| argument.ends_with("requirements.lock"))
+        );
+        assert!(
+            cpu.iter()
+                .any(|argument| argument.ends_with("requirements-windows-cpu.lock"))
+        );
+        assert!(
+            cuda.iter()
+                .any(|argument| argument.ends_with("requirements-windows-cuda.lock"))
+        );
+        assert!(!mac.contains(&"--index-strategy".to_owned()));
+        assert!(!cpu.contains(&"--index-strategy".to_owned()));
+        assert!(
+            cuda.windows(2)
+                .any(|pair| pair == ["--index-strategy", "unsafe-best-match"])
+        );
+    }
 
     #[test]
     fn qwen3_model_ids_match_huggingface_repo_names() {

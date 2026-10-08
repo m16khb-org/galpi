@@ -1,5 +1,5 @@
 use crate::adapters::outbound::environment::process_environment;
-use crate::adapters::outbound::paths::{AppPaths, worker_root};
+use crate::adapters::outbound::paths::{AppPaths, canonical, worker_root};
 use crate::adapters::outbound::process::{ProcessSpec, run_process};
 use crate::adapters::outbound::refinement::write_private_file;
 use crate::application::error::AppError;
@@ -162,7 +162,7 @@ async fn validate_artifacts(
     checkpoint: Option<&Path>,
     source_audio: &Path,
 ) -> Result<Artifacts, AppError> {
-    let root = tokio::fs::canonicalize(job_directory)
+    let root = canonical(job_directory)
         .await
         .map_err(|error| AppError::io("작업 디렉터리를 확인하지 못했습니다", &error))?;
     let srt = canonical_artifact(&root, srt).await?;
@@ -182,7 +182,7 @@ async fn validate_artifacts(
 }
 
 async fn canonical_artifact(root: &Path, path: &Path) -> Result<PathBuf, AppError> {
-    let path = tokio::fs::canonicalize(path)
+    let path = canonical(path)
         .await
         .map_err(|error| AppError::io("결과 파일을 확인하지 못했습니다", &error))?;
     if !path.starts_with(root) {

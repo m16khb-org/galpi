@@ -1,21 +1,38 @@
 use super::paths::{AppPaths, QWEN3_ENGINE_VERSION};
+use super::platform::{Os, cuda_driver_present, whisperx_lock_hash_name, worker_environment};
 use crate::application::error::AppError;
 use crate::application::model::EnvironmentStatus;
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::ffi::{OsStr, OsString};
+use std::path::Path;
 use tauri::AppHandle;
 
 pub const ENGINE_VERSION: &str = "3.8.6";
 /// What an installed engine's readiness marker must contain to count as
 /// current: the display version plus the fingerprint of the requirements file
 /// it was installed from. Editing a pin invalidates the existing virtualenv.
-pub fn whisperx_marker() -> String {
-    format!(
-        "{ENGINE_VERSION}+{}",
-        env!("GALPI_WHISPERX_REQUIREMENTS_HASH")
-    )
+///
+/// macOS keeps its historical `<version>+<hash>` form byte for byte so an
+/// update never forces a reinstall. Windows names the lock too, so switching
+/// between the CPU and CUDA builds invalidates the environment.
+pub fn whisperx_marker(os: Os, device: ComputeDevice) -> String {
+    match os {
+        Os::MacOs => format!(
+            "{ENGINE_VERSION}+{}",
+            env!("GALPI_WHISPERX_REQUIREMENTS_HASH")
+        ),
+        Os::Windows => {
+            let hash = match device {
+                ComputeDevice::Cpu => env!("GALPI_WHISPERX_WIN_CPU_LOCK_HASH"),
+                ComputeDevice::Cuda => env!("GALPI_WHISPERX_WIN_CUDA_LOCK_HASH"),
+            };
+            format!(
+                "{ENGINE_VERSION}+{}-{hash}",
+                whisperx_lock_hash_name(os, device)
+            )
+        }
+    }
 }
 
 pub fn qwen3_marker() -> String {
@@ -29,54 +46,67 @@ pub const QWEN3_ALIGNER_ID: &str = "Qwen/Qwen3-ForcedAligner-0.6B";
 const PYANNOTE_MODEL_DIR: &str = "models--pyannote--speaker-diarization-community-1";
 const QWEN3_MLX_WEIGHTS: &str = "mlx/qwen3-asr-1.7b-8bit/weights.safetensors";
 
-pub fn diagnose(app: &AppHandle, preset: EnginePreset) -> Result<EnvironmentStatus, AppError> {
+pub fn diagnose(
+    app: &AppHandle,
+    selection: EngineSelection,
+) -> Result<EnvironmentStatus, AppError> {
     let paths = AppPaths::resolve(app)?;
-    Ok(status(&paths, preset))
+    Ok(status(&paths, selection))
 }
 
-pub fn status(paths: &AppPaths, preset: EnginePreset) -> EnvironmentStatus {
-    let whisperx_engine = whisperx_engine_ready(paths);
+pub fn status(paths: &AppPaths, selection: EngineSelection) -> EnvironmentStatus {
+    let system_root = std::env::var_os("SYSTEMROOT");
+    status_for(Os::current(), system_root.as_deref(), paths, selection)
+}
+
+pub fn status_for(
+    os: Os,
+    system_root: Option<&OsStr>,
+    paths: &AppPaths,
+    selection: EngineSelection,
+) -> EnvironmentStatus {
+    let ffmpeg = os.ffmpeg_file_name();
+    let whisperx_engine = whisperx_engine_ready(os, paths, selection.device);
     let whisperx_models = whisperx_models_ready(paths);
     let qwen3_engine = qwen3_engine_ready(paths);
     let qwen3_models = qwen3_models_ready(paths);
-    let (engine_ready, models_ready, ffmpeg_ready, engine_version) = match preset {
+    let qwen3_ffmpeg = paths.qwen3_engine_bin.join(ffmpeg).is_file();
+    let whisperx_ffmpeg = paths.engine_bin.join(ffmpeg).is_file();
+    let (engine_ready, models_ready, ffmpeg_ready, engine_version) = match selection.preset {
         EnginePreset::Qwen3 => (
             qwen3_engine,
             qwen3_models,
-            paths.qwen3_engine_bin.join("ffmpeg").is_file(),
+            qwen3_ffmpeg,
             format!("Qwen3-ASR-1.7B · {QWEN3_ENGINE_VERSION}"),
         ),
         EnginePreset::WhisperX => (
             whisperx_engine,
             whisperx_models,
-            paths.engine_bin.join("ffmpeg").is_file(),
+            whisperx_ffmpeg,
             format!("WhisperX {ENGINE_VERSION}"),
         ),
     };
     EnvironmentStatus {
-        engine_preset: preset,
+        engine_preset: selection.preset,
         engine_ready,
         models_ready,
         ffmpeg_ready,
-        qwen3_ready: qwen3_engine
-            && qwen3_models
-            && paths.qwen3_engine_bin.join("ffmpeg").is_file(),
-        whisperx_ready: whisperx_engine
-            && whisperx_models
-            && paths.engine_bin.join("ffmpeg").is_file(),
+        qwen3_ready: qwen3_engine && qwen3_models && qwen3_ffmpeg,
+        whisperx_ready: whisperx_engine && whisperx_models && whisperx_ffmpeg,
         data_directory: paths.root.to_string_lossy().into_owned(),
-        default_output_directory: home_directory()
-            .join("Documents/Galpi")
-            .to_string_lossy()
-            .into_owned(),
+        default_output_directory: paths.default_output.to_string_lossy().into_owned(),
         engine_version,
+        compute_device: selection.device,
+        available_presets: os.presets().to_vec(),
+        available_devices: os.devices().to_vec(),
+        cuda_driver_detected: os == Os::Windows && cuda_driver_present(system_root),
     }
 }
 
-fn whisperx_engine_ready(paths: &AppPaths) -> bool {
+fn whisperx_engine_ready(os: Os, paths: &AppPaths, device: ComputeDevice) -> bool {
     paths.python.is_file()
         && std::fs::read_to_string(&paths.engine_manifest)
-            .is_ok_and(|marker| marker == whisperx_marker())
+            .is_ok_and(|marker| marker == whisperx_marker(os, device))
 }
 
 fn qwen3_engine_ready(paths: &AppPaths) -> bool {
@@ -90,52 +120,12 @@ pub fn process_environment(
     worker_root: &Path,
     token: Option<&str>,
 ) -> HashMap<OsString, OsString> {
-    let mut env = HashMap::from([
-        ("HOME".into(), home_directory().into_os_string()),
-        ("LANG".into(), "ko_KR.UTF-8".into()),
-        ("LC_ALL".into(), "ko_KR.UTF-8".into()),
-        ("PYTHONUTF8".into(), "1".into()),
-        ("PYTHONSAFEPATH".into(), "1".into()),
-        ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
-        ("PYTHONPATH".into(), worker_root.as_os_str().to_owned()),
-        (
-            "HF_HOME".into(),
-            paths.cache.join("huggingface").into_os_string(),
-        ),
-        (
-            "TORCH_HOME".into(),
-            paths.cache.join("torch").into_os_string(),
-        ),
-        ("HF_HUB_DISABLE_IMPLICIT_TOKEN".into(), "1".into()),
-        ("HF_HUB_DISABLE_TELEMETRY".into(), "1".into()),
-        ("PYANNOTE_METRICS_ENABLED".into(), "false".into()),
-        ("DO_NOT_TRACK".into(), "1".into()),
-        (
-            "UV_PYTHON_INSTALL_DIR".into(),
-            paths.python_installations.clone().into_os_string(),
-        ),
-        // Several gigabytes of wheels belong inside the app's own data, so
-        // that removing Galpi's folder actually reclaims them.
-        (
-            "UV_CACHE_DIR".into(),
-            paths.cache.join("uv").into_os_string(),
-        ),
-        // Only the interpreter uv installed itself is a known quantity; a
-        // system 3.12 that happens to be on PATH is not.
-        ("UV_PYTHON_PREFERENCE".into(), "only-managed".into()),
-        (
-            "PATH".into(),
-            format!(
-                "{}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-                paths.engine_bin.to_string_lossy()
-            )
-            .into(),
-        ),
-        (
-            "TMPDIR".into(),
-            std::env::var_os("TMPDIR").unwrap_or_else(|| "/tmp".into()),
-        ),
-    ]);
+    let mut env = worker_environment(
+        Os::current(),
+        &|key| std::env::var_os(key),
+        paths,
+        worker_root,
+    );
     if let Some(token) = token.map(str::trim).filter(|token| !token.is_empty()) {
         env.insert("HF_TOKEN".into(), token.into());
     }
@@ -211,6 +201,95 @@ fn cache_dir_name(repo_id: &str) -> String {
     format!("models--{}", repo_id.replace('/', "--"))
 }
 
-fn home_directory() -> PathBuf {
-    std::env::var_os("HOME").map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
+#[cfg(test)]
+mod tests {
+    use super::{ENGINE_VERSION, status_for, whisperx_marker};
+    use crate::adapters::outbound::paths::AppPaths;
+    use crate::adapters::outbound::platform::Os;
+    use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
+    use std::ffi::OsStr;
+    use std::path::{Path, PathBuf};
+
+    fn selection(preset: EnginePreset, device: ComputeDevice) -> EngineSelection {
+        EngineSelection { preset, device }
+    }
+
+    #[test]
+    fn the_macos_marker_is_the_historical_version_plus_requirements_hash() {
+        // Given / When / Then: existing installs must not be asked to reinstall
+        let expected = format!(
+            "{ENGINE_VERSION}+{}",
+            env!("GALPI_WHISPERX_REQUIREMENTS_HASH")
+        );
+        assert_eq!(whisperx_marker(Os::MacOs, ComputeDevice::Cpu), expected);
+        assert_eq!(whisperx_marker(Os::MacOs, ComputeDevice::Cuda), expected);
+    }
+
+    #[test]
+    fn windows_markers_differ_by_device_and_from_macos() {
+        let mac = whisperx_marker(Os::MacOs, ComputeDevice::Cpu);
+        let cpu = whisperx_marker(Os::Windows, ComputeDevice::Cpu);
+        let cuda = whisperx_marker(Os::Windows, ComputeDevice::Cuda);
+        assert_ne!(cpu, cuda);
+        assert_ne!(cpu, mac);
+        assert_ne!(cuda, mac);
+        assert!(cpu.contains("win-cpu-"));
+        assert!(cuda.contains("win-cuda-"));
+    }
+
+    #[test]
+    fn windows_status_looks_for_ffmpeg_exe_and_offers_whisperx_only()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a Windows layout with only ffmpeg.exe in the engine bin
+        let root = std::env::temp_dir().join(format!("galpi-status-{}", uuid::Uuid::now_v7()));
+        let paths = AppPaths::from_roots(Os::Windows, root.clone(), Path::new("/documents"));
+        std::fs::create_dir_all(&paths.engine_bin)?;
+        std::fs::write(paths.engine_bin.join("ffmpeg.exe"), b"")?;
+
+        // When
+        let status = status_for(
+            Os::Windows,
+            None,
+            &paths,
+            selection(EnginePreset::WhisperX, ComputeDevice::Cuda),
+        );
+
+        // Then
+        assert!(status.ffmpeg_ready);
+        assert!(!status.engine_ready);
+        assert_eq!(status.available_presets, [EnginePreset::WhisperX]);
+        assert_eq!(
+            status.available_devices,
+            [ComputeDevice::Cpu, ComputeDevice::Cuda]
+        );
+        assert_eq!(status.compute_device, ComputeDevice::Cuda);
+        assert!(!status.cuda_driver_detected);
+        assert_eq!(
+            PathBuf::from(&status.default_output_directory),
+            PathBuf::from("/documents/Galpi")
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn macos_status_offers_both_presets_and_no_device_choice() {
+        let paths = AppPaths::from_roots(
+            Os::MacOs,
+            PathBuf::from("/nonexistent-galpi"),
+            Path::new("/docs"),
+        );
+        let status = status_for(
+            Os::MacOs,
+            Some(OsStr::new("/ignored")),
+            &paths,
+            selection(EnginePreset::Qwen3, ComputeDevice::Cpu),
+        );
+        assert_eq!(
+            status.available_presets,
+            [EnginePreset::Qwen3, EnginePreset::WhisperX]
+        );
+        assert_eq!(status.available_devices, []);
+        assert!(!status.cuda_driver_detected);
+    }
 }

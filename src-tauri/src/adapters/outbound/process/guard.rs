@@ -1,36 +1,70 @@
+//! Whole-process-tree supervision for spawned workers.
+//!
+//! The face is platform neutral; the mechanism is not. Unix puts the child in
+//! its own process group and signals the group. Windows has no group signals,
+//! so the child joins a Job Object that kills every member on termination.
+
 use crate::application::error::AppError;
-use nix::sys::signal::{Signal, kill};
-use nix::unistd::Pid;
+use tokio::process::{Child, Command};
+
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+#[cfg(unix)]
+use unix as platform;
+#[cfg(windows)]
+use windows as platform;
+
+/// How hard to end a process tree.
+///
+/// Windows has no polite group-wide request, so there `Graceful` is as final
+/// as `Force`; workers publish artifacts with an atomic rename, which makes an
+/// immediate stop safe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Escalation {
+    Graceful,
+    Force,
+}
+
+/// Apply the platform's spawn settings (process group, hidden console).
+pub fn configure(command: &mut Command) {
+    platform::configure(command);
+}
 
 pub struct ProcessGroupGuard {
-    process_id: u32,
+    inner: platform::Inner,
     armed: bool,
 }
 
 impl ProcessGroupGuard {
-    pub fn new(process_id: u32) -> Self {
-        Self {
-            process_id,
+    /// Bring a freshly spawned child under supervision.
+    pub fn attach(child: &Child) -> Result<Self, AppError> {
+        Ok(Self {
+            inner: platform::Inner::attach(child)?,
             armed: true,
-        }
+        })
     }
 
-    pub fn terminate(&self, signal: Signal) -> Result<(), AppError> {
-        let raw_id = i32::try_from(self.process_id)
-            .map_err(|_| AppError::new("PROCESS_ERROR", "프로세스 ID 범위를 벗어났습니다."))?;
-        kill(Pid::from_raw(-raw_id), signal)
-            .map_err(|error| AppError::new("PROCESS_ERROR", error.to_string()))
+    pub fn terminate(&self, escalation: Escalation) -> Result<(), AppError> {
+        self.inner.terminate(escalation)
     }
 
     pub fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    #[cfg(all(test, windows))]
+    pub fn active_processes(&self) -> Result<u32, AppError> {
+        self.inner.active_processes()
     }
 }
 
 impl Drop for ProcessGroupGuard {
     fn drop(&mut self) {
         if self.armed
-            && let Err(error) = self.terminate(Signal::SIGKILL)
+            && let Err(error) = self.terminate(Escalation::Force)
         {
             eprintln!("process group cleanup failed: {error}");
         }
