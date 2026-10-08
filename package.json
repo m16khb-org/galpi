@@ -1,7 +1,7 @@
 {
   "name": "galpi",
   "version": "0.1.0",
-  "description": "Apple Silicon Korean meeting recording and local transcription app",
+  "description": "Apple Silicon and Windows x64 Korean meeting recording and local transcription app",
   "author": "m16khb <m16khb@gmail.com>",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "scripts": {
     "dev": "cargo tauri dev",
-    "build": "cargo tauri build --bundles app --ci && bun run dmg:build",
+    "build": "bun run scripts/build.ts",
     "dmg:build": "bun run scripts/build-dmg.ts",
     "vite:dev": "vite --port 1420 --strictPort",
     "vite:build": "tsc --noEmit && vite build",
