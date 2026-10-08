@@ -8,7 +8,7 @@ import {
   reduceJobEvent,
 } from "../application/job-machine"
 import { type ArtifactKind, type BackendPort, errorDetail, errorMessage } from "../domain/backend"
-import type { EnginePreset, ImportedTranscript, TranscriptionResult } from "../domain/job"
+import type { ComputeDevice, EnginePreset, ImportedTranscript, TranscriptionResult } from "../domain/job"
 import { buildSpeakerHint, type SpeakerHint } from "../domain/speaker"
 import type { AppView } from "./app-view"
 import { RecordingController } from "./recording-controller"
@@ -92,6 +92,7 @@ export class AppController {
     this.view.on("add-glossary-entry", () => this.view.glossarySettings.addRow())
     this.view.on("clear-attendees", () => this.view.attendees.clear())
     this.view.onEnginePresetChange((preset) => void this.switchEngine(preset))
+    this.view.onComputeDeviceChange((device) => void this.switchComputeDevice(device))
     this.view.on("clear-token", () => void this.clearToken())
     this.view.on("clear-assistant-key", () => void this.clearAssistantKey())
     this.view.on("refine", () => void this.refine())
@@ -116,6 +117,17 @@ export class AppController {
   private async switchEngine(preset: EnginePreset): Promise<void> {
     try {
       await this.backend.saveEnginePreset(preset)
+      const environment = await this.backend.diagnose()
+      this.view.setEnvironment(environment)
+    } catch (error) {
+      this.view.showError(errorMessage(error))
+    }
+  }
+
+  /** Same contract as the preset: save, then re-diagnose so the panel follows. */
+  private async switchComputeDevice(device: ComputeDevice): Promise<void> {
+    try {
+      await this.backend.saveComputeDevice(device)
       const environment = await this.backend.diagnose()
       this.view.setEnvironment(environment)
     } catch (error) {

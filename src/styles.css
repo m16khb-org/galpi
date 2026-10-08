@@ -4,7 +4,7 @@
   color-scheme: light;
   font-family:
     "Avenir Next", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-    sans-serif;
+    "Segoe UI", "Malgun Gothic", sans-serif;
   color: #24231f;
   background: #f7f6f2;
   font-synthesis: none;
@@ -572,6 +572,7 @@ summary:focus-visible {
   font:
     10px / 1.5 "SFMono-Regular",
     Menlo,
+    Consolas,
     monospace;
 }
 
@@ -997,6 +998,7 @@ button:disabled {
   font:
     700 14px "SFMono-Regular",
     Menlo,
+    Consolas,
     monospace;
   font-variant-numeric: tabular-nums;
 }
@@ -1110,7 +1112,7 @@ button:disabled {
   margin-top: 5px;
   overflow: hidden;
   color: var(--text-secondary);
-  font-family: "SFMono-Regular", Menlo, monospace;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1215,6 +1217,29 @@ button:disabled {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+/* Both tie with the global `html [hidden]` rule, so each needs its own hide. */
+.engine-segmented label[hidden],
+#engine-device[hidden] {
+  display: none;
+}
+
+#engine-device {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#engine-device p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.segmented-control input:disabled + span {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .engine-segmented em[data-state="ready"] {
@@ -1580,6 +1605,7 @@ button:disabled {
   font:
     11px / 1.65 "SFMono-Regular",
     Menlo,
+    Consolas,
     monospace;
   white-space: pre-wrap;
 }

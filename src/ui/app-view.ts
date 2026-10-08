@@ -1,6 +1,7 @@
 import type { JobStatus, JobViewState } from "../application/job-machine"
 import type { RecordingViewState } from "../application/recording-machine"
 import type {
+  ComputeDevice,
   EnginePreset,
   EnvironmentStatus,
   ImportedTranscript,
@@ -121,6 +122,17 @@ export class AppView {
     }
   }
 
+  /** Device switching saves immediately like the preset; CUDA needs a re-prepare afterwards. */
+  onComputeDeviceChange(handler: (device: ComputeDevice) => void): void {
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="compute-device"]',
+    )) {
+      input.addEventListener("change", () => {
+        if (input.checked) handler(input.value as ComputeDevice)
+      })
+    }
+  }
+
   speakerForm(): SpeakerForm {
     const checked = this.root.querySelector<HTMLInputElement>('input[name="speaker-mode"]:checked')
     return {
@@ -137,8 +149,17 @@ export class AppView {
     )) {
       input.checked = input.value === status.enginePreset
     }
-    this.setEngineBadge("#engine-qwen3-state", "기본", status.qwen3Ready)
-    this.setEngineBadge("#engine-whisperx-state", "이전 엔진", status.whisperxReady)
+    const defaultPreset = status.availablePresets[0]
+    for (const preset of ["qwen3", "whisperx"] as const) {
+      this.element(`[data-engine-option="${preset}"]`).hidden =
+        !status.availablePresets.includes(preset)
+      this.setEngineBadge(
+        `#engine-${preset}-state`,
+        preset === defaultPreset ? "기본" : "이전 엔진",
+        preset === "qwen3" ? status.qwen3Ready : status.whisperxReady,
+      )
+    }
+    this.setComputeDevice(status)
     this.element("#engine-settings-state").textContent =
       status.enginePreset === "qwen3" ? "Qwen3" : "WhisperX"
     const engineLabel =
@@ -371,6 +392,22 @@ export class AppView {
   }
 
   /** Picker badges pair the engine role with its readiness, never color alone. */
+  private setComputeDevice(status: EnvironmentStatus): void {
+    this.element("#engine-device").hidden = !(
+      status.availableDevices.length > 0 && status.enginePreset === "whisperx"
+    )
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="compute-device"]',
+    )) {
+      input.checked = input.value === status.computeDevice
+    }
+    const cuda = this.element<HTMLInputElement>('input[name="compute-device"][value="cuda"]')
+    cuda.disabled = !status.cudaDriverDetected
+    this.element("#engine-device-cuda-note").textContent = status.cudaDriverDetected
+      ? ""
+      : "NVIDIA 드라이버 필요"
+  }
+
   private setEngineBadge(selector: string, role: string, ready: boolean): void {
     this.element(selector).textContent = `${role} · ${ready ? "준비됨" : "준비 필요"}`
     this.element(selector).dataset["state"] = ready ? "ready" : "pending"
@@ -564,7 +601,7 @@ function setPrimary(button: HTMLElement, primary: boolean): void {
 
 /** "/in/2026-10-03 주간 회의.m4a" → "2026-10-03 주간 회의" */
 function meetingName(path: string): string {
-  const file = path.split("/").at(-1) ?? path
+  const file = path.split(/[\\/]/).at(-1) ?? path
   const dot = file.lastIndexOf(".")
   return dot > 0 ? file.slice(0, dot) : file
 }

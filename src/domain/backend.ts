@@ -1,5 +1,6 @@
 import type {
   AssistantSettings,
+  ComputeDevice,
   EnginePreset,
   EnvironmentStatus,
   ImportedTranscript,
@@ -23,6 +24,7 @@ export interface BackendPort {
   saveAssistantApiKey(key: string): Promise<void>
   saveAssistantSettings(settings: AssistantSettings): Promise<void>
   saveEnginePreset(preset: EnginePreset): Promise<void>
+  saveComputeDevice(device: ComputeDevice): Promise<void>
   refineTranscript(
     jobId: string,
     target: string,

@@ -13,7 +13,7 @@ export const appTemplate = `
         <li id="step-results" data-state="pending"><span>02</span><div><strong>전사 결과</strong><small>자막 · 화자별 텍스트</small><em class="step-state" data-step-state>대기</em></div></li>
         <li id="step-augment" data-state="pending"><span>03</span><div><strong>전사 결과 AI 증강</strong><small>회의록 자동 작성</small><em class="step-state" data-step-state>대기</em></div></li>
       </ol>
-      <div class="rail-note"><i class="ph ph-shield-check" aria-hidden="true"></i><p>녹음과 전사는 이 Mac 안에서만 처리됩니다. AI 증강을 실행할 때만 전사본이 증강 제공자로 전송됩니다.</p></div>
+      <div class="rail-note"><i class="ph ph-shield-check" aria-hidden="true"></i><p>녹음과 전사는 이 컴퓨터 안에서만 처리됩니다. AI 증강을 실행할 때만 전사본이 증강 제공자로 전송됩니다.</p></div>
     </aside>
 
     <main class="workspace">
@@ -75,7 +75,7 @@ export const appTemplate = `
               <div id="recorder" class="recorder" data-state="idle">
                 <button id="record-button" class="record-button" type="button" data-action="record">
                   <span><i class="ph ph-microphone" aria-hidden="true"></i></span>
-                  <div><strong>마이크로 바로 녹음</strong><small>CoreAudio · 16-bit PCM WAV</small></div>
+                  <div><strong>마이크로 바로 녹음</strong><small>시스템 마이크 · 16-bit PCM WAV</small></div>
                 </button>
                 <div id="recording-active" class="recording-active" hidden>
                   <span class="recording-dot" aria-hidden="true"></span>
@@ -149,7 +149,7 @@ export const appTemplate = `
             <div id="result-checkpoint-row" class="artifact-row"><i class="ph ph-database" aria-hidden="true"></i><div><strong>정렬 체크포인트</strong><code id="result-checkpoint"></code></div><button type="button" data-action="open-checkpoint" aria-label="정렬 체크포인트 열기">열기</button></div>
           </div>
           <div class="panel-actions">
-            <button class="secondary-button" type="button" data-action="reveal-output"><i class="ph ph-folder-open" aria-hidden="true"></i>Finder에서 보기</button>
+            <button class="secondary-button" type="button" data-action="reveal-output"><i class="ph ph-folder-open" aria-hidden="true"></i>출력 폴더 열기</button>
           </div>
         </section>
 
@@ -204,8 +204,15 @@ export const appTemplate = `
             <p>다음 전사부터 적용됩니다. 준비되지 않은 엔진을 고르면 닫힌 준비 패널에서 로컬 엔진 준비를 먼저 실행해야 합니다.</p>
           </div>
           <div class="segmented-control engine-segmented" role="radiogroup" aria-label="전사 엔진 선택">
-            <label><input type="radio" name="engine-preset" value="qwen3" checked /><span>Qwen3<em id="engine-qwen3-state">기본 · 확인 중</em></span></label>
-            <label><input type="radio" name="engine-preset" value="whisperx" /><span>WhisperX<em id="engine-whisperx-state">이전 엔진 · 확인 중</em></span></label>
+            <label data-engine-option="qwen3"><input type="radio" name="engine-preset" value="qwen3" checked /><span>Qwen3<em id="engine-qwen3-state">기본 · 확인 중</em></span></label>
+            <label data-engine-option="whisperx"><input type="radio" name="engine-preset" value="whisperx" /><span>WhisperX<em id="engine-whisperx-state">이전 엔진 · 확인 중</em></span></label>
+          </div>
+          <div id="engine-device" hidden>
+            <div class="segmented-control engine-segmented" role="radiogroup" aria-label="연산 장치 선택" aria-describedby="engine-device-help">
+              <label><input type="radio" name="compute-device" value="cpu" checked /><span>CPU</span></label>
+              <label><input type="radio" name="compute-device" value="cuda" /><span>NVIDIA GPU (CUDA)<em id="engine-device-cuda-note"></em></span></label>
+            </div>
+            <p id="engine-device-help">CUDA를 처음 선택하면 약 3.5 GB의 PyTorch CUDA 빌드를 내려받으며, 바꾼 뒤에는 로컬 엔진 준비를 다시 실행해야 합니다.</p>
           </div>
         </section>
         <section class="settings-section" aria-labelledby="token-settings-title">
@@ -218,7 +225,7 @@ export const appTemplate = `
             <input id="settings-hf-token" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="hf_..." aria-describedby="settings-token-help" data-visible="false" readonly />
             <button id="toggle-token-visibility" class="secret-visibility-button" type="button" data-action="toggle-token-visibility" aria-label="Hugging Face 토큰 표시"><i class="ph ph-eye" aria-hidden="true"></i></button>
           </div>
-          <p id="settings-token-help">저장한 값은 이 Mac의 Galpi 앱 설정에 유지되며 모델 준비 때 자동으로 사용됩니다.</p>
+          <p id="settings-token-help">저장한 값은 이 컴퓨터의 Galpi 앱 설정에 유지되며 모델 준비 때 자동으로 사용됩니다.</p>
           <div class="token-guide-anchor">
             <button id="token-guide-trigger" class="token-guide-trigger" type="button" aria-expanded="false" aria-controls="token-guide-popover">필요 권한과 발급 방법 <i class="ph ph-info" aria-hidden="true"></i></button>
             <div id="token-guide-popover" class="token-guide-popover" role="dialog" aria-label="Hugging Face 토큰 발급 안내" hidden>
@@ -231,7 +238,7 @@ export const appTemplate = `
                 <li><code>pyannote/speaker-diarization-community-1</code> 저장소 콘텐츠의 Read 권한만 허용합니다.</li>
                 <li><code>hf_</code>로 시작하는 토큰을 복사해 저장합니다.</li>
               </ol>
-              <p>접근 승인이 끝났거나 모델이 이미 이 Mac에 준비되어 있으면 토큰을 비워 두어도 됩니다.</p>
+              <p>접근 승인이 끝났거나 모델이 이미 이 컴퓨터에 준비되어 있으면 토큰을 비워 두어도 됩니다.</p>
             </div>
           </div>
           <button class="text-button" type="button" data-action="model-access">모델 이용 조건 페이지 열기 <i class="ph ph-arrow-up-right" aria-hidden="true"></i></button>
@@ -289,7 +296,7 @@ export const appTemplate = `
           <p id="settings-base-url-help">OpenAI 호환 엔드포인트라면 모두 사용할 수 있습니다. OpenRouter는 https://openrouter.ai/api/v1 를 입력하세요. 비워 두면 z.ai 코딩 플랜 주소를 사용합니다.</p>
           <label class="settings-field-label" for="settings-assistant-background">사전 정보</label>
           <textarea id="settings-assistant-background" class="settings-textarea" rows="8" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="settings-background-help" placeholder="제품/서비스: 갈피 (회의 녹음·전사 데스크톱 앱)&#10;팀: 하빈(팀리더), 지우(백엔드)&#10;별칭: 프로님 = 하빈&#10;도메인 용어: 화자분리, 정렬 체크포인트"></textarea>
-          <p id="settings-background-help">참석자·제품명·약어·도메인 용어를 적어 두면 잘못 들린 단어와 화자를 보정합니다. 이 Mac에만 저장되고 회의록을 만들 때 함께 전송됩니다.</p>
+          <p id="settings-background-help">참석자·제품명·약어·도메인 용어를 적어 두면 잘못 들린 단어와 화자를 보정합니다. 이 컴퓨터에만 저장되고 회의록을 만들 때 함께 전송됩니다.</p>
         </section>
         <div class="settings-actions">
           <button class="secondary-button danger" type="button" data-action="clear-token">Hugging Face 토큰 지우기</button>
