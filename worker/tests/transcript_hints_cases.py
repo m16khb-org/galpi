@@ -133,8 +133,13 @@ class BoundaryHintTests(unittest.TestCase):
 
         # Then
         self.assertIn("- 화자 경계: (22s) SPEAKER_01 → SPEAKER_00", hints.block)
-        # the flagged line stays its own line so the model can find it
-        self.assertIn("[SPEAKER_01] (22s) 오전까지 보내 드릴게요.\n", hints.transcript)
+        # The flagged part opens its own line, so the model can find it, and
+        # what follows keeps an inline timestamp marking where it ends.
+        self.assertIn(
+            "[SPEAKER_00] (20s) 정산서는 내일\n"
+            "[SPEAKER_01] (22s) 오전까지 보내 드릴게요. (25s) 저는 쿠폰 쪽을 볼게요.\n",
+            hints.transcript,
+        )
 
     def test_merges_one_speakers_consecutive_lines_without_losing_words(self) -> None:
         # Given

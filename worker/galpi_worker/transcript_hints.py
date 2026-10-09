@@ -1070,22 +1070,26 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
 
 
 def merge_lines(lines: list[TranscriptLine], keep: set[int]) -> list[TranscriptLine]:
-    """Merge consecutive lines of one speaker, keeping flagged lines apart."""
+    """Merge consecutive lines of one speaker.
+
+    A flagged line never joins the line before it, so its timestamp stays a
+    line timestamp the candidate can point at. Lines after it may join it,
+    behind their own inline timestamp so the flagged part keeps its extent.
+    """
 
     merged: list[TranscriptLine] = []
+    flagged_head = False
     for index, line in enumerate(lines):
-        if (
-            merged
-            and index not in keep
-            and index - 1 not in keep
-            and merged[-1].label == line.label
-        ):
+        if merged and index not in keep and merged[-1].label == line.label:
             previous = merged[-1]
+            text = f"({line.second}s) {line.text}" if flagged_head else line.text
             merged[-1] = TranscriptLine(
-                previous.label, previous.second, f"{previous.text} {line.text}"
+                previous.label, previous.second, f"{previous.text} {text}"
             )
+            flagged_head = False
         else:
             merged.append(line)
+            flagged_head = index in keep
     return merged
 
 
