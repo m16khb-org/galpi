@@ -592,6 +592,7 @@ class SpeakerIndex:
         order = sorted(range(len(turns)), key=lambda index: turns[index]["start"])
         self.order = order
         self.starts = [turns[index]["start"] for index in order]
+        self.ends = [turns[index]["end"] for index in order]
         # Running maximum of `end` in start order: every turn before the first
         # index whose running end passes a word's start ends before the word.
         self.reach: list[float] = []
@@ -610,6 +611,13 @@ class SpeakerIndex:
         best_index = -1
         first = bisect_right(self.reach, span_start)
         last = bisect_left(self.starts, span_end)
+        if last - first == 1:
+            # The usual case: one turn is near the word, no tie to break.
+            overlap = min(span_end, self.ends[first]) - max(
+                span_start, self.starts[first]
+            )
+            if overlap > 0:
+                return turns[self.order[first]]["speaker"]
         for position in range(first, last):
             index = self.order[position]
             turn = turns[index]
