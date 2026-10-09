@@ -135,8 +135,11 @@ REPLY: Final = re.compile(
     r"^(네|예|응|아|어|음|맞아요|맞습니다|맞아|그렇죠|그렇습니다|좋습니다|좋아요|알겠습니다)([,.!?\s]|$)"
 )
 # Without punctuation only endings that never close a noun count; `지`, `네`,
-# and `군` also end nouns such as `휴지`.
-SENTENCE_END: Final = re.compile(r"[.?!…]$|(요|다|죠|까)$")
+# and `군` also end nouns such as `휴지`, and a bare `다` ends `둘 다`, so `다`
+# needs a verb before it.
+SENTENCE_END: Final = re.compile(
+    r"[.?!…]$|(요|죠|까|니다|[었았였했겠있없같이한된는]다)$"
+)
 # Inflected verbs and adjectives: their spellings differ only by ending and
 # are never one misheard word.
 PREDICATE_END: Final = re.compile(
