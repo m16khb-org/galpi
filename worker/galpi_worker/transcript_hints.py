@@ -832,13 +832,26 @@ def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
     ]
 
 
+def noun_stem(word: str, shortest: int = 2) -> str:
+    """The word without what may follow a noun inside it (`별`, particles,
+    a light verb ending), keeping at least `shortest` syllables; the
+    longest such tail is removed."""
+
+    stripped = word.rstrip(".,?!")
+    stem, _ = split_particle(stripped)
+    for cut in range(shortest, len(stripped)):
+        if WORD_TAIL.fullmatch(stripped[cut:]):
+            return stripped[:cut] if cut < len(stem) else stem
+    return stem
+
+
 def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
     """Group spellings that are probably one unlisted word."""
 
     counts: dict[str, int] = {}
     for line in lines:
         for word in line.text.split():
-            stem, _ = split_particle(word)
+            stem = noun_stem(word)
             if (
                 syllables(stem) >= 3
                 and re.fullmatch(r"[가-힣]+", stem)
@@ -867,6 +880,7 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             for known in by_length.get(length, ())
         )
 
+    latin_terms = [term for term in vocabulary.terms if HANGUL.search(term) is None]
     stems = [
         stem
         for stem in counts
@@ -874,6 +888,8 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         and not any(
             close(stem, part, CLUSTER_TERM_THRESHOLD) is not None for part in parts
         )
+        # a registered Latin term said aloud is a term error, not jargon
+        and not any(latin_match(stem, term) is not None for term in latin_terms)
     ]
     groups: list[set[str]] = []
     for stem in stems:
@@ -890,16 +906,16 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         else:
             groups.append({stem})
     # An unlisted word split by a space joins the group its joined spelling
-    # belongs to. Only groups that already show several spellings qualify,
-    # and neither half may be a spelling of its own (`그 {단어}`).
-    spelled = [group for group in groups if len(group) > 1]
-    sizes = {syllables(member) for group in spelled for member in group}
+    # belongs to; neither half may be a spelling of its own (`그 {단어}`). A
+    # word seen once needs a different spelling, not just a space, so an
+    # ordinary spacing slip is not reported as jargon.
+    sizes = {syllables(member) for group in groups for member in group}
     placed: set[str] = set()
     for line in lines:
         for first, second in pairwise(line.text.split()):
             if first.endswith((",", ".", "?", "!")):
                 continue
-            tail, _ = split_particle(second)
+            tail = noun_stem(second, shortest=1)
             joined = first + tail
             size = syllables(joined)
             if size < 3 or not sizes & {size - 1, size, size + 1}:
@@ -910,11 +926,12 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             if spaced in placed:
                 continue
             placed.add(spaced)
-            for group in spelled:
+            for group in groups:
                 if first in group or tail in group:
                     continue
                 if any(
                     close(joined, member, CLUSTER_THRESHOLD) is not None
+                    and (len(group) > 1 or joined != member)
                     for member in group
                 ):
                     group.add(spaced)
