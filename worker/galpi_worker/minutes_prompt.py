@@ -175,9 +175,7 @@ def build_messages(
         "<전사본>\n"
         f"{transcript.strip()}\n"
         "</전사본>\n\n"
-        "위 규칙과 형식(상단 상태 블록 → TL;DR → 회의 목적 → 결정사항 → 액션 보드 → "
-        "주제별 논의 → 후속 확인 → 리스크/열린 질문 → 보정 부록 순서, 정보가 없는 "
-        "섹션은 제목을 유지하고 `해당 없음`)에 맞춰 회의록 Markdown 문서를 작성하세요."
+        "위 규칙과 문서 구조에 맞춰 회의록을 Markdown 문서로 작성하세요."
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
