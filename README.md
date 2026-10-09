@@ -17,7 +17,7 @@
 
 > [!IMPORTANT]
 > Galpi 0.1.0은 **macOS 14 이상 Apple Silicon(M1 이상)** 과 **Windows 10/11 x64** 를 지원하는 개발 빌드입니다.
-> macOS DMG는 서명·공증되지 않았고 Windows 설치 프로그램은 서명되지 않았습니다. Intel Mac과 Linux는 지원하지 않습니다.
+> 배포용 바이너리는 제공하지 않습니다. 사용할 컴퓨터에서 소스로 직접 빌드해 설치합니다(아래 '1. 설치'). Intel Mac과 Linux는 지원하지 않습니다.
 
 ## 한눈에 보기
 
@@ -37,7 +37,19 @@ Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져�
 
 ## 빠른 시작
 
-### 1. 개발 도구 준비
+### 1. 설치
+
+Galpi는 사용할 컴퓨터에서 직접 빌드해 설치합니다. 같은 컴퓨터에서 만든 앱에는 인터넷에서 받은 파일이라는 표시(macOS 격리 속성, Windows Mark of the Web)가 붙지 않습니다. 그래서 서명되지 않은 빌드를 내려받았을 때 나오는 Gatekeeper 경고 없이 열리며(macOS 27에서 확인), Windows에서도 SmartScreen 경고가 보통 나오지 않습니다.
+
+코딩 에이전트(Claude Code, Codex 등)에게 다음과 같이 요청하면 됩니다.
+
+```text
+https://github.com/m16khb-org/galpi 저장소를 받아서, INSTALL.md를 따라 이 컴퓨터에 Galpi를 빌드하고 설치해 줘.
+```
+
+에이전트는 [INSTALL.md](INSTALL.md)에 따라 플랫폼을 확인하고, 빠진 도구(Xcode Command Line Tools 또는 Visual Studio Build Tools, Rust, Bun, Tauri CLI)를 설치해도 되는지 물은 뒤 빌드·설치합니다. 직접 진행할 때도 같은 문서를 따르면 됩니다. 업데이트도 같은 방법으로 다시 빌드합니다.
+
+**개발 모드로 실행하기**
 
 필수 환경:
 
@@ -55,10 +67,10 @@ bun run dev
 
 `bun run dev`는 해당 플랫폼의 검증된 `uv`, Python worker, 프론트엔드, Tauri 앱을 준비해 실행합니다. Python, ffmpeg, WhisperX를 전역으로 미리 설치할 필요는 없습니다. Windows에서도 PowerShell에서 같은 명령을 사용합니다.
 
-### Windows 빠른 시작
+### Windows 참고
 
-1. [Microsoft Visual C++ 2015–2022 x64 재배포 패키지](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)를 설치합니다. 앱에 포함되어 있지 않습니다.
-2. 서명되지 않은 NSIS 설치 프로그램(`.exe`)을 실행합니다. SmartScreen 경고가 나오면 **추가 정보 → 실행**을 누릅니다.
+1. [Microsoft Visual C++ 2015–2022 x64 재배포 패키지](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)가 필요합니다. 앱에 포함되어 있지 않으며, INSTALL.md 절차가 함께 설치합니다.
+2. 빌드한 NSIS 설치 프로그램(`Galpi_<버전>_x64-setup.exe`)은 현재 사용자용으로 설치되므로 관리자 권한이 필요 없습니다.
 3. 아래 'Google 계정으로 로그인'과 '최초 엔진 준비'를 진행합니다.
 
 Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. ASR 자체는 CTranslate2 CPU int8로 동작하며 CUDA는 정렬·화자분리만 가속합니다.
@@ -295,11 +307,11 @@ macOS 빌드는 `.app`을 만든 뒤 `hdiutil`로 DMG를 생성합니다. Window
 
 #### 다른 사람에게 배포할 때
 
-서명·공증되지 않은 DMG를 받은 Mac은 Gatekeeper가 실행을 막습니다. 배포 전에 Apple Developer 인증서로 서명하고 공증하세요.
+지금은 바이너리를 배포하지 않고 각자 [INSTALL.md](INSTALL.md)로 빌드합니다. 이 절은 나중에 바이너리를 배포할 때를 위한 것입니다. 서명·공증되지 않은 DMG를 받은 Mac은 Gatekeeper가 실행을 막으므로, 배포 전에 Apple Developer 인증서로 서명하고 공증하세요.
 
 서명이 붙으면 자격 증명도 Keychain으로 옮길 수 있습니다. macOS는 Keychain 항목의 접근 권한을 앱의 코드 서명에 묶어 두므로, 서명이 고정되기 전에는 사용자가 업데이트할 때마다 접근 허용 창을 보게 됩니다.
 
-`.github/workflows/release.yml`이 `v*` 태그에서 DMG를 만들고, 아래 저장소 시크릿이 설정되어 있으면 서명·공증까지 수행한 뒤 `codesign`/`spctl`로 검증합니다.
+`.github/workflows/release.yml`이 `v*` 태그나 수동 실행에서 DMG와 Windows 설치 프로그램을 만들어 워크플로 아티팩트로 올립니다. 아래 저장소 시크릿이 설정되어 있으면 서명·공증까지 수행한 뒤 `codesign`/`spctl`로 검증합니다.
 
 | 시크릿 | 내용 |
 |---|---|
@@ -323,7 +335,7 @@ Hardened Runtime에 필요한 entitlement는 `src-tauri/Entitlements.plist`에 �
 | 마이크 녹음이 시작되지 않음 | 시스템 설정에서 Galpi 마이크 권한 확인 |
 | 상대방 음성이 녹음되지 않음 | 현재 시스템 오디오 캡처는 지원하지 않음 |
 | AI 회의록이 실패함 | API Key, Base URL, 모델 이름, 제공자 사용량 한도 확인 |
-| 다른 Mac에서 앱을 열 수 없음 | 미서명·미공증 빌드는 Gatekeeper가 막습니다. 서명·공증해 배포하세요(위 "다른 사람에게 배포할 때") |
+| 다른 Mac에서 앱을 열 수 없음 | 내려받은 미서명·미공증 빌드는 Gatekeeper가 막습니다. 그 Mac에서 [INSTALL.md](INSTALL.md)로 직접 빌드하세요 |
 | 앱 업데이트 후 엔진이 다시 `대기`로 표시됨 | 엔진 준비 마커가 의존성 잠금 파일의 해시를 따릅니다. 잠금이 바뀌면 **로컬 엔진 준비**를 한 번 더 눌러 환경을 맞춥니다(모델은 다시 받지 않습니다) |
 
 ## 현재 상태

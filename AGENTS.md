@@ -37,6 +37,7 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 
 | Task | Location | Notes |
 |------|----------|-------|
+| Install Galpi for a user | `INSTALL.md` | No binaries ship; build from source, install, hand sign-in back to the user |
 | Frontend startup | `src/main.ts` | Composes backend, view, controller |
 | Frontend orchestration | `src/ui/controller.ts` | Setup, transcription, artifacts, cancellation |
 | Recording UI lifecycle | `src/ui/recording-controller.ts` | Buffers early native failures |

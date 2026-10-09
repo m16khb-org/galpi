@@ -17,7 +17,7 @@
 
 > [!IMPORTANT]
 > Galpi 0.1.0 is a development build for **Apple Silicon Macs running macOS 14 or later** and **Windows 10/11 x64**.
-> The macOS DMG is unsigned and not notarized, and the Windows installer is unsigned. Intel Macs and Linux are not supported.
+> No prebuilt binaries are distributed. Build and install from source on the computer that will run Galpi (see "1. Install" below). Intel Macs and Linux are not supported.
 
 ## At a glance
 
@@ -37,7 +37,19 @@ Galpi records audio inside the app or imports an existing meeting file, then run
 
 ## Quick start
 
-### 1. Install development tools
+### 1. Install
+
+Galpi is built and installed on the computer that will run it. A build made on the same machine carries no downloaded-file marker (macOS quarantine attribute, Windows Mark of the Web), so it opens without the Gatekeeper warning an unsigned downloaded build triggers (observed on macOS 27), and Windows normally shows no SmartScreen prompt either.
+
+Ask a coding agent (Claude Code, Codex, …) something like:
+
+```text
+Clone https://github.com/m16khb-org/galpi, then follow INSTALL.md to build and install Galpi on this computer.
+```
+
+Following [INSTALL.md](INSTALL.md), the agent checks the platform, asks before installing any missing tools (Xcode Command Line Tools or Visual Studio Build Tools, Rust, Bun, Tauri CLI), then builds and installs. You can follow the same file by hand. Update by rebuilding the same way.
+
+**Run in development mode**
 
 Requirements:
 
@@ -55,10 +67,10 @@ bun run dev
 
 `bun run dev` stages the verified `uv` binary for the current platform, the Python worker, the frontend, and the Tauri app. You do not need to preinstall Python, ffmpeg, or WhisperX globally. Use the same command in Windows PowerShell.
 
-### Windows quick start
+### Windows notes
 
-1. Install the [Microsoft Visual C++ 2015–2022 x64 redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist). The app does not bundle it.
-2. Run the unsigned NSIS installer (`.exe`). If SmartScreen warns, choose **More info → Run anyway**.
+1. The [Microsoft Visual C++ 2015–2022 x64 redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) is required. The app does not bundle it; the INSTALL.md steps install it.
+2. The NSIS installer you build (`Galpi_<version>_x64-setup.exe`) installs for the current user, so it needs no administrator rights.
 3. Follow "2. Sign in with Google" and "3. Prepare the local engine" below.
 
 On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. ASR itself stays on CTranslate2 CPU int8; CUDA accelerates only alignment and diarization.
@@ -295,11 +307,11 @@ The macOS build creates the `.app` first, then packages the DMG with `hdiutil`. 
 
 #### Distributing to other people
 
-Gatekeeper blocks an unsigned, un-notarized DMG on every Mac that receives it. Sign and notarize with an Apple Developer certificate before handing the build to anyone.
+Galpi currently ships no binaries; everyone builds with [INSTALL.md](INSTALL.md). This section is for a future binary release. Gatekeeper blocks an unsigned, un-notarized DMG on every Mac that receives it, so sign and notarize with an Apple Developer certificate before handing the build to anyone.
 
 A signature also unlocks Keychain storage for credentials. macOS ties access to a Keychain item to the app's code signature, so until that signature is stable every update asks users to re-authorize a token they never touched.
 
-`.github/workflows/release.yml` builds the DMG on a `v*` tag and, when the repository secrets below are set, signs and notarizes it, then verifies the result with `codesign` and `spctl`.
+`.github/workflows/release.yml` builds the DMG and the Windows installer as workflow artifacts on a `v*` tag or a manual run and, when the repository secrets below are set, signs and notarizes the DMG, then verifies the result with `codesign` and `spctl`.
 
 | Secret | Contents |
 |---|---|
@@ -323,7 +335,7 @@ The entitlements Hardened Runtime needs are declared in `src-tauri/Entitlements.
 | Microphone recording does not start | Check Galpi microphone access in System Settings |
 | Other participants are not recorded | System-audio capture is not supported yet |
 | AI minutes fail | Check API Key, Base URL, model name, and provider quota |
-| The app will not open on another Mac | Gatekeeper blocks unsigned, un-notarized builds. Sign and notarize before distributing (see "Distributing to other people") |
+| The app will not open on another Mac | Gatekeeper blocks a downloaded unsigned, un-notarized build. Build it on that Mac with [INSTALL.md](INSTALL.md) |
 | The engine shows `Pending` again after an update | The readiness marker tracks the hash of the dependency lock file. When the lock changes, press **Prepare local engine** once to match the environment (models are not downloaded again) |
 
 ## Project status
