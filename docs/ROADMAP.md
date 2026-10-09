@@ -16,7 +16,7 @@
 | 영역 | 내용 |
 |---|---|
 | 녹음 | CoreAudio 마이크 → bounded queue → WAV writer. `.wav.part` 원자적 완료, 버리기 지원 |
-| 전사 | WhisperX `large-v3-turbo` 한국어 ASR(CTranslate2 CPU int8) + 문장 정렬 + pyannote 화자분리(MPS, CPU 폴백) |
+| 전사 | WhisperX `large-v3-turbo` 한국어 ASR(CTranslate2 CPU int8, Windows CUDA 빌드는 CUDA float16) + 문장 정렬 + pyannote 화자분리(MPS·CUDA, CPU 폴백) |
 | 입력 | 마이크 녹음 및 `m4a`/`mp3`/`wav`/`mp4`/`mov`/`aac`/`flac`/`ogg` 파일 가져오기 |
 | 품질 | 화자 수 힌트(자동/정확히/범위), 장기 무음 환각 필터링, 체크포인트 재사용(`.aligned.v2.json`) |
 | 산출물 | `.srt`, `_화자별.txt`, `.aligned.v2.json` — 작업별 독립 디렉터리 |

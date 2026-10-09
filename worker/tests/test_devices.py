@@ -6,6 +6,7 @@ from ..galpi_worker.preparation import link_ffmpeg
 from ..galpi_worker.runtime import (
     ffmpeg_link_name,
     needs_cpu_fallback,
+    select_asr_runtime,
     select_torch_device,
 )
 
@@ -23,6 +24,17 @@ class DeviceSelectionTests(unittest.TestCase):
         self.assertTrue(needs_cpu_fallback("cuda"))
         self.assertTrue(needs_cpu_fallback("mps"))
         self.assertFalse(needs_cpu_fallback("cpu"))
+
+    def test_asr_runs_on_cuda_only_when_torch_and_ctranslate2_both_see_it(self) -> None:
+        # Given/When/Then: CTranslate2 has no MPS backend and needs its own GPU
+        self.assertEqual(
+            select_asr_runtime("cuda", ct2_cuda_devices=1), ("cuda", "float16")
+        )
+        self.assertEqual(
+            select_asr_runtime("cuda", ct2_cuda_devices=0), ("cpu", "int8")
+        )
+        self.assertEqual(select_asr_runtime("mps", ct2_cuda_devices=1), ("cpu", "int8"))
+        self.assertEqual(select_asr_runtime("cpu", ct2_cuda_devices=1), ("cpu", "int8"))
 
     def test_ffmpeg_link_name_per_platform(self) -> None:
         self.assertEqual(ffmpeg_link_name(platform="win32"), "ffmpeg.exe")

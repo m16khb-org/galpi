@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from .schema import AlignedTranscriptionResult, SingleSegment, TranscriptionResult
 
@@ -12,6 +12,7 @@ class WhisperModel:
         *,
         batch_size: int,
         language: str,
+        progress_callback: Callable[[float], None] | None = None,
     ) -> TranscriptionResult: ...
 
 def load_audio(file: str) -> Audio: ...
@@ -31,4 +32,6 @@ def align(
     metadata: object,
     audio: Audio,
     device: str,
+    *,
+    progress_callback: Callable[[float], None] | None = None,
 ) -> AlignedTranscriptionResult: ...

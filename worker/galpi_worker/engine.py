@@ -21,9 +21,16 @@ from .core import (
     validate_speaker_hint,
 )
 from .protocol import EventWriter
-from .runtime import configure_warnings, detect_torch_device, needs_cpu_fallback
+from .runtime import (
+    configure_warnings,
+    detect_asr_runtime,
+    detect_torch_device,
+    needs_cpu_fallback,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from whisperx.diarize import DiarizationPipeline, DiarizationSegments
 
 
@@ -103,12 +110,6 @@ def transcribe_whisperx(
             json.loads(checkpoint_path.read_text(encoding="utf-8")),
         )
     else:
-        events.emit(
-            "phase",
-            phase="transcribing",
-            percent=5.0,
-            message="한국어 음성을 전사합니다. (CTranslate2 CPU int8)",
-        )
         asr_options: dict[str, object] = {
             "no_speech_threshold": 0.75,
             "condition_on_previous_text": False,
@@ -122,19 +123,41 @@ def transcribe_whisperx(
                 # Bias recognition toward glossary terms and attendee names;
                 # the fixed-prompt batched path applies it to every chunk.
                 asr_options["hotwords"] = hotwords
-        model = whisperx.load_model(
-            "large-v3-turbo",
-            "cpu",
-            compute_type="int8",
-            language="ko",
-            asr_options=asr_options,
-            vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
-        )
-        result = cast(
-            Transcription,
-            model.transcribe(audio, batch_size=8, language="ko"),
-        )
-        del model
+
+        def run_asr(asr_device: str, compute_type: str) -> Transcription:
+            message = f"한국어 음성을 전사합니다. (CTranslate2 {asr_device.upper()} {compute_type})"
+            events.emit("phase", phase="transcribing", percent=5.0, message=message)
+            model = whisperx.load_model(
+                "large-v3-turbo",
+                asr_device,
+                compute_type=compute_type,
+                language="ko",
+                asr_options=asr_options,
+                vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
+            )
+            return cast(
+                Transcription,
+                model.transcribe(
+                    audio,
+                    batch_size=8,
+                    language="ko",
+                    progress_callback=_phase_progress(
+                        events, "transcribing", message, 5.0
+                    ),
+                ),
+            )
+
+        asr_device, compute_type = detect_asr_runtime(device)
+        try:
+            result = run_asr(asr_device, compute_type)
+        except Exception:
+            if asr_device == "cpu":
+                raise
+            events.log(
+                f"{asr_device.upper()} 전사에 실패해 CPU int8로 다시 시도합니다."
+            )
+            gc.collect()
+            result = run_asr("cpu", "int8")
         gc.collect()
         events.emit(
             "phase",
@@ -143,12 +166,8 @@ def transcribe_whisperx(
             message="전사가 완료되었습니다.",
         )
 
-        events.emit(
-            "phase",
-            phase="aligning",
-            percent=10.0,
-            message=f"{device.upper()}에서 문장과 시간을 정렬합니다.",
-        )
+        align_message = f"{device.upper()}에서 문장과 시간을 정렬합니다."
+        events.emit("phase", phase="aligning", percent=10.0, message=align_message)
         try:
             align_model, metadata = whisperx.load_align_model(
                 language_code="ko", device=device
@@ -156,7 +175,14 @@ def transcribe_whisperx(
             result = cast(
                 Transcription,
                 whisperx.align(
-                    result["segments"], align_model, metadata, audio, device
+                    result["segments"],
+                    align_model,
+                    metadata,
+                    audio,
+                    device,
+                    progress_callback=_phase_progress(
+                        events, "aligning", align_message, 10.0
+                    ),
                 ),
             )
         except Exception:
@@ -168,7 +194,16 @@ def transcribe_whisperx(
             )
             result = cast(
                 Transcription,
-                whisperx.align(result["segments"], align_model, metadata, audio, "cpu"),
+                whisperx.align(
+                    result["segments"],
+                    align_model,
+                    metadata,
+                    audio,
+                    "cpu",
+                    progress_callback=_phase_progress(
+                        events, "aligning", "CPU에서 문장과 시간을 정렬합니다.", 10.0
+                    ),
+                ),
             )
         del align_model
         gc.collect()
@@ -181,18 +216,19 @@ def transcribe_whisperx(
             message="정렬 체크포인트를 저장했습니다.",
         )
 
-    events.emit(
-        "phase",
-        phase="diarizing",
-        percent=10.0,
-        message=f"{device.upper()}에서 화자를 분리합니다.",
-    )
+    diarize_message = f"{device.upper()}에서 화자를 분리합니다."
+    events.emit("phase", phase="diarizing", percent=10.0, message=diarize_message)
     try:
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
             device=device,
         )
-        diarization_segments = _diarize(diarization, audio, speaker_hint)
+        diarization_segments = _diarize(
+            diarization,
+            audio,
+            speaker_hint,
+            _phase_progress(events, "diarizing", diarize_message, 10.0),
+        )
     except Exception:
         if not needs_cpu_fallback(device):
             raise
@@ -201,7 +237,12 @@ def transcribe_whisperx(
             model_name="pyannote/speaker-diarization-community-1",
             device="cpu",
         )
-        diarization_segments = _diarize(diarization, audio, speaker_hint)
+        diarization_segments = _diarize(
+            diarization,
+            audio,
+            speaker_hint,
+            _phase_progress(events, "diarizing", "CPU에서 화자를 분리합니다.", 10.0),
+        )
     events.emit(
         "phase", phase="diarizing", percent=100.0, message="화자분리가 완료되었습니다."
     )
@@ -240,16 +281,39 @@ def transcribe_whisperx(
     )
 
 
+def _phase_progress(
+    events: EventWriter, phase: str, message: str, floor: float
+) -> Callable[[float], None]:
+    """Forward a WhisperX progress callback as phase events.
+
+    ASR, alignment and diarization each run as one blocking library call, so
+    without this the phase would sit at its starting percent until the call
+    returns. 100 stays reserved for the completion event of the phase.
+    """
+
+    def report(percent: float) -> None:
+        events.emit(
+            "phase",
+            phase=phase,
+            percent=min(max(percent, floor), 99.0),
+            message=message,
+        )
+
+    return report
+
+
 def _diarize(
     pipeline: DiarizationPipeline,
     audio: object,
     hint: SpeakerHint,
+    progress: Callable[[float], None],
 ) -> DiarizationSegments:
     if hint.mode == "exact":
         return pipeline(
             audio,
             num_speakers=hint.exact,
             return_embeddings=False,
+            progress_callback=progress,
         )
     if hint.mode == "range":
         return pipeline(
@@ -257,5 +321,6 @@ def _diarize(
             min_speakers=hint.minimum,
             max_speakers=hint.maximum,
             return_embeddings=False,
+            progress_callback=progress,
         )
-    return pipeline(audio, return_embeddings=False)
+    return pipeline(audio, return_embeddings=False, progress_callback=progress)

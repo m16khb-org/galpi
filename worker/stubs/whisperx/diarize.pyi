@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Literal, overload
 
 from .schema import AlignedTranscriptionResult, TranscriptionResult
@@ -17,6 +18,7 @@ class DiarizationPipeline:
         min_speakers: int | None = ...,
         max_speakers: int | None = ...,
         return_embeddings: Literal[False] = ...,
+        progress_callback: Callable[[float], None] | None = ...,
     ) -> DiarizationSegments: ...
     @overload
     def __call__(
@@ -27,6 +29,7 @@ class DiarizationPipeline:
         min_speakers: int | None = ...,
         max_speakers: int | None = ...,
         return_embeddings: Literal[True],
+        progress_callback: Callable[[float], None] | None = ...,
     ) -> tuple[DiarizationSegments, dict[str, list[float]] | None]: ...
 
 def assign_word_speakers(
