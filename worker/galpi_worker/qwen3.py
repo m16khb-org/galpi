@@ -39,7 +39,7 @@ from .runtime import configure_warnings, ffmpeg_executable, select_torch_device
 # The aligner emits one entry per word; those words regroup into segments that
 # end at terminal punctuation, at a speaker change, after a breath-long pause,
 # or once a group has run for one breath of speech.
-SENTENCE_ENDINGS = ".!?…"
+SENTENCE_ENDINGS = (".", "!", "?", "…")
 MAX_SENTENCE_SECONDS = 12.0
 SPEAKER_GAP_SECONDS = 0.8
 # Galpi cuts long meetings near real silences so words stay intact, then hands
@@ -640,7 +640,8 @@ def ends_sentence(piece: str) -> bool:
     the number in half.
     """
 
-    return piece.rstrip() != piece and piece.rstrip().endswith(tuple(SENTENCE_ENDINGS))
+    stripped = piece.rstrip()
+    return stripped != piece and stripped.endswith(SENTENCE_ENDINGS)
 
 
 def group_word_spans(
