@@ -4,6 +4,7 @@
 //! answered and ignored, so a speculative browser connection, a favicon fetch,
 //! or a silent socket never ends or stalls the wait.
 
+use super::SignInCodes;
 use crate::application::error::AppError;
 use reqwest::Url;
 use std::time::Duration;
@@ -72,6 +73,7 @@ impl Loopback {
         self,
         cancel: &mut oneshot::Receiver<()>,
         limit: Duration,
+        codes: SignInCodes,
     ) -> Result<Callback, AppError> {
         let mut connections = JoinSet::new();
         let deadline = sleep(limit);
@@ -83,7 +85,7 @@ impl Loopback {
                 }
                 () = &mut deadline => {
                     return Err(AppError::new(
-                        "CHATGPT_SIGN_IN_TIMEOUT",
+                        codes.timed_out,
                         "브라우저에서 로그인이 완료되지 않아 대기를 마쳤습니다. 다시 시도해 주세요.",
                     ));
                 }

@@ -1,4 +1,5 @@
 use super::{Callback, Loopback};
+use crate::adapters::outbound::browser_sign_in::SignInCodes;
 use crate::application::error::AppError;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8,6 +9,10 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 const LONG: Duration = Duration::from_secs(30);
+const CODES: SignInCodes = SignInCodes {
+    failed: "TEST_SIGN_IN_FAILED",
+    timed_out: "TEST_SIGN_IN_TIMEOUT",
+};
 
 type Waiting = (
     u16,
@@ -19,7 +24,7 @@ async fn start(limit: Duration) -> Result<Waiting, AppError> {
     let loopback = Loopback::bind_preferring(0).await?;
     let port = loopback.port;
     let (cancel, mut receiver) = oneshot::channel();
-    let task = tokio::spawn(async move { loopback.wait(&mut receiver, limit).await });
+    let task = tokio::spawn(async move { loopback.wait(&mut receiver, limit, CODES).await });
     Ok((port, cancel, task))
 }
 
@@ -151,7 +156,7 @@ async fn a_silent_connection_neither_blocks_nor_outlives_the_read_limit() -> Res
     loopback.read_timeout = Duration::from_millis(50);
     let port = loopback.port;
     let (_cancel, mut receiver) = oneshot::channel();
-    let task = tokio::spawn(async move { loopback.wait(&mut receiver, LONG).await });
+    let task = tokio::spawn(async move { loopback.wait(&mut receiver, LONG, CODES).await });
     let mut silent = TcpStream::connect(("127.0.0.1", port))
         .await
         .map_err(|error| AppError::io("connect", &error))?;
@@ -179,14 +184,14 @@ async fn cancelling_ends_the_wait_with_cancelled() -> Result<(), AppError> {
 }
 
 #[tokio::test]
-async fn an_elapsed_deadline_ends_the_wait_with_a_timeout() -> Result<(), AppError> {
+async fn an_elapsed_deadline_ends_the_wait_with_the_callers_timeout_code() -> Result<(), AppError> {
     let (_port, _cancel, task) = start(Duration::from_millis(30)).await?;
 
     let error = task.await.map_err(|error| join_error(&error))?.err();
 
     assert_eq!(
         error.map(|error| error.code),
-        Some("CHATGPT_SIGN_IN_TIMEOUT".to_owned())
+        Some(CODES.timed_out.to_owned())
     );
     Ok(())
 }

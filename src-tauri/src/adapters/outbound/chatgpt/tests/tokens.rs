@@ -1,5 +1,5 @@
 use super::support::{Harness, approve, registration};
-use crate::adapters::outbound::chatgpt::testing::server::FakeServer;
+use crate::adapters::outbound::browser_sign_in::fake_server::FakeServer;
 use crate::application::ports::ChatGptAuthPort;
 use crate::domain::chatgpt::{RefreshFailure, RevocationOutcome};
 use std::sync::{Arc, Mutex};

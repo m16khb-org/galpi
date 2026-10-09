@@ -1,14 +1,17 @@
 use super::chatgpt::ChatGptAccounts;
 use super::error::AppError;
+use super::gateway::AppAccessGate;
 use super::model::{CompletedTranscription, EnvironmentStatus};
 use super::ports::{
-    ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, EnginePort, RecordingPort,
-    RefinementJob, RefinementPort, SettingsPort, TranscriptImportPort, TranscriptionPort,
+    ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, EnginePort, GatewayAuthPort,
+    GatewaySessionStore, RecordingPort, RefinementJob, RefinementPort, SettingsPort,
+    TranscriptImportPort, TranscriptionPort,
 };
 use super::use_cases::Application;
 use crate::domain::artifact::{ArtifactKind, Artifacts};
 use crate::domain::chatgpt::AssistantTransport;
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
+use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
     SetupRequest, SpeakerHint, TranscriptImportRequest, TranscriptionRequest,
 };
@@ -74,6 +77,7 @@ struct FakePort {
     ready_presets: Mutex<Vec<EnginePreset>>,
     behavior: TranscriptionBehavior,
     chatgpt: chatgpt::ChatGptFake,
+    gateway: gateway::GatewayFake,
 }
 
 impl FakePort {
@@ -94,11 +98,25 @@ impl FakePort {
             seen_prepare_engines: Mutex::new(Vec::new()),
             ready_presets: Mutex::new(vec![EnginePreset::Qwen3, EnginePreset::WhisperX]),
             chatgpt: chatgpt::ChatGptFake::new(),
+            gateway: gateway::GatewayFake::default(),
             behavior,
         }
     }
 
+    /// An application someone has already signed in to.
     fn application(self: &Arc<Self>) -> Application {
+        self.application_with(AppAccess::SignedIn {
+            email: None,
+            offline: false,
+        })
+    }
+
+    /// An application as it starts: signed out until `load_app_access`.
+    fn signed_out_application(self: &Arc<Self>) -> Application {
+        self.application_with(AppAccess::SignedOut)
+    }
+
+    fn application_with(self: &Arc<Self>, access: AppAccess) -> Application {
         let engine: Arc<dyn EnginePort> = self.clone();
         let transcription: Arc<dyn TranscriptionPort> = self.clone();
         let imports: Arc<dyn TranscriptImportPort> = self.clone();
@@ -109,6 +127,12 @@ impl FakePort {
         let chatgpt_auth: Arc<dyn ChatGptAuthPort> = self.clone();
         let chatgpt_store: Arc<dyn ChatGptStore> = self.clone();
         let clock: Arc<dyn ClockPort> = self.clone();
+        let gateway_auth: Arc<dyn GatewayAuthPort> = self.clone();
+        let gateway_store: Arc<dyn GatewaySessionStore> = self.clone();
+        let gate = AppAccessGate::new(gateway_auth, gateway_store);
+        if let Ok(mut opened) = gate.access.lock() {
+            *opened = access;
+        }
         Application::new(
             engine,
             transcription,
@@ -118,6 +142,7 @@ impl FakePort {
             settings,
             refinement,
             ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock),
+            gate,
         )
     }
 }
@@ -852,4 +877,5 @@ async fn save_compute_device_is_delegated_to_the_settings_port() -> Result<(), A
 }
 
 mod chatgpt;
+mod gateway;
 mod recording;

@@ -109,7 +109,7 @@ Former 600 weights round up to bold; SEED has no letter-spacing tokens, so track
 ### Base Unit
 
 Padding, margin, and gap use SEED's 4px dimension scale with half steps. Off-scale values moved to the
-nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px chip area, icon tiles) stay literal.
+nearest step, ties going up; structural sizes (248px rail, 560px sheet, 480px login card, 132px chip area, icon tiles) stay literal.
 
 | Token | Value | Usage |
 |---|---:|---|
@@ -145,6 +145,14 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px ch
 - Paths use `overflow-wrap: anywhere`; long file names truncate only when the full value is available in a title.
 
 ## 5. Components
+
+### Login Screen and Account Chip
+
+- **Structure**: a full-window `#access-screen` sits in front of the app shell, which stays `inert` until someone is signed in, so nothing behind it is reachable by pointer, keyboard, or screen reader. One centered card holds the app icon tile, the `GALPI ACCOUNT` eyebrow, the heading `Google 계정으로 로그인`, one sentence saying sign-in happens in the system browser and Galpi never sees the password, a `role="status"` live line, and the actions. Signed in, the top bar shows an account chip (the e-mail, or `Google 계정` when the gateway did not give one, over `온라인` or `오프라인 · 저장된 로그인 사용`) and a `로그아웃` outline button.
+- **States**: the status line states each state in words beside its color — `로그인 상태를 확인하는 중입니다.` (warning), `Google 계정으로 로그인하면 바로 사용할 수 있습니다.` (success), the browser wait with its cancel hint (warning), `로그아웃하는 중입니다.` (warning), and any failure in the host's Korean message (critical). Actions are an allow-list: `Google로 로그인` only when signed out (with or without an error) or after a check that can be retried, `다시 확인` only after such a check, `취소` only while the browser sign-in waits; checking, signing out, and an unreachable native runtime show no action, the last one asking for a restart because a retry without the event channel would lose job events.
+- **Offline**: a stored sign-in the gateway could not renew still opens the app; the chip's e-mail turns the warning color and the second line says `오프라인 · 저장된 로그인 사용`, so the state never rides on color alone.
+- **Sign-out**: disabled while recording, transcription, augmentation, or setup runs. It closes the app at once and returns to the login screen; a failed local clear stays on that screen as a critical message.
+- **Accessibility**: buttons use the SEED `action-button` recipe at the 40px minimum height with `word-break: keep-all`; the window never holds a token, only the sign-in state and e-mail.
 
 ### Step Rail
 

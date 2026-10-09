@@ -1,6 +1,8 @@
+pub mod browser_sign_in;
 pub mod chatgpt;
 pub mod desktop;
 mod environment;
+pub mod gateway;
 pub mod import;
 mod model_cache;
 mod paths;

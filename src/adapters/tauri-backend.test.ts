@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 
 import {
+  appAccessSchema,
   chatGptModelsSchema,
   chatGptSettingsSchema,
   chatGptSignOutSchema,
@@ -175,5 +176,24 @@ describe("parseChatGptEvent", () => {
     expect(parseChatGptEvent({ phase: "teleporting" })).toBeNull()
     expect(parseChatGptEvent("nonsense")).toBeNull()
     expect(parseChatGptEvent(null)).toBeNull()
+  })
+})
+
+describe("appAccessSchema", () => {
+  test("reads both access states", () => {
+    expect(appAccessSchema.parse({ state: "signedOut" })).toEqual({ state: "signedOut" })
+    expect(
+      appAccessSchema.parse({ state: "signedIn", email: "dev@example.com", offline: true }),
+    ).toEqual({ state: "signedIn", email: "dev@example.com", offline: true })
+  })
+
+  test("rejects a response that carries a session token", () => {
+    const leaked = { state: "signedIn", email: null, offline: false, refreshToken: "secret" }
+
+    expect(appAccessSchema.safeParse(leaked).success).toBe(false)
+  })
+
+  test("rejects a signed-in answer without the offline flag", () => {
+    expect(appAccessSchema.safeParse({ state: "signedIn", email: null }).success).toBe(false)
   })
 })

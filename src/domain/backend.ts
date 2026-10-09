@@ -62,7 +62,23 @@ export interface BackendPort {
   signOutOfChatGpt(): Promise<ChatGptSignOutResult>
   openChatGptUsagePage(): Promise<void>
   listenToChatGptEvents(handler: (phase: ChatGptSignInPhase) => void): Promise<() => void>
+  /** Renews the stored Google sign-in once; every feature command needs `signedIn`. */
+  loadAppAccess(): Promise<AppAccess>
+  /** Resolves once the browser sign-in finished, failed, was cancelled, or timed out. */
+  signInToGateway(): Promise<AppAccess>
+  cancelGatewaySignIn(): Promise<void>
+  signOutOfGateway(): Promise<void>
 }
+
+/** Whether the app may be used. Only the state and the e-mail cross the IPC border. */
+export type AppAccess =
+  | { readonly state: "signedOut" }
+  | {
+      readonly state: "signedIn"
+      readonly email: string | null
+      /** The gateway was unreachable at startup, so the stored sign-in was trusted as is. */
+      readonly offline: boolean
+    }
 
 export interface SetupResult {
   readonly jobId: string

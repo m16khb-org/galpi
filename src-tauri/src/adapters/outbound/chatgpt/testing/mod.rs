@@ -1,6 +1,4 @@
-//! Test fixtures: a throwaway RS256 key pair and a fake HTTP server.
-
-pub mod server;
+//! Test fixtures: a throwaway RS256 key pair.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;

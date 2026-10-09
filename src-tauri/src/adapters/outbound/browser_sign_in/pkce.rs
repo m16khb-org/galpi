@@ -1,5 +1,6 @@
 //! Random values and the S256 code challenge (RFC 7636).
 
+use super::SignInCodes;
 use crate::application::error::AppError;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -11,11 +12,11 @@ pub const VERIFIER_BYTES: usize = 64;
 pub const NONCE_BYTES: usize = 32;
 
 /// `bytes` of OS randomness as unpadded base64url.
-pub fn random_urlsafe(bytes: usize) -> Result<String, AppError> {
+pub fn random_urlsafe(bytes: usize, codes: SignInCodes) -> Result<String, AppError> {
     let mut buffer = vec![0_u8; bytes];
     getrandom::fill(&mut buffer).map_err(|_| {
         AppError::new(
-            "CHATGPT_SIGN_IN_FAILED",
+            codes.failed,
             "보안 난수를 만들지 못해 로그인을 시작하지 못했습니다.",
         )
     })?;
@@ -30,7 +31,13 @@ pub fn code_challenge(verifier: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{NONCE_BYTES, VERIFIER_BYTES, code_challenge, random_urlsafe};
+    use crate::adapters::outbound::browser_sign_in::SignInCodes;
     use crate::application::error::AppError;
+
+    const CODES: SignInCodes = SignInCodes {
+        failed: "TEST_FAILED",
+        timed_out: "TEST_TIMEOUT",
+    };
 
     #[test]
     fn challenge_matches_the_rfc_7636_appendix_b_vector() {
@@ -42,8 +49,8 @@ mod tests {
 
     #[test]
     fn random_values_are_unpadded_urlsafe_and_distinct() -> Result<(), AppError> {
-        let verifier = random_urlsafe(VERIFIER_BYTES)?;
-        let state = random_urlsafe(NONCE_BYTES)?;
+        let verifier = random_urlsafe(VERIFIER_BYTES, CODES)?;
+        let state = random_urlsafe(NONCE_BYTES, CODES)?;
 
         // RFC 7636 §4.1: 43..=128 characters from the unreserved set.
         assert!((43..=128).contains(&verifier.len()));
@@ -55,7 +62,7 @@ mod tests {
                     .all(|character| character.is_ascii_alphanumeric() || "-_".contains(character))
             );
         }
-        assert_ne!(verifier, random_urlsafe(VERIFIER_BYTES)?);
+        assert_ne!(verifier, random_urlsafe(VERIFIER_BYTES, CODES)?);
         Ok(())
     }
 }

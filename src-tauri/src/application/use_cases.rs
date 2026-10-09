@@ -1,5 +1,6 @@
 use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::error::AppError;
+use crate::application::gateway::AppAccessGate;
 use crate::application::jobs::JobRegistry;
 use crate::application::model::{
     EnvironmentStatus, RefinementResult, SetupResult, TranscriptImportResult, TranscriptionResult,
@@ -15,6 +16,7 @@ use crate::domain::chatgpt::{
     SignOutResult,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
+use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
     SetupRequest, TranscriptImportRequest, TranscriptionRequest, validate_speaker_hint,
 };
@@ -42,6 +44,7 @@ pub struct Application {
     settings: Arc<dyn SettingsPort>,
     refinement: Arc<dyn RefinementPort>,
     chatgpt: ChatGptAccounts,
+    access: AppAccessGate,
     jobs: JobRegistry,
     active_recording: tokio::sync::Mutex<Option<Uuid>>,
 }
@@ -58,6 +61,7 @@ impl Application {
         settings: Arc<dyn SettingsPort>,
         refinement: Arc<dyn RefinementPort>,
         chatgpt: ChatGptAccounts,
+        access: AppAccessGate,
     ) -> Self {
         Self {
             engine,
@@ -68,9 +72,28 @@ impl Application {
             settings,
             refinement,
             chatgpt,
+            access,
             jobs: JobRegistry::default(),
             active_recording: tokio::sync::Mutex::new(None),
         }
+    }
+
+    /// Whether the stored gateway session opens the app; renews it once.
+    pub async fn load_app_access(&self) -> Result<AppAccess, AppError> {
+        self.access.restore().await
+    }
+
+    /// Resolves when the browser sign-in finishes, is cancelled, or times out.
+    pub async fn sign_in_to_gateway(&self) -> Result<AppAccess, AppError> {
+        self.access.sign_in().await
+    }
+
+    pub fn cancel_gateway_sign_in(&self) -> Result<(), AppError> {
+        self.access.cancel_sign_in()
+    }
+
+    pub async fn sign_out_of_gateway(&self) -> Result<(), AppError> {
+        self.access.sign_out().await
     }
 
     pub async fn diagnose(&self) -> Result<EnvironmentStatus, AppError> {
@@ -86,6 +109,7 @@ impl Application {
     }
 
     pub async fn prepare(&self, request: SetupRequest) -> Result<SetupResult, AppError> {
+        self.access.require()?;
         let request = if request.hugging_face_token.is_some() {
             request
         } else {
@@ -152,6 +176,7 @@ impl Application {
         target: Uuid,
         attendees: &[String],
     ) -> Result<RefinementResult, AppError> {
+        self.access.require()?;
         let artifacts = self.jobs.artifacts(target)?;
         let assistant = self.settings.load_assistant().await?.trimmed();
         let participants: Vec<Participant> = assistant
@@ -268,6 +293,7 @@ impl Application {
         &self,
         request: TranscriptionRequest,
     ) -> Result<TranscriptionResult, AppError> {
+        self.access.require()?;
         validate_speaker_hint(&request.speaker_hint)
             .map_err(|error| AppError::new("INVALID_SPEAKER_HINT", error.to_string()))?;
         let (job, mut cancel) = self.jobs.claim_with_id(request.job_id)?;
@@ -281,6 +307,7 @@ impl Application {
         &self,
         request: TranscriptImportRequest,
     ) -> Result<TranscriptImportResult, AppError> {
+        self.access.require()?;
         let (job, _unused_cancel) = self.jobs.claim_with_id(request.job_id)?;
         let job_id = job.id();
         let result = self
@@ -387,6 +414,7 @@ impl Application {
     }
 
     pub async fn start_recording(&self, output_root: String) -> Result<RecordingStatus, AppError> {
+        self.access.require()?;
         let mut active = self.active_recording.lock().await;
         if active.is_some() {
             return Err(AppError::new(

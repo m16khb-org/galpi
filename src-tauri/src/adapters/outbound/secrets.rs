@@ -1,4 +1,4 @@
-//! Secret storage for the two credentials Galpi holds.
+//! Secret storage for the credentials Galpi holds.
 //!
 //! Where a secret lives depends on the platform, and the composition root
 //! picks the store:
@@ -39,6 +39,8 @@ pub enum Secret {
     AssistantApiKey,
     /// The serialized ChatGPT OAuth tokens.
     ChatGptTokens,
+    /// The serialized auth-gateway session.
+    GatewaySession,
 }
 
 impl Secret {
@@ -51,6 +53,7 @@ impl Secret {
             Self::HuggingFaceToken => "hugging-face-token",
             Self::AssistantApiKey => "assistant-api-key",
             Self::ChatGptTokens => "chatgpt-tokens",
+            Self::GatewaySession => "gateway-session",
         }
     }
 }

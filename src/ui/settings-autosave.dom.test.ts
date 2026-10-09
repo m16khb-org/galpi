@@ -111,6 +111,12 @@ function createBackend(
     },
     openChatGptUsagePage: async () => undefined,
     listenToChatGptEvents: async () => () => undefined,
+    loadAppAccess: async () => ({ state: "signedIn", email: null, offline: false }),
+    signInToGateway: async () => {
+      throw new Error("unused gateway sign-in")
+    },
+    cancelGatewaySignIn: async () => undefined,
+    signOutOfGateway: async () => undefined,
   }
 }
 

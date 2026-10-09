@@ -104,6 +104,10 @@ function backendWith(overrides: Partial<BackendPort>): BackendPort {
     signOutOfChatGpt: unused,
     openChatGptUsagePage: async () => undefined,
     listenToChatGptEvents: async () => () => undefined,
+    loadAppAccess: async () => ({ state: "signedIn", email: null, offline: false }),
+    signInToGateway: unused,
+    cancelGatewaySignIn: async () => undefined,
+    signOutOfGateway: async () => undefined,
     ...overrides,
   }
 }

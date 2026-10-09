@@ -46,9 +46,13 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 | Frontend backend port | `src/domain/backend.ts` | Port contract owned by the inner layer; `TauriBackend` implements it |
 | Tauri IPC client | `src/adapters/tauri-backend.ts` | `invoke`/`listen` plus Zod boundary parsing |
 | Native composition | `src-tauri/src/composition.rs` | Only concrete port wiring and Tauri registration |
-| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | 24 frontend commands and event bridges (`job-event`, `recording-event`, `chatgpt-event`) |
+| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | 28 frontend commands and event bridges (`job-event`, `recording-event`, `chatgpt-event`) |
+| Google sign-in gate (use cases) | `src-tauri/src/application/gateway.rs` | `AppAccessGate`: restore/renew, sign-in, sign-out, `AUTH_REQUIRED` on feature commands behind `GatewayAuthPort`/`GatewaySessionStore` |
+| Google sign-in gate (adapters) | `src-tauri/src/adapters/outbound/gateway/`, `settings/gateway.rs` | auth-gateway `/auth/native/*` client; session in the secret store |
+| Google sign-in gate (UI) | `src/ui/access-controller.ts`, `src/application/access-machine.ts` | Login screen in front of the inert shell, account chip, sign-out |
+| Shared browser sign-in | `src-tauri/src/adapters/outbound/browser_sign_in/` | System browser, loopback callback, PKCE; callers pass their error codes |
 | ChatGPT sign-in (use cases) | `src-tauri/src/application/chatgpt.rs` | Session, token refresh, model list, sign-out behind `ChatGptAuthPort`/`ChatGptStore` |
-| ChatGPT sign-in (adapters) | `src-tauri/src/adapters/outbound/chatgpt/` | OAuth/PKCE, loopback callback, ID-token, models, system browser |
+| ChatGPT sign-in (adapters) | `src-tauri/src/adapters/outbound/chatgpt/` | OAuth authorize/callback, ID-token, models |
 | ChatGPT sign-in (UI) | `src/ui/chatgpt-controller.ts` | Sign-in/out, model choice, `chatgpt-event` handling |
 | Responses API stream | `worker/galpi_worker/responses_stream.py` | Worker-side refinement transport for ChatGPT sign-in |
 | Backend use cases | `src-tauri/src/application/use_cases.rs` | Central `Application` facade |
@@ -70,7 +74,7 @@ call sites, not semantic workspace references.
 |--------|------|----------|------|------|
 | `AppController` | class | `src/ui/controller.ts` | 1 construction | Frontend workflow coordinator |
 | `TauriBackend` | class | `src/adapters/tauri-backend.ts` | 1 construction | IPC and runtime-validation boundary |
-| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 24 command paths | Backend use-case facade |
+| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 28 command paths | Backend use-case facade |
 | `run` | function | `src-tauri/src/composition.rs` | 1 entry call | Native composition root |
 | `run_process` | async function | `src-tauri/src/adapters/outbound/process.rs` | 3 production calls | Worker/process supervisor |
 | `NativeRecorder` | struct | `src-tauri/src/adapters/outbound/recording/mod.rs` | 1 production wiring | Recording port implementation |
