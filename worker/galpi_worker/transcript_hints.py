@@ -366,13 +366,12 @@ def name_mentions(words: list[str]) -> list[tuple[int, str, str]]:
     mentions: list[tuple[int, str, str]] = []
     for index, word in enumerate(words):
         stem, honorific = split_honorific(word.rstrip(",.?!"))
-        following = (
-            split_honorific(words[index + 1].rstrip(",.?!"))
-            if index + 1 < len(words)
-            else ("", "")
-        )
+        following = words[index + 1] if index + 1 < len(words) else ""
+        # "{이름} 님은", "{이름} 씨가", "{이름} 연구원님"
         addressed = (
-            bool(honorific) or following[0] in HONORIFICS or following[0] in TITLES
+            bool(honorific)
+            or following.startswith(HONORIFICS)
+            or split_honorific(following.rstrip(",.?!"))[0] in TITLES
         )
         introduced = index > 0 and words[index - 1] in ("저", "저는")
         intro = INTRO_SUFFIX.search(word)
