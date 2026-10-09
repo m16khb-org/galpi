@@ -68,9 +68,9 @@ On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple
 1. Open `설정` (Settings) from the top-right corner.
 2. On a new computer, save a Hugging Face token if the diarization model requires access.
 3. Select `로컬 엔진 준비` (Prepare local engine).
-4. Wait until WhisperX, the transcription model, and ffmpeg all show `Ready`.
+4. Wait until the selected engine, its transcription model, and ffmpeg all show `준비됨` (Ready). Each preset's readiness is also shown under the `전사 엔진` (Transcription engine) choices.
 
-The first setup installs an app-specific Python 3.12 environment and may download several gigabytes of models. Later runs reuse the same app data directory and model cache.
+The first setup installs an app-specific Python 3.12 environment and may download several gigabytes of models. Later runs reuse the same app data directory and model cache. The two presets install into separate virtual environments (`engine/`, `engine/qwen3/`), so preparing one does not affect the other.
 
 ### 3. Hugging Face token
 
