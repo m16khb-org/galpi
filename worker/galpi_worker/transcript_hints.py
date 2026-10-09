@@ -47,6 +47,8 @@ CONFUSABLE: Final = frozenset(
         "ㅓㅗ",
         "ㅡㅜ",
         "ㅕㅛ",
+        "ㅗㅜ",
+        "ㅛㅠ",
         "ㅙㅚ",
         "ㅚㅞ",
         "ㅢㅣ",
@@ -152,7 +154,9 @@ NAME_THRESHOLD: Final = 0.17
 # Choosing which roster member was addressed only competes among the roster,
 # so it tolerates one more confusion than flagging a name as misheard.
 ADDRESS_THRESHOLD: Final = 0.25
-CLUSTER_THRESHOLD: Final = 0.2
+# Grouping has no registered spelling to anchor it, and two ordinary
+# compounds can sit one consonant apart, so it is stricter than matching.
+CLUSTER_THRESHOLD: Final = 0.15
 CLUSTER_TERM_THRESHOLD: Final = 0.25
 CLUSTER_TERM_MAX: Final = 0.35
 SILENT_INITIAL: Final = 11  # ㅇ
