@@ -202,39 +202,56 @@ def parse_lines(transcript: str) -> list[TranscriptLine]:
     return lines
 
 
-@lru_cache(maxsize=65536)
-def jamo_units(text: str) -> tuple[str, ...]:
-    """Pronounced jamo, ignoring spaces; non-Hangul characters stay as-is.
+Syllable = list[str]  # [initial, medial, final]; a non-Hangul character alone
 
-    A final consonant before a syllable starting with ㅇ is pronounced as
-    that syllable's initial (`음악` sounds like `으막`), which is how ASR
-    hears it.
+
+@lru_cache(maxsize=65536)
+def jamo_forms(text: str) -> tuple[tuple[str, ...], ...]:
+    """A span's jamo as ASR may render it, ignoring spaces.
+
+    Three forms, compared form by form: as spelled; as pronounced, where a
+    final consonant before ㅇ moves to the next syllable (`음악` sounds like
+    `으막`); and with a loanword's inserted ㅡ syllable folded back into the
+    previous final (`{어}크` written for `{억}`).
     """
 
-    units: list[str] = []
-    characters = [c for c in text.lower() if not c.isspace()]
-    carried = ""
-    for index, character in enumerate(characters):
+    spelled: list[Syllable] = []
+    for character in text.lower():
         code = ord(character) - HANGUL_BASE
-        if not 0 <= code < 11172:
-            units.append(character)
-            carried = ""
-            continue
-        initial, final = INITIALS[code // 588], FINALS[code % 28]
-        if carried and initial == "ㅇ":
-            initial = carried
-        upcoming = (
-            ord(characters[index + 1]) - HANGUL_BASE
-            if index + 1 < len(characters)
-            else -1
-        )
-        carried = ""
-        silent_next = 0 <= upcoming < 11172 and upcoming // 588 == SILENT_INITIAL
-        if silent_next and final in INITIALS and final != "ㅇ":
-            carried = "" if final == "ㅎ" else final
-            final = "·"
-        units += [initial, MEDIALS[(code % 588) // 28], final]
-    return tuple(units)
+        if 0 <= code < 11172:
+            spelled.append(
+                [INITIALS[code // 588], MEDIALS[(code % 588) // 28], FINALS[code % 28]]
+            )
+        elif not character.isspace():
+            spelled.append([character])
+    pronounced = [list(syllable) for syllable in spelled]
+    for current, following in pairwise(pronounced):
+        if (
+            len(current) == 3
+            and len(following) == 3
+            and following[0] == "ㅇ"
+            and current[2] in INITIALS
+            and current[2] != "ㅇ"
+        ):
+            following[0] = "ㅇ" if current[2] == "ㅎ" else current[2]
+            current[2] = "·"
+    folded: list[Syllable] = []
+    for syllable in spelled:
+        previous = folded[-1] if folded else None
+        if (
+            previous is not None
+            and len(previous) == 3
+            and previous[2] == "·"
+            and syllable[1:] == ["ㅡ", "·"]
+            and syllable[0] in FINALS
+        ):
+            folded[-1] = [*previous[:2], syllable[0]]
+        else:
+            folded.append(list(syllable))
+    return tuple(
+        tuple(unit for syllable in form for unit in syllable)
+        for form in (spelled, pronounced, folded)
+    )
 
 
 # Hangul and Latin spellings meet in a rough sound alphabet: consonants by
@@ -488,8 +505,10 @@ def latin_match(spoken: str, term: str) -> float | None:
 
 
 @lru_cache(maxsize=65536)
-def jamo_counts(text: str) -> Counter[str]:
-    return Counter(jamo_units(text))
+def jamo_counts(text: str) -> tuple[tuple[int, dict[str, int]], ...]:
+    """(length, jamo counts) of each form, for `close`'s lower bound."""
+
+    return tuple((len(form), dict(Counter(form))) for form in jamo_forms(text))
 
 
 def close(left: str, right: str, limit: float) -> float | None:
@@ -500,10 +519,17 @@ def close(left: str, right: str, limit: float) -> float | None:
     edit.
     """
 
-    a, b = jamo_counts(left), jamo_counts(right)
-    only_left, only_right = (a - b).total(), (b - a).total()
-    floor = 0.5 * min(only_left, only_right) + abs(only_left - only_right)
-    if floor > limit * max(a.total(), b.total()):
+    for (left_size, a), (right_size, b) in zip(
+        jamo_counts(left), jamo_counts(right), strict=True
+    ):
+        budget = limit * max(left_size, right_size)
+        if abs(left_size - right_size) > budget:
+            continue
+        shared = sum(min(count, b.get(unit, 0)) for unit, count in a.items())
+        only_left, only_right = left_size - shared, right_size - shared
+        if 0.5 * min(only_left, only_right) + abs(only_left - only_right) <= budget:
+            break
+    else:
         return None
     score = distance(left, right)
     return score if score <= limit else None
@@ -511,9 +537,16 @@ def close(left: str, right: str, limit: float) -> float | None:
 
 @lru_cache(maxsize=262144)
 def distance(left: str, right: str) -> float:
-    """Confusion-weighted edit distance, normalized by the longer spelling."""
+    """Confusion-weighted edit distance between the closest forms of two
+    spans, normalized by the longer one."""
 
-    a, b = jamo_units(left), jamo_units(right)
+    return min(
+        edit_distance(a, b)
+        for a, b in zip(jamo_forms(left), jamo_forms(right), strict=True)
+    )
+
+
+def edit_distance(a: tuple[str, ...], b: tuple[str, ...]) -> float:
     if not a or not b:
         return 1.0
     previous = [float(j) for j in range(len(b) + 1)]
@@ -805,12 +838,22 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         for part in term.split()
         if syllables(part) >= 2
     }
+    by_length: dict[int, list[str]] = {}
+    for known in vocabulary.known:
+        by_length.setdefault(syllables(known), []).append(known)
+
+    def near_known(stem: str) -> bool:
+        size = syllables(stem)
+        return any(
+            close(stem, known, TERM_THRESHOLD) is not None
+            for length in (size - 1, size, size + 1)
+            for known in by_length.get(length, ())
+        )
+
     stems = [
         stem
         for stem in counts
-        if not any(
-            close(stem, known, TERM_THRESHOLD) is not None for known in vocabulary.known
-        )
+        if not near_known(stem)
         and not any(
             close(stem, part, CLUSTER_TERM_THRESHOLD) is not None for part in parts
         )
@@ -833,14 +876,23 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
     # belongs to. Only groups that already show several spellings qualify,
     # and neither half may be a spelling of its own (`그 {단어}`).
     spelled = [group for group in groups if len(group) > 1]
+    sizes = {syllables(member) for group in spelled for member in group}
+    placed: set[str] = set()
     for line in lines:
         for first, second in pairwise(line.text.split()):
             if first.endswith((",", ".", "?", "!")):
                 continue
             tail, _ = split_particle(second)
             joined = first + tail
-            if syllables(joined) < 3 or joined in vocabulary.known:
+            size = syllables(joined)
+            if size < 3 or not sizes & {size - 1, size, size + 1}:
                 continue
+            if joined in vocabulary.known:
+                continue
+            spaced = f"{first} {tail}"
+            if spaced in placed:
+                continue
+            placed.add(spaced)
             for group in spelled:
                 if first in group or tail in group:
                     continue
@@ -848,7 +900,7 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                     close(joined, member, CLUSTER_THRESHOLD) is not None
                     for member in group
                 ):
-                    group.add(f"{first} {tail}")
+                    group.add(spaced)
                     break
     hints: list[str] = []
     for group in groups:
