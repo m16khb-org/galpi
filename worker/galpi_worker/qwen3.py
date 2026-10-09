@@ -539,12 +539,18 @@ def build_word_spans(
 
     text = transcription_text.strip()
     length = len(text)
-    # Classify each character once; the cursor loops below visit every one.
-    matchable = [is_matchable(character) for character in text]
+    # Classify each distinct character once; a meeting reuses a small
+    # alphabet, and the cursor loops below visit every character.
+    classes = {character: is_matchable(character) for character in set(text)}
+    matchable = [classes[character] for character in text]
+    word_lengths: dict[str, int] = {}
     spans: list[WordSpan] = []
     cursor = 0
     for entry in entries:
-        needed = len(matchable_chars(entry["text"]))
+        word = entry["text"]
+        needed = word_lengths.get(word)
+        if needed is None:
+            needed = word_lengths[word] = len(matchable_chars(word))
         if needed == 0:
             continue
         span_start = cursor
