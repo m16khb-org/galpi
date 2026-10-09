@@ -61,6 +61,9 @@ CONFUSABLE: Final = frozenset(
 )
 PARTICLES: Final = (
     "이라고",
+    "마다",
+    "조차",
+    "마저",
     "이라는",
     "이라서",
     "께서는",
@@ -157,8 +160,11 @@ BACKGROUND_TOKEN: Final = re.compile(r"[가-힣A-Za-z0-9]{2,}")
 WORD_TAIL: Final = re.compile(
     r"(별|들|쪽|용|측|상|적|간|화)?"
     r"((하|되|해|했|돼|됐|시키|시켜)[가-힣]{0,4}|한|할|함|된|될|됨|도|을|를|은|는|이|가|에|의|로|으로|과|와|만"
-    r"|까지|부터|에서|이나|나|랑|이랑|에는|으로는|이라|라)?"
+    r"|까지|부터|에서|이나|나|랑|이랑|에는|으로는|이라|라|마다|조차|마저)?"
 )
+FRAGMENT_THRESHOLD: Final = 0.34
+# A sentence picked up within this many seconds is the same sentence.
+CONTINUATION_SECONDS: Final = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -662,16 +668,30 @@ class TermMatcher:
                 # The registered spelling already present, or a correct
                 # partial mention of it, is not a misrecognition.
                 if (
-                    fragment
-                    or term.compact in said
+                    term.compact in said
                     or term.compact.startswith(said)
                     or said in self._known
+                    or (fragment and not fragment_fits(spoken, term.spelling))
                 ):
                     continue
                 score = close(spoken, term.spelling, term.threshold)
                 if score is not None:
                     found.append((score, term.spelling))
         return found
+
+
+def fragment_fits(spoken: str, term: str) -> bool:
+    """A one-syllable last piece counts only against a matching last word.
+
+    `{단어} 플` may be `{단어} 풀`, but `{단어} 사` cut from a longer word
+    says nothing about it.
+    """
+
+    said, registered = spoken.split(), term.split()
+    return (
+        len(said) == len(registered)
+        and close(said[-1], registered[-1], FRAGMENT_THRESHOLD) is not None
+    )
 
 
 def term_candidates(
@@ -970,7 +990,7 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
             cut_off
             and line.label != previous.label
             and previous.label != "UNKNOWN"
-            and line.second - previous.second <= 6
+            and line.second - previous.second <= CONTINUATION_SECONDS
         ):
             hints.append(
                 f"- 화자 경계: ({line.second}s) {line.label} → {previous.label}"
@@ -979,24 +999,45 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
     return hints, flagged
 
 
-def compact_transcript(lines: list[TranscriptLine], keep: set[int]) -> str:
+def merge_lines(lines: list[TranscriptLine], keep: set[int]) -> list[TranscriptLine]:
     """Merge consecutive lines of one speaker, keeping flagged lines apart."""
 
-    merged: list[list[str | int]] = []
+    merged: list[TranscriptLine] = []
     for index, line in enumerate(lines):
         if (
             merged
             and index not in keep
             and index - 1 not in keep
-            and merged[-1][0] == line.label
+            and merged[-1].label == line.label
         ):
-            merged[-1][2] = f"{merged[-1][2]} {line.text}"
+            previous = merged[-1]
+            merged[-1] = TranscriptLine(
+                previous.label, previous.second, f"{previous.text} {line.text}"
+            )
         else:
-            merged.append([line.label, line.second, line.text])
-    return (
-        "\n".join(f"[{label}] ({second}s) {text}" for label, second, text in merged)
-        + "\n"
-    )
+            merged.append(line)
+    return merged
+
+
+def render_lines(lines: list[TranscriptLine]) -> str:
+    return "".join(f"[{line.label}] ({line.second}s) {line.text}\n" for line in lines)
+
+
+def join_sentences(lines: list[TranscriptLine]) -> list[TranscriptLine]:
+    """Read an unfinished line on into the next one that follows at once."""
+
+    joined: list[TranscriptLine] = []
+    for line in lines:
+        if joined:
+            previous = joined[-1]
+            unfinished = SENTENCE_END.search(previous.text) is None
+            if unfinished and line.second - previous.second <= CONTINUATION_SECONDS:
+                joined[-1] = TranscriptLine(
+                    previous.label, line.second, f"{previous.text} {line.text}"
+                )
+                continue
+        joined.append(line)
+    return joined
 
 
 def relevant_hints(block: str, text: str) -> str:
@@ -1016,9 +1057,9 @@ def relevant_hints(block: str, text: str) -> str:
             if second is not None and f"({second.group(1)}s)" in text:
                 kept.append(line)
         elif line.startswith("- 같은 표현:"):
-            if any(word in text for word in quoted):
+            if any(all(part in text for part in word.split()) for word in quoted):
                 kept.append(line)
-        elif quoted and quoted[0] in text:
+        elif quoted and all(part in text for part in quoted[0].split()):
             kept.append(line)
     return "\n".join(kept)
 
@@ -1046,11 +1087,16 @@ def analyze(
         return TranscriptHints("", transcript)
     vocabulary = build_vocabulary(background, participants, glossary)
     boundaries, flagged = boundary_hints(lines)
+    # Words cut across segments are whole again once one speaker's lines are
+    # merged and an unfinished sentence is read on into the next line, even
+    # when diarization gave that line another label.
+    merged = merge_lines(lines, flagged)
+    sentences = join_sentences(merged)
     entries = [
-        *lexical_hints(lines, vocabulary),
-        *cluster_hints(lines, vocabulary),
+        *lexical_hints(sentences, vocabulary),
+        *cluster_hints(sentences, vocabulary),
         *speaker_hints(lines, vocabulary, len(participants)),
         *boundaries,
     ]
     block = "\n".join(entries)
-    return TranscriptHints(block, compact_transcript(lines, flagged))
+    return TranscriptHints(block, render_lines(merged))
