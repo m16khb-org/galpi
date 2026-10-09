@@ -205,7 +205,7 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px ch
 
 ### Engine Preset Picker
 
-- **Structure**: the settings dialog hosts a `전사 엔진` section with a two-slot segmented picker (`WhisperX 기본`, `Qwen3 선택 · Apple Silicon`); WhisperX is the default engine on every platform and comes first, while the Qwen3 slot only appears on macOS and is an opt-in choice. Each slot carries a readiness badge (`준비됨`/`준비 필요`) and the section header shows the active preset. The picker lives in settings — never in the setup panel — because the setup panel hides itself once the selected engine is ready, which would swallow the control.
+- **Structure**: the settings dialog hosts a `전사 엔진` section with a two-slot segmented picker (`WhisperX 기본`, `Qwen3 선택 · Apple Silicon`); WhisperX is the default engine on every platform and comes first, while the Qwen3 slot only appears on macOS (Windows and Linux offer WhisperX only) and is an opt-in choice. Each slot carries a readiness badge (`준비됨`/`준비 필요`) and the section header shows the active preset. The picker lives in settings — never in the setup panel — because the setup panel hides itself once the selected engine is ready, which would swallow the control.
 - **States**: switching saves immediately and re-diagnoses; an unready selection re-opens the setup panel path via `로컬 엔진 준비`. Badges pair text with color.
 - **Behavior**: the change applies from the next transcription; a running job is unaffected.
 
@@ -300,4 +300,4 @@ Strategy: tonal layers plus SEED shadow tokens only.
 | Item | Location | Why accepted | Owner / Exit |
 |---|---|---|---|
 | No dark theme in first release | Whole app | The desktop utility uses one controlled light workspace (`data-seed-color-mode="light-only"`); a second theme would double initial visual QA without changing task completion. | Add only after a user preference request. |
-| macOS ARM64 and Windows x64 only | Build pipeline | Apple Silicon macOS and Windows 10/11 x64 are the supported targets; ML dependencies are platform-heavy. | Intel macOS and Linux remain unsupported; Windows x64 ships as an unsigned NSIS installer. Add signing and further targets with platform-specific QA. |
+| macOS ARM64, Windows x64, and Linux x86_64 only | Build pipeline | Apple Silicon macOS, Windows 10/11 x64, and Linux x86_64 (glibc) are the supported targets; ML dependencies are platform-heavy. | Intel macOS and Linux ARM remain unsupported; Windows x64 ships as an unsigned NSIS installer and Linux x86_64 as unsigned `.deb` + AppImage. Add signing and further targets with platform-specific QA. |

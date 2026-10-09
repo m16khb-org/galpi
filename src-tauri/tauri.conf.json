@@ -38,6 +38,11 @@
     ],
     "externalBin": ["binaries/uv"],
     "resources": ["resources/worker"],
+    "linux": {
+      "deb": {
+        "depends": ["libasound2t64 | libasound2"]
+      }
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

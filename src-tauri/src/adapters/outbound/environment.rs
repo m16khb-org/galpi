@@ -1,11 +1,11 @@
 use super::paths::{AppPaths, QWEN3_ENGINE_VERSION};
-use super::platform::{Os, cuda_driver_present, whisperx_lock_hash_name, worker_environment};
+use super::platform::{Os, host_cuda_driver_present, whisperx_lock_hash_name, worker_environment};
 use crate::application::error::AppError;
 use crate::application::model::EnvironmentStatus;
 use crate::domain::chatgpt::AssistantTransport;
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::path::Path;
 use tauri::AppHandle;
 
@@ -14,16 +14,18 @@ pub const ENGINE_VERSION: &str = "3.8.6";
 /// current: the display version plus the fingerprint of the lock it was
 /// installed from. Any change to the resolved set invalidates the virtualenv.
 ///
-/// Windows also names the lock and the Python request, so switching between
+/// Windows and Linux also name the lock and the Python request, so switching between
 /// the CPU and CUDA builds, or moving off a venv built on uv's minor-version
 /// junction, invalidates the environment.
 pub fn whisperx_marker(os: Os, device: ComputeDevice) -> String {
     match os {
-        Os::MacOs => format!("{ENGINE_VERSION}+{}", env!("GALPI_WHISPERX_MAC_LOCK_HASH")),
-        Os::Windows => {
-            let hash = match device {
-                ComputeDevice::Cpu => env!("GALPI_WHISPERX_WIN_CPU_LOCK_HASH"),
-                ComputeDevice::Cuda => env!("GALPI_WHISPERX_WIN_CUDA_LOCK_HASH"),
+        Os::Mac => format!("{ENGINE_VERSION}+{}", env!("GALPI_WHISPERX_MAC_LOCK_HASH")),
+        Os::Windows | Os::Linux => {
+            let hash = match (os, device) {
+                (Os::Linux, ComputeDevice::Cpu) => env!("GALPI_WHISPERX_LINUX_CPU_LOCK_HASH"),
+                (Os::Linux, ComputeDevice::Cuda) => env!("GALPI_WHISPERX_LINUX_CUDA_LOCK_HASH"),
+                (_, ComputeDevice::Cpu) => env!("GALPI_WHISPERX_WIN_CPU_LOCK_HASH"),
+                (_, ComputeDevice::Cuda) => env!("GALPI_WHISPERX_WIN_CUDA_LOCK_HASH"),
             };
             format!(
                 "{ENGINE_VERSION}+{}-{hash}+py{}",
@@ -55,13 +57,12 @@ pub fn diagnose(
 }
 
 pub fn status(paths: &AppPaths, selection: EngineSelection) -> EnvironmentStatus {
-    let system_root = std::env::var_os("SYSTEMROOT");
-    status_for(Os::current(), system_root.as_deref(), paths, selection)
+    status_for(Os::current(), host_cuda_driver_present(), paths, selection)
 }
 
 pub fn status_for(
     os: Os,
-    system_root: Option<&OsStr>,
+    cuda_driver: bool,
     paths: &AppPaths,
     selection: EngineSelection,
 ) -> EnvironmentStatus {
@@ -99,7 +100,7 @@ pub fn status_for(
         compute_device: selection.device,
         available_presets: os.presets().to_vec(),
         available_devices: os.devices().to_vec(),
-        cuda_driver_detected: os == Os::Windows && cuda_driver_present(system_root),
+        cuda_driver_detected: cuda_driver && os.devices().contains(&ComputeDevice::Cuda),
     }
 }
 
@@ -158,11 +159,11 @@ pub fn assistant_environment(
 
 /// Hugging Face cache directory of the ASR model the `WhisperX` worker loads on
 /// this OS: MLX weights on macOS, `CTranslate2` weights for faster-whisper on
-/// Windows.
+/// Windows and Linux.
 pub(super) const fn whisperx_asr_model_dir(os: Os) -> &'static str {
     match os {
-        Os::MacOs => "models--mlx-community--whisper-large-v3-turbo",
-        Os::Windows => "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo",
+        Os::Mac => "models--mlx-community--whisper-large-v3-turbo",
+        Os::Windows | Os::Linux => "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo",
     }
 }
 
@@ -218,7 +219,6 @@ mod tests {
     use crate::adapters::outbound::paths::AppPaths;
     use crate::adapters::outbound::platform::Os;
     use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
-    use std::ffi::OsStr;
     use std::path::{Path, PathBuf};
 
     fn selection(preset: EnginePreset, device: ComputeDevice) -> EngineSelection {
@@ -230,14 +230,14 @@ mod tests {
         // Given / When / Then: macOS has one lock, so no device choice can
         // invalidate its environment
         assert_eq!(
-            whisperx_marker(Os::MacOs, ComputeDevice::Cpu),
-            whisperx_marker(Os::MacOs, ComputeDevice::Cuda)
+            whisperx_marker(Os::Mac, ComputeDevice::Cpu),
+            whisperx_marker(Os::Mac, ComputeDevice::Cuda)
         );
     }
 
     #[test]
     fn windows_markers_differ_by_device_and_from_macos() {
-        let mac = whisperx_marker(Os::MacOs, ComputeDevice::Cpu);
+        let mac = whisperx_marker(Os::Mac, ComputeDevice::Cpu);
         let cpu = whisperx_marker(Os::Windows, ComputeDevice::Cpu);
         let cuda = whisperx_marker(Os::Windows, ComputeDevice::Cuda);
         assert_ne!(cpu, cuda);
@@ -245,6 +245,44 @@ mod tests {
         assert_ne!(cuda, mac);
         assert!(cpu.contains("win-cpu-"));
         assert!(cuda.contains("win-cuda-"));
+    }
+
+    #[test]
+    fn linux_markers_name_the_lock_and_differ_from_windows() {
+        let cpu = whisperx_marker(Os::Linux, ComputeDevice::Cpu);
+        let cuda = whisperx_marker(Os::Linux, ComputeDevice::Cuda);
+        assert_ne!(cpu, cuda);
+        assert_ne!(cpu, whisperx_marker(Os::Windows, ComputeDevice::Cpu));
+        assert!(cpu.starts_with(&format!("{ENGINE_VERSION}+linux-cpu-")));
+        assert!(cuda.starts_with(&format!("{ENGINE_VERSION}+linux-cuda-")));
+        assert!(cpu.ends_with("+py3.12"));
+    }
+
+    #[test]
+    fn linux_status_looks_for_ffmpeg_and_reports_the_detected_driver()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = std::env::temp_dir().join(format!("galpi-status-{}", uuid::Uuid::now_v7()));
+        let paths = AppPaths::from_roots(Os::Linux, root.clone(), Path::new("/documents"));
+        std::fs::create_dir_all(&paths.engine_bin)?;
+        std::fs::write(paths.engine_bin.join("ffmpeg"), b"")?;
+
+        let status = status_for(
+            Os::Linux,
+            true,
+            &paths,
+            selection(EnginePreset::WhisperX, ComputeDevice::Cuda),
+        );
+
+        assert!(status.ffmpeg_ready);
+        assert!(!status.engine_ready);
+        assert_eq!(status.available_presets, [EnginePreset::WhisperX]);
+        assert_eq!(
+            status.available_devices,
+            [ComputeDevice::Cpu, ComputeDevice::Cuda]
+        );
+        assert!(status.cuda_driver_detected);
+        std::fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
@@ -259,7 +297,7 @@ mod tests {
         // When
         let status = status_for(
             Os::Windows,
-            None,
+            false,
             &paths,
             selection(EnginePreset::WhisperX, ComputeDevice::Cuda),
         );
@@ -285,13 +323,13 @@ mod tests {
     #[test]
     fn macos_status_offers_both_presets_and_no_device_choice() {
         let paths = AppPaths::from_roots(
-            Os::MacOs,
+            Os::Mac,
             PathBuf::from("/nonexistent-galpi"),
             Path::new("/docs"),
         );
         let status = status_for(
-            Os::MacOs,
-            Some(OsStr::new("/ignored")),
+            Os::Mac,
+            true,
             &paths,
             selection(EnginePreset::Qwen3, ComputeDevice::Cpu),
         );
@@ -328,7 +366,7 @@ mod tests {
     fn whisperx_models_ready_on(os: Os, paths: &AppPaths) -> bool {
         status_for(
             os,
-            None,
+            false,
             paths,
             selection(EnginePreset::WhisperX, ComputeDevice::Cpu),
         )
@@ -336,23 +374,39 @@ mod tests {
     }
 
     #[test]
+    fn whisperx_models_on_linux_need_the_ctranslate2_asr_cache()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let paths = whisperx_cache_without_asr(Os::Linux)?;
+        let hub = paths.cache.join("huggingface/hub");
+        assert!(!whisperx_models_ready_on(Os::Linux, &paths));
+
+        std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::Mac)))?;
+        assert!(!whisperx_models_ready_on(Os::Linux, &paths));
+
+        std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::Linux)))?;
+        assert!(whisperx_models_ready_on(Os::Linux, &paths));
+        std::fs::remove_dir_all(paths.root)?;
+        Ok(())
+    }
+
+    #[test]
     fn whisperx_models_on_macos_need_the_mlx_asr_cache() -> Result<(), Box<dyn std::error::Error>> {
         // Given: every other model and the manifest, but no ASR directory
-        let paths = whisperx_cache_without_asr(Os::MacOs)?;
+        let paths = whisperx_cache_without_asr(Os::Mac)?;
         let hub = paths.cache.join("huggingface/hub");
-        assert!(!whisperx_models_ready_on(Os::MacOs, &paths));
+        assert!(!whisperx_models_ready_on(Os::Mac, &paths));
 
         // When: only the Windows ASR directory exists
         std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::Windows)))?;
 
         // Then: macOS still waits for the MLX weights
-        assert!(!whisperx_models_ready_on(Os::MacOs, &paths));
+        assert!(!whisperx_models_ready_on(Os::Mac, &paths));
 
         // When: the MLX directory arrives
         std::fs::create_dir_all(hub.join("models--mlx-community--whisper-large-v3-turbo"))?;
 
         // Then
-        assert!(whisperx_models_ready_on(Os::MacOs, &paths));
+        assert!(whisperx_models_ready_on(Os::Mac, &paths));
         std::fs::remove_dir_all(paths.root)?;
         Ok(())
     }
@@ -366,7 +420,7 @@ mod tests {
         assert!(!whisperx_models_ready_on(Os::Windows, &paths));
 
         // When: only the MLX directory exists
-        std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::MacOs)))?;
+        std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::Mac)))?;
 
         // Then: Windows still waits for the faster-whisper weights
         assert!(!whisperx_models_ready_on(Os::Windows, &paths));
@@ -393,7 +447,7 @@ mod assistant_environment_tests {
 
     fn paths() -> AppPaths {
         AppPaths::from_roots(
-            Os::MacOs,
+            Os::Mac,
             PathBuf::from("/tmp/galpi-environment-test"),
             Path::new("/tmp/documents"),
         )

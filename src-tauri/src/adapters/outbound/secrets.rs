@@ -5,6 +5,9 @@
 //!
 //! - Windows: the Credential Manager ([`credential_manager`]), the app's first
 //!   OS-backed store.
+//! - Linux: the settings file ([`SettingsFile`], `0600` `settings.json` under
+//!   `~/.local/share/com.m16khb.galpi`). Linux has no keyring every desktop
+//!   session is guaranteed to run, so Galpi does not depend on one.
 //! - macOS: the settings file ([`SettingsFile`]). The Keychain ([`keychain`])
 //!   is implemented but dormant: macOS ties access to a Keychain item to the
 //!   code signature that stored it, and Galpi's ad-hoc signature changes on
@@ -150,8 +153,9 @@ impl SecretStore for InMemorySecrets {
 
 /// Keeps a secret in the settings file rather than the keychain.
 ///
-/// The file is created 0600 in the app's own Application Support directory
-/// (on Windows it inherits the per-user app data ACL).
+/// The file is created 0600 in the app's own data directory (Application
+/// Support on macOS, `~/.local/share/com.m16khb.galpi` on Linux; on Windows it
+/// inherits the per-user app data ACL).
 /// That is weaker than the keychain — it is readable by anything running as
 /// this user, and it travels into backups — and it is what Galpi did before
 /// and still does until the app is signed. `LocalSettingsStore` writes and

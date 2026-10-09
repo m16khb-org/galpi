@@ -12,6 +12,12 @@ test("win32 builds only the NSIS installer", () => {
   expect(bundleCommands("win32")).toEqual([["cargo", "tauri", "build", "--bundles", "nsis", "--ci"]])
 })
 
+test("linux builds the deb and AppImage bundles", () => {
+  expect(bundleCommands("linux")).toEqual([
+    ["cargo", "tauri", "build", "--bundles", "deb,appimage", "--ci"],
+  ])
+})
+
 test("other platforms fail clearly", () => {
-  expect(() => bundleCommands("linux")).toThrow(/unsupported build platform: linux/)
+  expect(() => bundleCommands("freebsd")).toThrow(/unsupported build platform: freebsd/)
 })

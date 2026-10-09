@@ -5,7 +5,7 @@
 <h1 align="center">Galpi · 갈피</h1>
 
 <p align="center">
-  A local-first desktop app that records meetings on Apple Silicon Macs and Windows x64,<br />
+  A local-first desktop app that records meetings on Apple Silicon Macs, Windows x64, and Linux x86_64,<br />
   separates speakers, transcribes Korean audio, and optionally produces AI meeting minutes
 </p>
 
@@ -16,12 +16,12 @@
 </p>
 
 > [!IMPORTANT]
-> Galpi 0.1.0 is a development build for **Apple Silicon Macs running macOS 14 or later** and **Windows 10/11 x64**.
-> The macOS DMG is unsigned and not notarized, and the Windows installer is unsigned. Intel Macs and Linux are not supported.
+> Galpi 0.1.0 is a development build for **Apple Silicon Macs running macOS 14 or later**, **Windows 10/11 x64**, and **Linux x86_64 (glibc, Ubuntu 24.04 tested)**.
+> The macOS DMG is unsigned and not notarized, and the Windows installer and the Linux packages (`.deb`, AppImage) are unsigned. Intel Macs and Linux ARM are not supported.
 
 ## At a glance
 
-Galpi records audio inside the app or imports an existing meeting file, then runs Korean transcription and speaker diarization locally. The default engine on every platform is `WhisperX` (Whisper large-v3-turbo, Korean alignment, pyannote community-1 diarization). Speech recognition runs on MLX (Metal GPU) on a Mac, on CUDA on Windows with an NVIDIA GPU, and on the CPU otherwise; alignment and diarization use the same official WhisperX code everywhere. On Apple Silicon Macs, `Qwen3` (Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B) can be chosen under the `전사 엔진` (transcription engine) setting. Results are stored in a folder you choose. Optionally, Galpi can send the transcript to an OpenAI-compatible API and generate structured Korean meeting minutes in Markdown.
+Galpi records audio inside the app or imports an existing meeting file, then runs Korean transcription and speaker diarization locally. The default engine on every platform is `WhisperX` (Whisper large-v3-turbo, Korean alignment, pyannote community-1 diarization). Speech recognition runs on MLX (Metal GPU) on a Mac, on CUDA on Windows or Linux with an NVIDIA GPU, and on the CPU otherwise; alignment and diarization use the same official WhisperX code everywhere. On Apple Silicon Macs, `Qwen3` (Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B) can be chosen under the `전사 엔진` (transcription engine) setting. Results are stored in a folder you choose. Optionally, Galpi can send the transcript to an OpenAI-compatible API and generate structured Korean meeting minutes in Markdown.
 
 | Capability | What it does |
 |---|---|
@@ -41,7 +41,8 @@ Galpi records audio inside the app or imports an existing meeting file, then run
 
 Requirements:
 
-- macOS 14 or later on Apple Silicon, or Windows 10/11 x64
+- macOS 14 or later on Apple Silicon, Windows 10/11 x64, or Linux x86_64 (glibc)
+- Linux: the Tauri system packages (see "Linux quick start" below)
 - Windows: Microsoft Visual C++ 2015–2022 x64 redistributable (not bundled)
 - Rust 1.88 or later
 - Bun 1.3 or later
@@ -54,6 +55,24 @@ bun run dev
 ```
 
 `bun run dev` stages the verified `uv` binary for the current platform, the Python worker, the frontend, and the Tauri app. You do not need to preinstall Python, ffmpeg, or WhisperX globally. Use the same command in Windows PowerShell.
+
+### Linux quick start
+
+These steps target Ubuntu 24.04 (x86_64). First install the system packages Tauri needs:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential pkg-config libxdo-dev libssl-dev \
+  libayatana-appindicator3-dev librsvg2-dev libasound2-dev
+cargo install tauri-cli --version 2.11.4 --locked
+bun install
+bun run dev
+```
+
+- The only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon).
+- CUDA is the default when an NVIDIA driver is detected (`libcuda.so.1`, or `/proc/driver/nvidia/version`; `/usr/lib/wsl/lib` on WSL2), CPU otherwise; either can be changed in settings, and a device you pick yourself wins over detection. CUDA installs the PyTorch cu128 build with its NVIDIA runtime wheels.
+- App data lives in `~/.local/share/com.m16khb.galpi`. The AI augmentation API key and the ChatGPT tokens are stored in `settings.json` there with `0600` permissions (Linux has no keyring every desktop session is guaranteed to run, so the settings file is used).
+- Recording holds a `systemd-inhibit` lock to prevent sleep; without `systemd-inhibit` it records without sleep protection.
+- `bun run build` produces a `.deb` and an AppImage.
 
 ### Windows quick start
 
@@ -169,7 +188,7 @@ The completion screen can open each artifact or reveal its output folder in Find
 
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
-- The AI augmentation API key and the ChatGPT sign-in tokens are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:assistant-api-key` and `com.m16khb.galpi:chatgpt-tokens`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
+- The AI augmentation API key and the ChatGPT sign-in tokens are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:assistant-api-key` and `com.m16khb.galpi:chatgpt-tokens`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`), and on Linux in `~/.local/share/com.m16khb.galpi/settings.json`, with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
 - On macOS credentials are not encrypted with the Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The macOS move to the Keychain lands together with Developer ID signing.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.
@@ -244,7 +263,7 @@ On macOS this produces the two files above; on Windows x64 it produces an NSIS i
 src-tauri/target/release/bundle/nsis/*.exe
 ```
 
-The macOS build creates the `.app` first, then packages the DMG with `hdiutil`. The Windows build produces an unsigned NSIS `.exe`. CI verifies both platforms.
+The macOS build creates the `.app` first, then packages the DMG with `hdiutil`. The Windows build produces an unsigned NSIS `.exe`. On Linux x86_64 it produces an unsigned `.deb` and AppImage (`src-tauri/target/release/bundle/deb/*.deb`, `.../bundle/appimage/*.AppImage`). CI verifies all three platforms.
 
 #### Distributing to other people
 

@@ -47,7 +47,8 @@ outbound/
 - Cancellation on Unix signals the dedicated process group: SIGTERM, a three
   second wait, then SIGKILL. On Windows the child joins a Job Object
   (`KILL_ON_JOB_CLOSE`); there is no group SIGTERM, so the graceful step is an
-  immediate `TerminateJobObject`. The armed guard also kills on Drop; normal
+  immediate `TerminateJobObject`. Linux uses the same process-group path as
+  macOS (`guard/unix.rs`, `nix`). The armed guard also kills on Drop; normal
   exits disarm it.
 - Protocol stdout is one bounded JSON envelope per line; duplicate completion
   is rejected. Stderr remains logs and its 20-line tail explains failures.

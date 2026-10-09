@@ -116,8 +116,19 @@ fn windows_paths_use_the_scripts_directory_and_documents_galpi() {
 
 #[test]
 fn macos_paths_keep_the_posix_interpreter_layout() {
-    let paths = AppPaths::from_roots(Os::MacOs, PathBuf::from("/data"), Path::new("/docs"));
+    let paths = AppPaths::from_roots(Os::Mac, PathBuf::from("/data"), Path::new("/docs"));
     assert_eq!(paths.python, PathBuf::from("/data/engine/.venv/bin/python"));
+    assert_eq!(paths.default_output, PathBuf::from("/docs/Galpi"));
+}
+
+#[test]
+fn linux_paths_use_the_posix_interpreter_layout_and_documents_galpi() {
+    let paths = AppPaths::from_roots(Os::Linux, PathBuf::from("/data"), Path::new("/docs"));
+    assert_eq!(paths.python, PathBuf::from("/data/engine/.venv/bin/python"));
+    assert_eq!(
+        paths.qwen3_python,
+        PathBuf::from("/data/engine/qwen3/.venv/bin/python")
+    );
     assert_eq!(paths.default_output, PathBuf::from("/docs/Galpi"));
 }
 
@@ -126,8 +137,9 @@ fn the_uv_binary_is_staged_in_debug_and_installed_beside_the_executable() {
     let manifest = Path::new("/repo/src-tauri");
     let executable = Path::new("/apps/Galpi/galpi");
     for (os, staged, installed) in [
-        (Os::MacOs, "uv-aarch64-apple-darwin", "uv"),
+        (Os::Mac, "uv-aarch64-apple-darwin", "uv"),
         (Os::Windows, "uv-x86_64-pc-windows-msvc.exe", "uv.exe"),
+        (Os::Linux, "uv-x86_64-unknown-linux-gnu", "uv"),
     ] {
         assert_eq!(
             uv_binary_for(os, manifest, None).ok(),

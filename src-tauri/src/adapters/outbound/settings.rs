@@ -1,5 +1,5 @@
 use super::paths::AppPaths;
-use super::platform::{Os, cuda_driver_present};
+use super::platform::{Os, host_cuda_driver_present};
 use super::secrets::{Secret, SecretStore};
 use crate::application::error::AppError;
 use crate::application::ports::SettingsPort;
@@ -46,7 +46,7 @@ impl LocalSettingsStore {
         app: &AppHandle,
         secrets: std::sync::Arc<dyn SecretStore>,
     ) -> Result<Self, AppError> {
-        let cuda_driver = cuda_driver_present(std::env::var_os("SYSTEMROOT").as_deref());
+        let cuda_driver = host_cuda_driver_present();
         Ok(Self::build(
             AppPaths::resolve(app)?.root.join("settings.json"),
             Os::current(),
@@ -73,7 +73,7 @@ impl LocalSettingsStore {
 
     #[cfg(test)]
     fn for_path(path: PathBuf) -> Self {
-        Self::for_os(path, Os::MacOs)
+        Self::for_os(path, Os::Mac)
     }
 
     #[cfg(test)]
@@ -93,7 +93,7 @@ impl LocalSettingsStore {
 
     #[cfg(test)]
     fn with_secrets(path: PathBuf, secrets: std::sync::Arc<dyn SecretStore>) -> Self {
-        Self::build(path, Os::MacOs, false, secrets)
+        Self::build(path, Os::Mac, false, secrets)
     }
 
     /// Read a secret, moving it out of the settings file the first time.
@@ -1106,7 +1106,7 @@ mod tests {
         tokio::fs::create_dir_all(&directory).await?;
         let path = directory.join("settings.json");
         tokio::fs::write(&path, r#"{"assistantModel":"glm"}"#).await?;
-        let store = LocalSettingsStore::for_os(path, Os::MacOs);
+        let store = LocalSettingsStore::for_os(path, Os::Mac);
 
         // When / Then
         assert_eq!(store.load_engine_preset().await?, EnginePreset::WhisperX);
@@ -1130,14 +1130,14 @@ mod tests {
         tokio::fs::create_dir_all(&directory).await?;
         let path = directory.join("settings.json");
         tokio::fs::write(&path, r#"{"enginePreset":"qwen3"}"#).await?;
-        let store = LocalSettingsStore::for_os(path.clone(), Os::MacOs);
+        let store = LocalSettingsStore::for_os(path.clone(), Os::Mac);
 
         // When / Then: the saved choice wins over the new default, and a fresh
         // opt-in is accepted and persisted
         assert_eq!(store.load_engine_preset().await?, EnginePreset::Qwen3);
         store.save_engine_preset(EnginePreset::WhisperX).await?;
         store.save_engine_preset(EnginePreset::Qwen3).await?;
-        let relaunched = LocalSettingsStore::for_os(path, Os::MacOs);
+        let relaunched = LocalSettingsStore::for_os(path, Os::Mac);
         assert_eq!(relaunched.load_engine_preset().await?, EnginePreset::Qwen3);
         tokio::fs::remove_dir_all(directory).await?;
         Ok(())
@@ -1149,7 +1149,7 @@ mod tests {
         // Given: other settings saved while preset and device were never chosen
         let directory = temp_settings("rollback");
         let path = directory.join("settings.json");
-        let store = LocalSettingsStore::for_os(path.clone(), Os::MacOs);
+        let store = LocalSettingsStore::for_os(path.clone(), Os::Mac);
         store
             .save_assistant(AssistantSettings {
                 model: Some("glm-5.3".to_owned()),

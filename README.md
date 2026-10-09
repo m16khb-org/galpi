@@ -5,7 +5,7 @@
 <h1 align="center">Galpi · 갈피</h1>
 
 <p align="center">
-  Mac(Apple Silicon)과 Windows x64에서 회의를 녹음하고, 화자를 구분해 전사하고,<br />
+  Mac(Apple Silicon), Windows x64, Linux x86_64에서 회의를 녹음하고, 화자를 구분해 전사하고,<br />
   필요한 경우 AI로 회의록까지 정리하는 로컬 우선 데스크톱 앱
 </p>
 
@@ -16,16 +16,16 @@
 </p>
 
 > [!IMPORTANT]
-> Galpi 0.1.0은 **macOS 14 이상 Apple Silicon(M1 이상)** 과 **Windows 10/11 x64** 를 지원하는 개발 빌드입니다.
-> macOS DMG는 서명·공증되지 않았고 Windows 설치 프로그램은 서명되지 않았습니다. Intel Mac과 Linux는 지원하지 않습니다.
+> Galpi 0.1.0은 **macOS 14 이상 Apple Silicon(M1 이상)**, **Windows 10/11 x64**, **Linux x86_64(glibc, Ubuntu 24.04 기준)** 를 지원하는 개발 빌드입니다.
+> macOS DMG는 서명·공증되지 않았고 Windows 설치 프로그램과 Linux 패키지(`.deb`, AppImage)는 서명되지 않았습니다. Intel Mac과 Linux ARM은 지원하지 않습니다.
 
 ## 한눈에 보기
 
-Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져와, 한국어 전사와 화자분리를 로컬에서 수행합니다. 기본 전사 엔진은 모든 플랫폼에서 `WhisperX`(Whisper large-v3-turbo, 한국어 정렬, pyannote community-1 화자분리)입니다. 음성 인식은 Mac에서 MLX(Metal GPU), NVIDIA GPU가 있는 Windows에서 CUDA, 그 밖에는 CPU로 실행하고, 정렬과 화자분리는 같은 공식 WhisperX 코드를 씁니다. Apple Silicon Mac에서는 설정의 `전사 엔진`에서 `Qwen3`(Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B)를 선택할 수도 있습니다. 전사 결과는 사용자가 고른 폴더에 저장되며, 선택적으로 OpenAI 호환 API를 사용해 한국어 회의록 Markdown을 만들 수 있습니다.
+Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져와, 한국어 전사와 화자분리를 로컬에서 수행합니다. 기본 전사 엔진은 모든 플랫폼에서 `WhisperX`(Whisper large-v3-turbo, 한국어 정렬, pyannote community-1 화자분리)입니다. 음성 인식은 Mac에서 MLX(Metal GPU), NVIDIA GPU가 있는 Windows·Linux에서 CUDA, 그 밖에는 CPU로 실행하고, 정렬과 화자분리는 같은 공식 WhisperX 코드를 씁니다. Apple Silicon Mac에서는 설정의 `전사 엔진`에서 `Qwen3`(Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B)를 선택할 수도 있습니다. 전사 결과는 사용자가 고른 폴더에 저장되며, 선택적으로 OpenAI 호환 API를 사용해 한국어 회의록 Markdown을 만들 수 있습니다.
 
 | 기능 | 내용 |
 |---|---|
-| 바로 녹음 | 마이크 입력(CPAL: CoreAudio/WASAPI)을 16-bit PCM WAV로 저장 |
+| 바로 녹음 | 마이크 입력(CPAL: CoreAudio/WASAPI/ALSA)을 16-bit PCM WAV로 저장 |
 | 파일 가져오기 | `m4a`, `mp3`, `wav`, `mp4`, `mov`, `aac`, `flac`, `ogg` |
 | 로컬 전사 | `WhisperX`(기본) 또는 Mac 전용 `Qwen3` 프리셋 한국어 ASR |
 | 화자분리 | pyannote 기반 분리, 자동·정확히·최소/최대 화자 수 힌트 |
@@ -41,7 +41,8 @@ Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져�
 
 필수 환경:
 
-- macOS 14 이상 Apple Silicon 또는 Windows 10/11 x64
+- macOS 14 이상 Apple Silicon, Windows 10/11 x64, 또는 Linux x86_64(glibc)
+- Linux: Tauri 시스템 패키지(아래 'Linux 빠른 시작' 참고)
 - Windows: Microsoft Visual C++ 2015–2022 x64 재배포 패키지(앱에 포함되지 않음)
 - Rust 1.88 이상
 - Bun 1.3 이상
@@ -54,6 +55,24 @@ bun run dev
 ```
 
 `bun run dev`는 해당 플랫폼의 검증된 `uv`, Python worker, 프론트엔드, Tauri 앱을 준비해 실행합니다. Python, ffmpeg, WhisperX를 전역으로 미리 설치할 필요는 없습니다. Windows에서도 PowerShell에서 같은 명령을 사용합니다.
+
+### Linux 빠른 시작
+
+Ubuntu 24.04(x86_64) 기준입니다. 먼저 Tauri 빌드에 필요한 시스템 패키지를 설치합니다.
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential pkg-config libxdo-dev libssl-dev \
+  libayatana-appindicator3-dev librsvg2-dev libasound2-dev
+cargo install tauri-cli --version 2.11.4 --locked
+bun install
+bun run dev
+```
+
+- 전사 엔진으로는 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용).
+- NVIDIA 드라이버(`libcuda.so.1` 또는 `/proc/driver/nvidia/version`, WSL2는 `/usr/lib/wsl/lib`)가 감지되면 CUDA가, 없으면 CPU가 기본이며 설정에서 바꿀 수 있습니다. 직접 고른 장치는 감지 결과보다 우선합니다. CUDA는 PyTorch cu128 빌드(NVIDIA 런타임 휠 포함)를 추가로 내려받습니다.
+- 앱 데이터는 `~/.local/share/com.m16khb.galpi`에 저장됩니다. AI 증강 API 키와 ChatGPT 토큰은 이 폴더의 `settings.json`에 `0600` 권한으로 저장됩니다(Linux에는 모든 데스크톱 세션이 보장하는 키링이 없어 설정 파일을 씁니다).
+- 녹음 중에는 `systemd-inhibit`으로 절전을 막습니다. `systemd-inhibit`이 없으면 절전 방지 없이 녹음합니다.
+- 패키지는 `bun run build`로 만들며 `.deb`와 AppImage를 생성합니다.
 
 ### Windows 빠른 시작
 
@@ -169,7 +188,7 @@ API Key 대신 ChatGPT 계정으로 로그인해 회의록 정제 모델을 사�
 
 - 음성과 전사 산출물은 사용자가 선택한 로컬 폴더에 저장됩니다.
 - 전사·정렬·화자분리 모델(Qwen3, WhisperX, pyannote)은 Galpi의 앱 전용 Hugging Face 캐시에 저장됩니다.
-- AI 증강 API 키와 ChatGPT 로그인 토큰은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이 노출될 수 있습니다.
+- AI 증강 API 키와 ChatGPT 로그인 토큰은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support, Linux에서는 `~/.local/share/com.m16khb.galpi` 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이 노출될 수 있습니다.
 - macOS에서는 자격 증명을 아직 Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. macOS의 Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다.
 - AI 회의록을 실행하지 않으면 전사문은 외부 LLM API로 전송되지 않습니다.
 - worker는 고정된 프로그램과 argv로 실행되며 셸 문자열을 실행하지 않습니다.
@@ -182,7 +201,7 @@ TypeScript UI
     ▼
 Rust application
     │ ports
-    ├── 마이크 녹음기 (CPAL: CoreAudio/WASAPI)
+    ├── 마이크 녹음기 (CPAL: CoreAudio/WASAPI/ALSA)
     ├── filesystem / opener
     └── supervised Python worker
             │ versioned JSONL
@@ -244,7 +263,14 @@ macOS에서는 위 두 파일을, Windows x64에서는 NSIS 설치 프로그램�
 src-tauri/target/release/bundle/nsis/*.exe
 ```
 
-macOS 빌드는 `.app`을 만든 뒤 `hdiutil`로 DMG를 생성합니다. Windows 빌드는 서명되지 않은 NSIS `.exe`를 만듭니다. CI는 두 플랫폼을 모두 검증합니다.
+Linux x86_64에서는 `.deb`와 AppImage를 만듭니다.
+
+```text
+src-tauri/target/release/bundle/deb/*.deb
+src-tauri/target/release/bundle/appimage/*.AppImage
+```
+
+macOS 빌드는 `.app`을 만든 뒤 `hdiutil`로 DMG를 생성합니다. Windows 빌드는 서명되지 않은 NSIS `.exe`를, Linux 빌드는 서명되지 않은 `.deb`와 AppImage를 만듭니다. CI는 세 플랫폼을 모두 검증합니다.
 
 #### 다른 사람에게 배포할 때
 

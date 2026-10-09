@@ -13,7 +13,14 @@ interface Fence {
 }
 
 // Platform branching lives only in outbound adapters.
-const PLATFORM_CFG = ["cfg(windows)", "cfg(unix)", "target_os", "cfg!("] as const
+const PLATFORM_CFG = [
+  "cfg(windows)",
+  "cfg(unix)",
+  "cfg(not(windows))",
+  "cfg(not(unix))",
+  "target_os",
+  "cfg!(",
+] as const
 
 const fences: readonly Fence[] = [
   {

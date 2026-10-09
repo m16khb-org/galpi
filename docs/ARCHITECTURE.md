@@ -65,11 +65,13 @@ TypeScript는 `BackendPort`가 **어댑터 모듈에** 정의되어 있어 위�
 
 **플랫폼 분기는 outbound 어댑터와 `composition.rs`에만 둔다.** outbound 코드는
 `adapters/outbound/platform.rs`의 `Os` 값으로 분기하며, `Os::current()`가 유일한
-`cfg!(windows)`다. `#[cfg]`는 다른 플랫폼에서 컴파일할 수 없는 코드에만 쓴다: Win32
+`cfg!` 분기다(Windows, Linux, 그 외 macOS). `#[cfg]`는 다른 플랫폼에서 컴파일할 수 없는 코드에만 쓴다: Win32
 FFI(`process/guard/windows.rs`, `recording/power/windows.rs`,
-`secrets/credential_manager.rs`)와 `nix`(`process/guard/unix.rs`).
+`secrets/credential_manager.rs`), macOS IOKit(`recording/power/macos.rs`),
+Linux `systemd-inhibit` 절전 방지(`recording/power/linux.rs`), `nix`
+(`process/guard/unix.rs`).
 `scripts/check-architecture.ts`는 domain/application/inbound에서 `cfg(windows)`,
-`cfg(unix)`, `target_os`, `cfg!(`를 금지한다.
+`cfg(unix)`, `cfg(not(windows))`, `target_os`, `cfg!(`를 금지한다.
 
 ## 3. DDD 관점 — 전술적 패턴 매핑
 

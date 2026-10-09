@@ -34,6 +34,20 @@ describe("resolveSidecarTarget", () => {
     )
   })
 
+  test("linux x64 resolves the glibc tarball", () => {
+    const target = resolveSidecarTarget("linux", "x64")
+    expect(target.target).toBe("x86_64-unknown-linux-gnu")
+    expect(target.archiveName).toBe("uv-x86_64-unknown-linux-gnu.tar.gz")
+    expect(target.innerPath).toBe("uv-x86_64-unknown-linux-gnu/uv")
+    expect(target.stagedName).toBe("uv-x86_64-unknown-linux-gnu")
+    expect(target.archiveSha256).toBe(
+      "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
+    )
+    expect(target.binarySha256).toBe(
+      "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46",
+    )
+  })
+
   test("GALPI_SIDECAR_TARGET overrides the host", () => {
     const target = resolveSidecarTarget("darwin", "arm64", {
       GALPI_SIDECAR_TARGET: "x86_64-pc-windows-msvc",
@@ -42,7 +56,7 @@ describe("resolveSidecarTarget", () => {
   })
 
   test("unsupported host or override throws SidecarStageError", () => {
-    expect(() => resolveSidecarTarget("linux", "x64")).toThrow(SidecarStageError)
+    expect(() => resolveSidecarTarget("linux", "arm64")).toThrow(SidecarStageError)
     expect(() => resolveSidecarTarget("win32", "arm64")).toThrow(SidecarStageError)
     expect(() => resolveSidecarTarget("darwin", "arm64", { GALPI_SIDECAR_TARGET: "bogus" })).toThrow(
       SidecarStageError,
@@ -57,6 +71,7 @@ describe("resolveSidecarTarget", () => {
     for (const [platform, arch] of [
       ["darwin", "arm64"],
       ["win32", "x64"],
+      ["linux", "x64"],
     ] as const) {
       expect(source).toContain(resolveSidecarTarget(platform, arch).stagedName)
     }

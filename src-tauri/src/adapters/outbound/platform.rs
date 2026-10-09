@@ -3,7 +3,7 @@
 //! Every place that used to hard-code a macOS fact (interpreter path, binary
 //! names, `PATH` layout, which engines exist) asks an [`Os`] instead. Branching
 //! on a value rather than on `cfg` keeps both branches type-checked on every
-//! host, so the Windows rules are unit-tested on macOS. Only code that cannot
+//! host, so the Windows and Linux rules are unit-tested on any machine. Only code that cannot
 //! compile off its own platform (Win32 FFI, `nix`) is behind `#[cfg]`.
 
 use super::paths::AppPaths;
@@ -14,8 +14,10 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
-    MacOs,
+    /// Apple Silicon macOS (named `Mac` because `MacOs` repeats the enum's name).
+    Mac,
     Windows,
+    Linux,
 }
 
 /// Which lock file installs the `WhisperX` environment, and any extra `uv`
@@ -28,7 +30,8 @@ pub struct WhisperxLock {
 
 const MAC_PRESETS: [EnginePreset; 2] = [EnginePreset::WhisperX, EnginePreset::Qwen3];
 const WINDOWS_PRESETS: [EnginePreset; 1] = [EnginePreset::WhisperX];
-const WINDOWS_DEVICES: [ComputeDevice; 2] = [ComputeDevice::Cpu, ComputeDevice::Cuda];
+/// `WhisperX` is the only engine on Windows and Linux; both offer CPU and CUDA.
+const DEVICES_WITH_CUDA: [ComputeDevice; 2] = [ComputeDevice::Cpu, ComputeDevice::Cuda];
 
 /// Host variables copied into the Windows worker environment. `env_clear`
 /// starts from nothing, and Python cannot start without `SYSTEMROOT`.
@@ -47,12 +50,14 @@ const WINDOWS_HOST_KEYS: [&str; 11] = [
 ];
 
 impl Os {
-    /// The only `cfg!(windows)` branch in the crate.
+    /// The only `cfg!` branch in the crate: Windows, Linux, else macOS.
     pub const fn current() -> Self {
         if cfg!(windows) {
             Self::Windows
+        } else if cfg!(target_os = "linux") {
+            Self::Linux
         } else {
-            Self::MacOs
+            Self::Mac
         }
     }
 
@@ -65,14 +70,14 @@ impl Os {
     /// venv built on it never crosses the junction.
     pub const fn python_request(self) -> &'static str {
         match self {
-            Self::MacOs => "3.12",
+            Self::Mac | Self::Linux => "3.12",
             Self::Windows => "3.12.14",
         }
     }
 
     pub const fn python_relative(self) -> &'static [&'static str] {
         match self {
-            Self::MacOs => &[".venv", "bin", "python"],
+            Self::Mac | Self::Linux => &[".venv", "bin", "python"],
             Self::Windows => &[".venv", "Scripts", "python.exe"],
         }
     }
@@ -80,7 +85,7 @@ impl Os {
     /// Keep in step with `ffmpeg_link_name` in `worker/galpi_worker/preparation.py`.
     pub const fn ffmpeg_file_name(self) -> &'static str {
         match self {
-            Self::MacOs => "ffmpeg",
+            Self::Mac | Self::Linux => "ffmpeg",
             Self::Windows => "ffmpeg.exe",
         }
     }
@@ -88,15 +93,16 @@ impl Os {
     /// Name of the sidecar as staged under `src-tauri/binaries`.
     pub const fn uv_staged_name(self) -> &'static str {
         match self {
-            Self::MacOs => "uv-aarch64-apple-darwin",
+            Self::Mac => "uv-aarch64-apple-darwin",
             Self::Windows => "uv-x86_64-pc-windows-msvc.exe",
+            Self::Linux => "uv-x86_64-unknown-linux-gnu",
         }
     }
 
     /// Name of the sidecar next to the executable once bundled.
     pub const fn uv_installed_name(self) -> &'static str {
         match self {
-            Self::MacOs => "uv",
+            Self::Mac | Self::Linux => "uv",
             Self::Windows => "uv.exe",
         }
     }
@@ -104,16 +110,16 @@ impl Os {
     /// Selectable presets; the first is the platform default.
     pub const fn presets(self) -> &'static [EnginePreset] {
         match self {
-            Self::MacOs => &MAC_PRESETS,
-            Self::Windows => &WINDOWS_PRESETS,
+            Self::Mac => &MAC_PRESETS,
+            Self::Windows | Self::Linux => &WINDOWS_PRESETS,
         }
     }
 
     /// Selectable compute devices; empty means there is no choice.
     pub const fn devices(self) -> &'static [ComputeDevice] {
         match self {
-            Self::MacOs => &[],
-            Self::Windows => &WINDOWS_DEVICES,
+            Self::Mac => &[],
+            Self::Windows | Self::Linux => &DEVICES_WITH_CUDA,
         }
     }
 
@@ -129,7 +135,7 @@ impl Os {
 
     pub const fn whisperx_lock(self, device: ComputeDevice) -> WhisperxLock {
         match (self, device) {
-            (Self::MacOs, _) => WhisperxLock {
+            (Self::Mac, _) => WhisperxLock {
                 file_name: "requirements.lock",
                 extra_args: &[],
             },
@@ -144,16 +150,26 @@ impl Os {
                 file_name: "requirements-windows-cuda.lock",
                 extra_args: &["--index-strategy", "unsafe-best-match"],
             },
+            (Self::Linux, ComputeDevice::Cpu) => WhisperxLock {
+                file_name: "requirements-linux-cpu.lock",
+                extra_args: &["--index-strategy", "unsafe-best-match"],
+            },
+            // PyPI's torch 2.8.0 is the cu128 build and its `nvidia-*`
+            // dependencies are hash-pinned, so no extra index is needed.
+            (Self::Linux, ComputeDevice::Cuda) => WhisperxLock {
+                file_name: "requirements-linux-cuda.lock",
+                extra_args: &[],
+            },
         }
     }
 
     /// Working directory for tools that must not pick up a project file.
     ///
-    /// macOS keeps `/` so uv's `pyproject.toml` search behaves as before;
-    /// on Windows `/` means "current drive root", so use the app data root.
+    /// macOS and Linux keep `/` so uv's `pyproject.toml` search behaves as
+    /// before; on Windows `/` means "current drive root", so use the app data root.
     pub fn neutral_working_directory(self, paths: &AppPaths) -> PathBuf {
         match self {
-            Self::MacOs => PathBuf::from("/"),
+            Self::Mac | Self::Linux => PathBuf::from("/"),
             Self::Windows => paths.root.clone(),
         }
     }
@@ -162,15 +178,17 @@ impl Os {
 /// Label of the lock whose fingerprint belongs in the readiness marker.
 pub const fn whisperx_lock_hash_name(os: Os, device: ComputeDevice) -> &'static str {
     match (os, device) {
-        (Os::MacOs, _) => "mac",
+        (Os::Mac, _) => "mac",
         (Os::Windows, ComputeDevice::Cpu) => "win-cpu",
         (Os::Windows, ComputeDevice::Cuda) => "win-cuda",
+        (Os::Linux, ComputeDevice::Cpu) => "linux-cpu",
+        (Os::Linux, ComputeDevice::Cuda) => "linux-cuda",
     }
 }
 
 pub fn home_directory(os: Os, lookup: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
     let key = match os {
-        Os::MacOs => "HOME",
+        Os::Mac | Os::Linux => "HOME",
         Os::Windows => "USERPROFILE",
     };
     lookup(key).map_or_else(std::env::temp_dir, PathBuf::from)
@@ -215,10 +233,29 @@ pub fn worker_environment(
         ("UV_PYTHON_PREFERENCE".into(), "only-managed".into()),
     ]);
     match os {
-        Os::MacOs => {
+        Os::Mac => {
             env.insert("HOME".into(), home_directory(os, lookup).into_os_string());
             env.insert("LANG".into(), "ko_KR.UTF-8".into());
             env.insert("LC_ALL".into(), "ko_KR.UTF-8".into());
+            env.insert(
+                "PATH".into(),
+                format!(
+                    "{}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                    paths.engine_bin.to_string_lossy()
+                )
+                .into(),
+            );
+            env.insert(
+                "TMPDIR".into(),
+                lookup("TMPDIR").unwrap_or_else(|| "/tmp".into()),
+            );
+        }
+        Os::Linux => {
+            env.insert("HOME".into(), home_directory(os, lookup).into_os_string());
+            // `C.UTF-8` ships with glibc everywhere; a Korean locale may not
+            // be generated on the machine.
+            env.insert("LANG".into(), "C.UTF-8".into());
+            env.insert("LC_ALL".into(), "C.UTF-8".into());
             env.insert(
                 "PATH".into(),
                 format!(
@@ -265,14 +302,52 @@ pub fn to_wide_nul(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// Whether an NVIDIA driver is installed: `<SystemRoot>\System32\nvcuda.dll`.
-pub fn cuda_driver_present(system_root: Option<&OsStr>) -> bool {
-    system_root.is_some_and(|root| {
-        Path::new(root)
-            .join("System32")
-            .join("nvcuda.dll")
-            .is_file()
-    })
+/// Directories that hold `libcuda.so.1` on Linux, relative to the filesystem
+/// root: Debian/Ubuntu multiarch, Fedora/Arch, and the WSL2 driver shim.
+const LINUX_DRIVER_LIBRARY_DIRS: [&str; 8] = [
+    "usr/lib/x86_64-linux-gnu",
+    "usr/lib/x86_64-linux-gnu/nvidia/current",
+    "usr/lib64",
+    "usr/lib",
+    "lib/x86_64-linux-gnu",
+    "lib64",
+    "lib",
+    "usr/lib/wsl/lib",
+];
+
+/// Whether an NVIDIA driver is installed.
+///
+/// Windows: `<SystemRoot>\System32\nvcuda.dll`. Linux: `libcuda.so.1` in a
+/// usual library directory, or the kernel module's `/proc/driver/nvidia/version`,
+/// both resolved under `filesystem_root` (`/` on a real host). macOS has none.
+pub fn cuda_driver_present(os: Os, system_root: Option<&OsStr>, filesystem_root: &Path) -> bool {
+    match os {
+        Os::Mac => false,
+        Os::Windows => system_root.is_some_and(|root| {
+            Path::new(root)
+                .join("System32")
+                .join("nvcuda.dll")
+                .is_file()
+        }),
+        Os::Linux => {
+            filesystem_root.join("proc/driver/nvidia/version").is_file()
+                || LINUX_DRIVER_LIBRARY_DIRS.iter().any(|directory| {
+                    filesystem_root
+                        .join(directory)
+                        .join("libcuda.so.1")
+                        .exists()
+                })
+        }
+    }
+}
+
+/// [`cuda_driver_present`] for the machine Galpi is running on.
+pub fn host_cuda_driver_present() -> bool {
+    cuda_driver_present(
+        Os::current(),
+        std::env::var_os("SYSTEMROOT").as_deref(),
+        Path::new("/"),
+    )
 }
 
 #[cfg(test)]

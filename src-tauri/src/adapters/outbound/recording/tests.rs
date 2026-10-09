@@ -88,3 +88,15 @@ fn sleep_blocker_is_acquired_and_released() -> Result<(), String> {
         .join()
         .map_err(|_| "dropping the blocker panicked".to_owned())
 }
+
+/// `systemd-inhibit` is absent in containers and minimal CI images, where
+/// `acquire` correctly returns `None`; either way dropping from another thread,
+/// as the recorder does, must be clean.
+#[cfg(target_os = "linux")]
+#[test]
+fn sleep_blocker_is_acquired_and_released_from_another_thread() -> Result<(), String> {
+    let blocker = super::power::SleepBlocker::acquire("galpi-test-sleep-blocker");
+    std::thread::spawn(move || drop(blocker))
+        .join()
+        .map_err(|_| "dropping the blocker panicked".to_owned())
+}

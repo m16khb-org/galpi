@@ -86,6 +86,8 @@ async function stageWorker(): Promise<void> {
     "requirements-qwen3.lock",
     "requirements-windows-cpu.lock",
     "requirements-windows-cuda.lock",
+    "requirements-linux-cpu.lock",
+    "requirements-linux-cuda.lock",
   ]
   for (const file of requirements) {
     await cp(join(WORKER_SOURCE, file), join(WORKER_DESTINATION, file))

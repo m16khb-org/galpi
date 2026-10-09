@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn every_whisperx_lock_installs_with_hashes_and_only_cuda_changes_the_index_strategy() {
         // Given / When
-        let mac = args(Os::MacOs, ComputeDevice::Cpu);
+        let mac = args(Os::Mac, ComputeDevice::Cpu);
         let cpu = args(Os::Windows, ComputeDevice::Cpu);
         let cuda = args(Os::Windows, ComputeDevice::Cuda);
 
@@ -540,6 +540,29 @@ mod tests {
             cuda.windows(2)
                 .any(|pair| pair == ["--index-strategy", "unsafe-best-match"])
         );
+    }
+
+    #[test]
+    fn linux_locks_install_with_hashes_and_only_the_cpu_lock_needs_the_pytorch_index() {
+        let cpu = args(Os::Linux, ComputeDevice::Cpu);
+        let cuda = args(Os::Linux, ComputeDevice::Cuda);
+
+        for installed in [&cpu, &cuda] {
+            assert!(installed.contains(&"--require-hashes".to_owned()));
+        }
+        assert!(
+            cpu.iter()
+                .any(|argument| argument.ends_with("requirements-linux-cpu.lock"))
+        );
+        assert!(
+            cuda.iter()
+                .any(|argument| argument.ends_with("requirements-linux-cuda.lock"))
+        );
+        assert!(
+            cpu.windows(2)
+                .any(|pair| pair == ["--index-strategy", "unsafe-best-match"])
+        );
+        assert!(!cuda.contains(&"--index-strategy".to_owned()));
     }
 
     #[test]

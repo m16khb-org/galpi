@@ -15,7 +15,7 @@ const fn model_directories(os: Os) -> [&'static str; 3] {
 }
 
 /// How many directories a complete cache holds, whatever the OS.
-const MODEL_COUNT: usize = model_directories(Os::MacOs).len();
+const MODEL_COUNT: usize = model_directories(Os::Mac).len();
 
 pub async fn import_standard_cache(paths: &AppPaths) -> Result<usize, AppError> {
     let os = Os::current();
@@ -114,7 +114,7 @@ mod tests {
 
     /// The ASR directory of an arbitrary OS; the import tests only need one.
     fn asr_directory() -> &'static str {
-        model_directories(Os::MacOs)[0]
+        model_directories(Os::Mac)[0]
     }
 
     #[cfg(unix)]
@@ -132,7 +132,7 @@ mod tests {
         std::fs::write(&blob, b"model")?;
         std::os::unix::fs::symlink("../../blobs/model-data", snapshot.join("config.json"))?;
 
-        let imported = import_models(&source_hub, &destination_hub, Os::MacOs)?;
+        let imported = import_models(&source_hub, &destination_hub, Os::Mac)?;
 
         let imported_blob = destination_hub
             .join(asr_directory())
@@ -168,7 +168,7 @@ mod tests {
         std::fs::write(snapshot.join("config.json"), b"model")?;
 
         // When
-        let imported = import_models(&source_hub, &destination_hub, Os::MacOs)?;
+        let imported = import_models(&source_hub, &destination_hub, Os::Mac)?;
 
         // Then
         assert_eq!(imported, 1);
@@ -191,13 +191,13 @@ mod tests {
         // Given: a standard cache holding the MLX ASR model and the shared ones
         let root = std::env::temp_dir().join(format!("galpi-model-cache-{}", Uuid::now_v7()));
         let source_hub = root.join("source");
-        for directory in model_directories(Os::MacOs) {
+        for directory in model_directories(Os::Mac) {
             std::fs::create_dir_all(source_hub.join(directory))?;
         }
 
         // When / Then: macOS finds all three, Windows misses its faster-whisper one
         assert_eq!(
-            import_models(&source_hub, &root.join("mac"), Os::MacOs)?,
+            import_models(&source_hub, &root.join("mac"), Os::Mac)?,
             MODEL_COUNT
         );
         assert_eq!(
@@ -205,7 +205,7 @@ mod tests {
             MODEL_COUNT - 1
         );
         assert_ne!(
-            model_directories(Os::MacOs)[0],
+            model_directories(Os::Mac)[0],
             model_directories(Os::Windows)[0]
         );
         std::fs::remove_dir_all(root)?;

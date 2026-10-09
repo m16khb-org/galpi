@@ -9,8 +9,9 @@ Canonical index: [OPERATIONS.md](../../OPERATIONS.md)
 
 ## Prerequisites (README 빠른 시작)
 
-- macOS 14+ (Apple Silicon) or Windows 10/11 x64; Rust 1.88+; Bun 1.3+.
+- macOS 14+ (Apple Silicon), Windows 10/11 x64, or Linux x86_64 (glibc); Rust 1.88+; Bun 1.3+.
 - Windows: Microsoft Visual C++ 2015–2022 x64 redistributable (not bundled).
+- Linux: `libwebkit2gtk-4.1-dev build-essential pkg-config libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev` (apt names).
 - Tauri CLI: `cargo install tauri-cli --version 2.11.4 --locked`.
 - `uv`/`uvx` on PATH for Python verification gates (`brew install uv` on macOS).
 
@@ -37,8 +38,8 @@ bun run sidecar:stage  # stage sidecars without running the app
   meeting-minutes refinement. Models download without an account or token (the
   diarization model comes from the non-gated `pyannote-community` mirror).
 - Secret storage differs per OS: Windows keeps the assistant API key in
-  Credential Manager (`com.m16khb.galpi:assistant-api-key`); macOS keeps it in
-  the `0600` settings file. Settings written by builds that had a Hugging Face
+  Credential Manager (`com.m16khb.galpi:assistant-api-key`); macOS and Linux keep it in
+  the `0600` settings file (Linux: `~/.local/share/com.m16khb.galpi/settings.json`). Settings written by builds that had a Hugging Face
   token still load: the old keys are dropped on first read and the Windows
   credential `com.m16khb.galpi:hugging-face-token` is deleted once.
 - Do not put raw secrets (API keys) in docs, test fixtures, or logs.
@@ -81,13 +82,15 @@ On macOS, outputs `src-tauri/target/release/bundle/macos/Galpi.app` and
 `bundle/dmg/Galpi_0.1.0_aarch64.dmg` via `hdiutil`; signing and notarization
 require an Apple Developer certificate and are done separately. On Windows,
 outputs `src-tauri/target/release/bundle/nsis/*.exe` (unsigned NSIS installer;
-SmartScreen shows a warning). `scripts/build.ts` picks the bundle commands per
+SmartScreen shows a warning). On Linux x86_64, outputs
+`bundle/deb/*.deb` and `bundle/appimage/*.AppImage` (unsigned). `scripts/build.ts` picks the bundle commands per
 platform. Set `GALPI_SIDECAR_TARGET` to a triple to stage a specific sidecar.
 
 | Target triple | `uv` archive | Staged name |
 |---|---|---|
 | `aarch64-apple-darwin` | `uv-aarch64-apple-darwin.tar.gz` | `uv-aarch64-apple-darwin` |
 | `x86_64-pc-windows-msvc` | `uv-x86_64-pc-windows-msvc.zip` | `uv-x86_64-pc-windows-msvc.exe` |
+| `x86_64-unknown-linux-gnu` | `uv-x86_64-unknown-linux-gnu.tar.gz` | `uv-x86_64-unknown-linux-gnu` |
 
 The table mirrors `scripts/sidecar-targets.ts` (SHA-256 pinned). Other
 platforms/architectures are rejected. Artifact version follows `tauri.conf.json`.

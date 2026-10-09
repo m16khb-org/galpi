@@ -1,4 +1,4 @@
-"""Gate G13: supported-platform statements name Windows and drop stale macOS-only claims.
+"""Gate G13: supported-platform statements name Windows and Linux and drop stale macOS-only claims.
 
 Prints PLATFORM_DOCS_OK and exits 0 when every required phrase is present and no
 stale phrase remains; otherwise prints PLATFORM_DOCS_FAIL with reasons and exits 1.
@@ -19,6 +19,16 @@ REQUIRED: dict[str, str] = {
     "DESIGN.md": "Windows x64",
 }
 
+# Linux x86_64 support is stated alongside Windows in the same documents.
+REQUIRED_LINUX: dict[str, str] = {
+    "README.md": "Linux x86_64",
+    "README.en.md": "Linux x86_64",
+    ".issueops/TECH_STACK.md": "Linux x86_64",
+    ".issueops/OPERATIONS.md": "Linux x86_64",
+    "DESIGN.md": "Linux x86_64",
+    "AGENTS.md": "Linux x86_64",
+}
+
 # Platform statements that were true only while the app shipped for Apple Silicon.
 # Patterns are matched against the files that carried them, so legitimate uses of
 # "Apple Silicon" elsewhere (Qwen3/MLX notes) do not trip the gate.
@@ -29,6 +39,9 @@ STALE: tuple[tuple[str, str], ...] = (
     (r"Add signed Intel/Windows packages", "DESIGN.md accepted-debt row"),
     (r"macOS 14[+] on Apple Silicon;", "single-platform prerequisite"),
     (r"hardcode ARM64", "build-script architecture note"),
+    (r"Intel macOS and Linux (are|remain) unsupported", "pre-Linux support sentence"),
+    (r"Intel Macs and Linux are not supported", "pre-Linux English README quote"),
+    (r"Intel Mac과 Linux는 지원하지 않습니다", "pre-Linux Korean README quote"),
 )
 
 STALE_SCOPE = (
@@ -45,6 +58,10 @@ STALE_SCOPE = (
 def main() -> int:
     failures: list[str] = []
     for relative, phrase in REQUIRED.items():
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        if phrase not in text:
+            failures.append(f"{relative}: missing '{phrase}'")
+    for relative, phrase in REQUIRED_LINUX.items():
         text = (ROOT / relative).read_text(encoding="utf-8")
         if phrase not in text:
             failures.append(f"{relative}: missing '{phrase}'")

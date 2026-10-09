@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-Galpi is a macOS (Apple Silicon) and Windows x64 desktop app for local Korean meeting recording and
+Galpi is a macOS (Apple Silicon), Windows x64, and Linux x86_64 desktop app for local Korean meeting recording and
 transcription. It spans a Bun/Vite TypeScript frontend, a Rust/Tauri host, and a
 bundled Python/WhisperX worker connected by a versioned JSONL protocol.
 
@@ -148,12 +148,12 @@ bun run build
 
 ## NOTES
 
-- Supported distribution targets: macOS 14+ (Apple Silicon) and Windows 10/11 x64; Rust 1.88+, Bun 1.3+.
+- Supported distribution targets: macOS 14+ (Apple Silicon), Windows 10/11 x64, and Linux x86_64 (glibc); Rust 1.88+, Bun 1.3+.
 - `bun run check` covers architecture, Biome, and TypeScript only; `bun run check:all` adds the
   Rust and Python gates.
 - Dev/build staging may download the pinned `uv` archive for the host target (`scripts/sidecar-targets.ts`; override with `GALPI_SIDECAR_TARGET`) before compiling Tauri.
-- `bun run build` (`scripts/build.ts`) builds `.app` + DMG via macOS `hdiutil`, or an unsigned NSIS installer on Windows; signing and notarization remain separate.
-- Only `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` sidecars exist; the DMG name follows `tauri.conf.json`'s version.
+- `bun run build` (`scripts/build.ts`) builds `.app` + DMG via macOS `hdiutil`, an unsigned NSIS installer on Windows, or unsigned `.deb` + AppImage on Linux; signing and notarization remain separate.
+- Only `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `x86_64-unknown-linux-gnu` sidecars exist; the DMG name follows `tauri.conf.json`'s version.
 - Worker protocol, Rust parser, frontend event schema, and job reducer form one change set.
 
 <!-- AGENT_HARNESS:START -->

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a committed Windows lock reproduces from worker/requirements.txt."""
+"""Verify a committed platform lock reproduces from worker/requirements.txt."""
 
 from __future__ import annotations
 
@@ -13,8 +13,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WORKER = ROOT / "worker"
 LOCKS = {
-    "cpu": "requirements-windows-cpu.lock",
-    "cuda": "requirements-windows-cuda.lock",
+    "windows-cpu": "requirements-windows-cpu.lock",
+    "windows-cuda": "requirements-windows-cuda.lock",
+    "linux-cpu": "requirements-linux-cpu.lock",
+    "linux-cuda": "requirements-linux-cuda.lock",
 }
 PREFIX = "#    uv pip compile "
 
@@ -26,7 +28,7 @@ def fail(reason: str) -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[1] not in LOCKS:
-        print("usage: verify-windows-lock.py <cpu|cuda>", file=sys.stderr)
+        print(f"usage: verify-lock.py <{'|'.join(LOCKS)}>", file=sys.stderr)
         return 2
     kind = argv[1]
     lock = WORKER / LOCKS[kind]
@@ -50,6 +52,7 @@ def main(argv: list[str]) -> int:
             cwd=temp,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0:
             return fail(f"uv pip compile failed: {result.stderr.strip()[-500:]}")

@@ -23,6 +23,14 @@ const TARGETS: Readonly<Record<string, SidecarTarget>> = {
     innerPath: "uv-aarch64-apple-darwin/uv",
     stagedName: "uv-aarch64-apple-darwin",
   },
+  "x86_64-unknown-linux-gnu": {
+    target: "x86_64-unknown-linux-gnu",
+    archiveName: "uv-x86_64-unknown-linux-gnu.tar.gz",
+    archiveSha256: "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
+    binarySha256: "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46",
+    innerPath: "uv-x86_64-unknown-linux-gnu/uv",
+    stagedName: "uv-x86_64-unknown-linux-gnu",
+  },
   "x86_64-pc-windows-msvc": {
     target: "x86_64-pc-windows-msvc",
     archiveName: "uv-x86_64-pc-windows-msvc.zip",
@@ -36,6 +44,7 @@ const TARGETS: Readonly<Record<string, SidecarTarget>> = {
 function hostTriple(platform: string, arch: string): string | undefined {
   if (platform === "darwin" && arch === "arm64") return "aarch64-apple-darwin"
   if (platform === "win32" && arch === "x64") return "x86_64-pc-windows-msvc"
+  if (platform === "linux" && arch === "x64") return "x86_64-unknown-linux-gnu"
   return undefined
 }
 

@@ -11,12 +11,12 @@ concurrency:
 
 jobs:
   frontend:
-    # The app ships for arm64 macOS 14+ and x64 Windows, so the gates run on
-    # the platforms they describe.
+    # The app ships for arm64 macOS 14+, x64 Windows and x64 Linux, so the
+    # gates run on the platforms they describe.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-latest]
+        os: [macos-15, windows-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -34,18 +34,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-latest]
+        os: [macos-15, windows-latest, ubuntu-24.04]
         include:
           - os: macos-15
             target_args: ""
           - os: windows-latest
             target_args: "--target x86_64-pc-windows-msvc"
+          - os: ubuntu-24.04
+            target_args: "--target x86_64-unknown-linux-gnu"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Install Tauri system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -69,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-latest]
+        os: [macos-15, windows-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -151,3 +159,58 @@ jobs:
           $installer = (Get-ChildItem installer -Filter *.exe | Select-Object -First 1).FullName
           & pwsh -File scripts/ci/windows-install-smoke.ps1 -Installer $installer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  # Every committed platform lock must still reproduce from requirements.txt.
+  locks:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        lock: [windows-cpu, windows-cuda, linux-cpu, linux-cuda]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: python3 scripts/verify-lock.py ${{ matrix.lock }}
+
+  linux-engine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv venv --python 3.12 .engine-venv
+      - run: uv pip install --python .engine-venv/bin/python -r worker/requirements-linux-cpu.lock --require-hashes --index-strategy unsafe-best-match
+      - run: .engine-venv/bin/python -c "import whisperx, torch, pyannote.audio"
+      # Resolve-only: proves the CUDA lock still resolves without pulling the
+      # multi-GB wheels.
+      - run: uv pip install --python .engine-venv/bin/python --dry-run -r worker/requirements-linux-cuda.lock --require-hashes
+
+  bundle-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+      - run: cargo install tauri-cli --version 2.11.4 --locked
+      - run: bun run build
+      - name: Assert the deb and AppImage exist
+        run: |
+          ls src-tauri/target/release/bundle/deb/*.deb
+          ls src-tauri/target/release/bundle/appimage/*.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: galpi-linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error

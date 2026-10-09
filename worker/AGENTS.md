@@ -72,10 +72,11 @@ worker/
 - Locks: `requirements.lock` (macOS, compiled with
   `MACOSX_DEPLOYMENT_TARGET=14.0`), `requirements-windows-cpu.lock`,
   `requirements-windows-cuda.lock` (PyTorch cu128; the host defaults to it when
-  an NVIDIA driver is detected and no device is saved), and
-  `requirements-qwen3.lock`. Regenerate all with the command in each lock
+  an NVIDIA driver is detected and no device is saved),
+  `requirements-linux-cpu.lock` (PyTorch CPU index), `requirements-linux-cuda.lock`
+  (PyPI torch cu128, same default rule), and `requirements-qwen3.lock`. Regenerate all with the command in each lock
   header, one shared `--exclude-newer` cutoff and `-U`, then run
-  `python3 scripts/verify-windows-lock.py cpu|cuda`.
+  `python3 scripts/verify-lock.py windows-cpu|windows-cuda|linux-cpu|linux-cuda`.
 - Keep BasedPyright strict. Convert untyped library payloads with explicit
   casts to local `TypedDict` contracts; maintain realistic `.pyi` stubs.
 - Publish checkpoint, SRT, speaker text, and manifests through sibling

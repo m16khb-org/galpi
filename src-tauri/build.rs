@@ -5,7 +5,7 @@ use std::path::Path;
 /// what gets installed, a direct pin or a transitive one, invalidates every
 /// existing virtualenv on its own, instead of waiting for someone to remember
 /// to bump a version constant by hand.
-const REQUIREMENTS: [(&str, &str); 4] = [
+const REQUIREMENTS: [(&str, &str); 6] = [
     ("GALPI_WHISPERX_MAC_LOCK", "../worker/requirements.lock"),
     ("GALPI_QWEN3_LOCK", "../worker/requirements-qwen3.lock"),
     (
@@ -15,6 +15,14 @@ const REQUIREMENTS: [(&str, &str); 4] = [
     (
         "GALPI_WHISPERX_WIN_CUDA_LOCK",
         "../worker/requirements-windows-cuda.lock",
+    ),
+    (
+        "GALPI_WHISPERX_LINUX_CPU_LOCK",
+        "../worker/requirements-linux-cpu.lock",
+    ),
+    (
+        "GALPI_WHISPERX_LINUX_CUDA_LOCK",
+        "../worker/requirements-linux-cuda.lock",
     ),
 ];
 

@@ -35,7 +35,8 @@ pub fn run() {
             let artifacts: Arc<dyn ArtifactPort> = desktop;
             let recording: Arc<dyn RecordingPort> = Arc::new(NativeRecorder::new(recording_events));
             // Windows has an OS credential store; macOS keeps secrets in the
-            // settings file until the app ships a stable signature.
+            // settings file until the app ships a stable signature, and Linux
+            // keeps them there because no keyring is guaranteed to be running.
             #[cfg(windows)]
             let secrets: Arc<dyn SecretStore> = Arc::new(CredentialManager::default());
             #[cfg(not(windows))]

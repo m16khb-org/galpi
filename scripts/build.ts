@@ -10,7 +10,10 @@ export function bundleCommands(platform: string): readonly BuildCommand[] {
   if (platform === "win32") {
     return [["cargo", "tauri", "build", "--bundles", "nsis", "--ci"]]
   }
-  throw new Error(`unsupported build platform: ${platform} (supported: darwin, win32)`)
+  if (platform === "linux") {
+    return [["cargo", "tauri", "build", "--bundles", "deb,appimage", "--ci"]]
+  }
+  throw new Error(`unsupported build platform: ${platform} (supported: darwin, win32, linux)`)
 }
 
 async function main(): Promise<void> {

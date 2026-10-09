@@ -31,7 +31,7 @@ high unless noted.
   `--manifest-path src-tauri/Cargo.toml`.
 - Sign in with ChatGPT (issue #4) direct dependencies:
   - `reqwest` 0.13 with `default-features = false`, `native-tls` + `form` — HTTPS to
-    `auth.openai.com`/`api.openai.com` through macOS Security.framework. The default
+    `auth.openai.com`/`api.openai.com` through macOS Security.framework (OpenSSL on Linux, `libssl-dev`). The default
     rustls + aws-lc-rs backend was rejected because it pulls a C toolchain build.
   - `jsonwebtoken` 11 with `default-features = false`, `rust_crypto` — RS256 ID-token
     verification from JWKS `n`/`e` (`DecodingKey::from_rsa_components`); the
@@ -66,19 +66,30 @@ high unless noted.
 
 ## Platform target
 
-- macOS 14+ on Apple Silicon and Windows 10/11 x64; Intel macOS and Linux are
-  unsupported. macOS ships as `.app` + DMG via `hdiutil`; Windows x64 ships as
-  an unsigned NSIS installer (`bun run build`, `scripts/build.ts`). Signing and
-  notarization are separate manual steps.
-- Sidecar `uv` targets: `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`
+- macOS 14+ on Apple Silicon, Windows 10/11 x64, and Linux x86_64 (glibc,
+  Ubuntu 24.04 baseline); Intel macOS and Linux ARM are unsupported. macOS ships
+  as `.app` + DMG via `hdiutil`; Windows x64 ships as an unsigned NSIS
+  installer; Linux x86_64 ships as unsigned `.deb` + AppImage (`bun run build`,
+  `scripts/build.ts`). Signing and notarization are separate manual steps.
+- Sidecar `uv` targets: `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`,
+  `x86_64-unknown-linux-gnu`
   (`scripts/sidecar-targets.ts`).
 - Worker locks per platform/device: macOS `requirements.lock` (WhisperX) and
   `requirements-qwen3.lock` (Qwen3); Windows `requirements-windows-cpu.lock`
   and `requirements-windows-cuda.lock` (PyTorch cu128, default when an NVIDIA
   driver is detected and no device is saved).
-  Windows has no Qwen3 preset (MLX requires Apple Silicon).
+  Linux `requirements-linux-cpu.lock` (`+cpu` torch from the PyTorch CPU index,
+  installed with `--index-strategy unsafe-best-match`) and
+  `requirements-linux-cuda.lock` (PyPI torch 2.8.0 = cu128 with `nvidia-*`
+  wheels); the default device is CUDA when `libcuda.so.1` or
+  `/proc/driver/nvidia/version` exists. Windows and Linux have no Qwen3 preset
+  (MLX requires Apple Silicon). Lock reproducibility: `scripts/verify-lock.py
+  <windows-cpu|windows-cuda|linux-cpu|linux-cuda>`.
 - Rust platform deps: `dunce` (all targets), `windows-sys` (`cfg(windows)`),
-  `nix` (`cfg(unix)`), `security-framework` (`cfg(target_os = "macos")`).
+  `nix` (`cfg(unix)`, so Linux too), `security-framework`
+  (`cfg(target_os = "macos")`). Linux needs no platform-specific crate: sleep
+  inhibition shells out to `systemd-inhibit` and secrets use the `0600`
+  settings file.
 
 ## Confidence
 
