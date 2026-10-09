@@ -50,13 +50,20 @@ jobs:
 
       - name: Build the DMG
         env:
-          # Empty when the secrets are absent, which leaves tauri on its
-          # existing ad-hoc identity.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bun run build
+        # An absent secret still arrives as an empty variable, and tauri-cli
+        # takes any set APPLE_SIGNING_IDENTITY over tauri.conf.json's ad-hoc
+        # "-" (crates/tauri-cli/src/interface/rust.rs), so codesign looks for
+        # an identity named "" and fails. Unset the empty ones instead.
+        run: |
+          set -euo pipefail
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          bun run build
 
       - name: Confirm the bundle passes Gatekeeper
         if: env.HAS_APPLE_SIGNING_IDENTITY == 'true'
