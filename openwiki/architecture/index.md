@@ -1,7 +1,0 @@
-# Files
-
-- [Frontend Architecture (TypeScript)](frontend.md) - How Galpi's framework-light DOM frontend is layered into domain contracts, pure state machines, controller orchestration, and the Zod-parsed Tauri adapter, plus the ordering, error-copy, and markup/style invariants that keep it changeable.
-- [Python Worker Architecture](python-worker.md) - The bundled transcription/minutes sidecar — CLI surface and exit contract, the stdout protocol and ML-free purity boundary, Qwen3 vs WhisperX engine dispatch with the deliberate CPU-ASR/MPS-alignment device policy, atomic artifact publication, and the prepare/refine pipelines.
-- [Rust Host Architecture (Tauri)](rust-host.md) - The Tauri host's hexagonal layers — framework-free domain value objects and worker-protocol parser, the Application facade composing seven ports with the JobRegistry single-job slot, and the inbound command surface plus outbound DesktopAdapter/NativeRecorder/settings wiring in composition.rs.
-- [System Overview: Three Runtimes, One Dependency Rule](system-overview.md)
-- [Worker Protocol & Process Supervision](worker-protocol.md) - The versioned JSONL contract between the Python worker and the Rust host — the {v, seq, type} envelope and its six event types — the four coupled definitions that must change in one commit, and the run_process supervisor that parses bounded lines, batches stderr, and escalates cancellation SIGTERM → 3 s → SIGKILL.
