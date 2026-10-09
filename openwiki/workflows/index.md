@@ -1,5 +1,0 @@
-# Files
-
-- [Workflow: AI Meeting Minutes (Refine)](ai-minutes.md)
-- [Workflow: Engine Setup & First Run](engine-setup.md) - Traces the first-run prepare_environment flow end to end — bundled-uv virtualenv creation for both engine presets, marker-based readiness recording from build.rs fingerprints, worker-side model downloads with honest progress reporting, ffmpeg staging, Hugging Face cache reuse and token handling, and why a failed prepare is always safe to retry.
-- [Workflow: Microphone Recording](recording.md) - Traces the native microphone recording pipeline end to end — the CPAL realtime callback feeding a bounded queue, the dedicated incremental WAV writer producing folder.wav.part, the atomic rename on stop, drop accounting, failure events that race the start call, macOS sleep blocking, and the RecordingController's background-safe elapsed clock that auto-selects the finished WAV for transcription.

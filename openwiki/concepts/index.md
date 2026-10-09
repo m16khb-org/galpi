@@ -1,5 +1,0 @@
-# Files
-
-- [Engine Presets & Environment Readiness](engines-and-environment.md) - How Galpi models its two transcription engines (Qwen3 default, WhisperX legacy), lays out per-engine virtualenvs and model caches under the app data directory, and decides readiness through build-time requirements fingerprints checked against marker files and manifests.
-- [Jobs, Cancellation & State Machines](jobs-and-cancellation.md) - The single-active-job model with the drop-safe JobGuard, the oneshot-based cancellation path from IPC click to process-group SIGTERM/SIGKILL, the stable AppError codes both sides rely on, and the mirrored frontend job and recording state machines.
-- [Meetings & Artifacts](meetings-and-artifacts.md) - The per-meeting folder model under the user-chosen output root, the Artifacts aggregate and its four addressable kinds, the externally fixed output file names, engine-tagged checkpoint reuse and seeding, and the transcript-import path that makes an existing txt/md behave like a transcribed meeting.
