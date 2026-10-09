@@ -103,3 +103,45 @@
 - **재검증:**
   - `cargo fmt --check` 통과.
   - `cargo clippy --all-targets -D warnings`가 mac과 Windows 타깃(가짜 RC) 모두에서 통과.
+
+## Windows 실기 1차 (2026-10-09, run 37832580843 설치본, 30af8f4)
+
+- **환경:**
+  - OS: Windows 11 Pro 10.0.26300 x64.
+  - 설치 전부터 있던 것: VC++ 재배포 패키지 14.51, WebView2 154.0.
+  - GPU: RTX 3070(`nvcuda.dll` 있음).
+  - 마이크: MATA STUDIO C10.
+- **PASS:**
+  - 설치: 설치 위치는 `%LOCALAPPDATA%\Galpi`이고, `uv.exe`와 `resources\worker`가 있다.
+  - 엔진 UI: WhisperX만 보이고, CPU로 시작한다. CUDA는 선택할 수 있고, CPU↔CUDA 저장도 확인했다.
+  - G7b: 녹음을 정지하면 WAV가 생긴다(48 kHz, 2채널, 39초). 버리면 `.wav.part`가 0개 남고 세션 폴더도 삭제된다.
+  - G9c:
+    - Credential Manager에 `com.m16khb.galpi:hugging-face-token` 항목이 보인다.
+    - 재시작 뒤에도 토큰이 "저장됨"으로 표시된다.
+    - `settings.json`에 토큰 원문이 없다(키 이름은 값 `null`로 남아 있다).
+- **FAIL — G6 모델 준비:**
+  - 현상: 준비 단계에서 pyannote가 다음 오류로 실패했다. "Access to model pyannote/speaker-diarization-community-1 is restricted"
+  - 원인 확인:
+    - 저장된 토큰을 보내면 whoami와 gated config 요청이 모두 200을 받는다.
+    - 토큰 없이 보내면 앱과 같은 401 GatedRepo가 나온다.
+  - 근본 원인:
+    - WhisperX 준비 경로(`prepare_whisperx_models`)는 `DiarizationPipeline`에 토큰을 넘기지 않았다. 워커는 `HF_HUB_DISABLE_IMPLICIT_TOKEN=1`로 실행되므로, 환경 변수 `HF_TOKEN`도 자동으로 쓰이지 않는다.
+    - macOS에서는 Qwen3 준비 단계가 토큰을 넘겨 pyannote를 먼저 캐시하므로 이 결함이 드러나지 않았다. 이 결함은 기준 커밋 456b500부터 있었다.
+  - 수정:
+    - WhisperX 준비 경로가 `HF_TOKEN`을 `token=`으로 넘긴다. 첫 시도와 CPU 재시도 모두 해당한다.
+    - whisperx 3.8.6의 `DiarizationPipeline(model_name, token, device, cache_dir)` 시그니처에 맞춰 stub도 고쳤다.
+  - 전사 단계는 토큰 없이 캐시만 쓴다. huggingface_hub 0.36.2는 gated 401 응답을 받으면 캐시로 대체하고, 캐시에 없을 때만 오류를 낸다(`file_download.py`의 `_get_metadata_or_catch_error`).
+  - 재현 → 확인:
+    - 가짜 `whisperx` 모듈을 끼운 임시 스크립트로 확인했다. 수정 전에는 `TOKEN_MISSING [None]`, 수정 후에는 `TOKEN_PASSED`가 나왔다.
+    - `uvx ruff check worker`와 `uvx ruff format --check worker`가 통과했다.
+    - worker unittest 95개가 OK였다.
+- **환경 관측 — G9c ACL:**
+  - 관측: `%LOCALAPPDATA%\com.m16khb.galpi`의 ACL에 현재 사용자, SYSTEM, Administrators 외에 `CodexSandboxUsers`(M)와 이름으로 바뀌지 않는 SID 하나(M)가 있다.
+  - 원인: 둘 다 `%LOCALAPPDATA%`에서 상속된 항목이다. 이 PC의 Codex 샌드박스가 부여한 것이다.
+  - 앱 동작: 앱은 ACE를 추가하지 않는다. 계획 위험 10에 따라 명시적 DACL도 설정하지 않는다.
+  - 노출 범위: 비밀은 Credential Manager에 있으므로, 노출 범위는 설정 파일의 참석자·용어집 같은 비밀이 아닌 정보다.
+- **NOT RUN:**
+  - G6 전사 3파일과 G8 취소 후 프로세스 정리: 모델 준비 실패로 전사를 시작할 수 없었다.
+  - assistant API 키: 키가 없어 확인하지 않았다.
+  - SmartScreen 경로: gh로 받은 파일에는 Mark of the Web가 없어 확인할 수 없었다.
+- **검증 프롬프트의 결함:** G9c의 `Select-String` 명령은 값이 `null`인 키 이름에도 반응하도록 잘못 작성됐다. 판정은 값이 있는지를 기준으로 했다.

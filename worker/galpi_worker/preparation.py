@@ -190,10 +190,14 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
         percent=78.0,
         message=f"{device.upper()}용 화자분리 모델을 준비합니다.",
     )
+    # The community diarizer is gated, and the worker runs with implicit
+    # tokens disabled, so the settings token must be handed over explicitly.
+    token = os.environ.get("HF_TOKEN") or None
     diarization_device = device
     try:
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
+            token=token,
             device=diarization_device,
         )
     except Exception:
@@ -205,6 +209,7 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
         diarization_device = "cpu"
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
+            token=token,
             device=diarization_device,
         )
     del diarization
