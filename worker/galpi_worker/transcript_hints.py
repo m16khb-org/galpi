@@ -10,8 +10,10 @@ never edits the transcript's words. The model makes the final call.
 """
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
@@ -182,7 +184,8 @@ def parse_lines(transcript: str) -> list[TranscriptLine]:
     return lines
 
 
-def jamo_units(text: str) -> list[str]:
+@lru_cache(maxsize=65536)
+def jamo_units(text: str) -> tuple[str, ...]:
     """Pronounced jamo, ignoring spaces; non-Hangul characters stay as-is.
 
     A final consonant before a syllable starting with ㅇ is pronounced as
@@ -213,7 +216,7 @@ def jamo_units(text: str) -> list[str]:
             carried = "" if final == "ㅎ" else final
             final = "·"
         units += [initial, MEDIALS[(code % 588) // 28], final]
-    return units
+    return tuple(units)
 
 
 # Hangul and Latin spellings meet in a rough sound alphabet: consonants by
@@ -448,6 +451,7 @@ def sound_distance(a: str, b: str) -> float:
     return previous[-1] / max(len(a), len(b), 1)
 
 
+@lru_cache(maxsize=262144)
 def latin_match(spoken: str, term: str) -> float | None:
     """Distance from a Hangul span to a Latin term it may be the sound of."""
 
@@ -465,6 +469,29 @@ def latin_match(spoken: str, term: str) -> float | None:
     return None
 
 
+@lru_cache(maxsize=65536)
+def jamo_counts(text: str) -> Counter[str]:
+    return Counter(jamo_units(text))
+
+
+def close(left: str, right: str, limit: float) -> float | None:
+    """`distance` when it is within `limit`, else None.
+
+    Most pairs differ in many jamo, which a count comparison proves without
+    running the edit distance: every unmatched jamo costs at least half an
+    edit.
+    """
+
+    a, b = jamo_counts(left), jamo_counts(right)
+    only_left, only_right = (a - b).total(), (b - a).total()
+    floor = 0.5 * min(only_left, only_right) + abs(only_left - only_right)
+    if floor > limit * max(a.total(), b.total()):
+        return None
+    score = distance(left, right)
+    return score if score <= limit else None
+
+
+@lru_cache(maxsize=262144)
 def distance(left: str, right: str) -> float:
     """Confusion-weighted edit distance, normalized by the longer spelling."""
 
@@ -568,8 +595,8 @@ def best_match(
     for candidate in candidates:
         if span == candidate or abs(syllables(span) - syllables(candidate)) > 1:
             continue
-        score = distance(span, candidate)
-        if score <= threshold and (best is None or score < best[1]):
+        score = close(span, candidate, threshold)
+        if score is not None and (best is None or score < best[1]):
             best = (candidate, score)
     return best
 
@@ -578,8 +605,72 @@ def compact(text: str) -> str:
     return text.replace(" ", "")
 
 
+@dataclass(frozen=True, slots=True)
+class RegisteredTerm:
+    spelling: str
+    compact: str
+    threshold: float
+
+
+class TermMatcher:
+    """Registered terms indexed by length, with results memoized per span.
+
+    Meetings repeat the same words constantly, and each span is compared
+    with every registered term of a similar length, so both the index and
+    the memo decide whether a two-hour transcript takes seconds or minutes.
+    """
+
+    def __init__(self, vocabulary: Vocabulary) -> None:
+        self._known = frozenset(compact(word) for word in vocabulary.known)
+        self._latin: list[str] = []
+        self._by_length: dict[int, list[RegisteredTerm]] = {}
+        for term, threshold in vocabulary.terms.items():
+            if HANGUL.search(term) is None:
+                self._latin.append(term)
+            else:
+                entry = RegisteredTerm(term, compact(term), threshold)
+                self._by_length.setdefault(len(entry.compact), []).append(entry)
+        self._memo: dict[tuple[str, bool], tuple[tuple[float, str], ...]] = {}
+
+    def matches(self, spoken: str, fragment: bool) -> tuple[tuple[float, str], ...]:
+        key = (spoken, fragment)
+        found = self._memo.get(key)
+        if found is None:
+            found = self._memo[key] = tuple(self._match(spoken, fragment))
+        return found
+
+    def _match(self, spoken: str, fragment: bool) -> list[tuple[float, str]]:
+        found: list[tuple[float, str]] = []
+        if HANGUL.search(spoken) is not None:
+            for term in self._latin:
+                score = latin_match(spoken, term)
+                if score is not None:
+                    found.append((score, term))
+        said = compact(spoken)
+        for size in (len(said) - 1, len(said), len(said) + 1):
+            for term in self._by_length.get(size, ()):
+                if spoken == term.spelling:
+                    continue
+                if said == term.compact:
+                    found.append((0.0, term.spelling))
+                    continue
+                # The registered spelling already present, or a correct
+                # partial mention of it, is not a misrecognition.
+                if (
+                    fragment
+                    or term.compact in said
+                    or term.compact.startswith(said)
+                    or said in self._known
+                ):
+                    continue
+                score = close(spoken, term.spelling, term.threshold)
+                if score is not None:
+                    found.append((score, term.spelling))
+        return found
+
+
 def term_candidates(
-    words: list[str], vocabulary: Vocabulary
+    words: list[str], matcher: TermMatcher
 ) -> list[tuple[float, int, int, str, str]]:
     """(distance, start, end, spoken span, registered term) for one line.
 
@@ -588,7 +679,6 @@ def term_candidates(
     distance zero but still differ from the registered spelling.
     """
 
-    known = {compact(word) for word in vocabulary.known}
     found: list[tuple[float, int, int, str, str]] = []
     for start in range(len(words)):
         for width in (1, 2, 3):
@@ -608,38 +698,11 @@ def term_candidates(
                 for cut in range(1, len(last))
                 if WORD_TAIL.fullmatch(last[cut:])
             ]
-            if width == 1:
-                spans = [
-                    (spoken, fragment) for spoken, fragment in spans if not fragment
-                ]
             for spoken, fragment in spans:
-                for term, threshold in vocabulary.terms.items():
-                    if spoken == term:
-                        continue
-                    if HANGUL.search(term) is None:
-                        if HANGUL.search(spoken) is not None:
-                            score = latin_match(spoken, term)
-                            if score is not None:
-                                found.append((score, start, end, spoken, term))
-                        continue
-                    said, registered = compact(spoken), compact(term)
-                    if abs(syllables(spoken) - syllables(term)) > 1:
-                        continue
-                    if said == registered:
-                        found.append((0.0, start, end, spoken, term))
-                        continue
-                    # The registered spelling already present, or a correct
-                    # partial mention of it, is not a misrecognition.
-                    if (
-                        fragment
-                        or registered in said
-                        or registered.startswith(said)
-                        or said in known
-                    ):
-                        continue
-                    score = distance(spoken, term)
-                    if score <= threshold:
-                        found.append((score, start, end, spoken, term))
+                if fragment and width == 1:
+                    continue
+                for score, term in matcher.matches(spoken, fragment):
+                    found.append((score, start, end, spoken, term))
     return found
 
 
@@ -667,10 +730,11 @@ def name_mentions(words: list[str]) -> list[tuple[int, str, str]]:
 
 def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
     hints: dict[tuple[str, str], str] = {}
+    matcher = TermMatcher(vocabulary)
     for line in lines:
         words = line.text.split()
         used: set[int] = set()
-        for _, start, end, spoken, term in sorted(term_candidates(words, vocabulary)):
+        for _, start, end, spoken, term in sorted(term_candidates(words, matcher)):
             if used.isdisjoint(range(start, end)):
                 used.update(range(start, end))
                 hints[(spoken, term)] = f'- 용어: "{spoken}" → "{term}"'
@@ -713,16 +777,18 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         stem
         for stem in counts
         if not any(
-            distance(stem, known) <= TERM_THRESHOLD for known in vocabulary.known
+            close(stem, known, TERM_THRESHOLD) is not None for known in vocabulary.known
         )
-        and not any(distance(stem, part) <= CLUSTER_TERM_THRESHOLD for part in parts)
+        and not any(
+            close(stem, part, CLUSTER_TERM_THRESHOLD) is not None for part in parts
+        )
     ]
     groups: list[set[str]] = []
     for stem in stems:
         for group in groups:
             if any(
                 stem != member
-                and distance(stem, member) <= CLUSTER_THRESHOLD
+                and close(stem, member, CLUSTER_THRESHOLD) is not None
                 and stem not in member
                 and member not in stem
                 for member in group
