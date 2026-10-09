@@ -22,17 +22,12 @@ from .minutes_pipeline import (
     build_map_messages,
     build_reduce_messages,
     map_progress_band,
-    refinement_strategy,
-    split_transcript,
 )
 from .minutes_prompt import (
-    NO_BACKGROUND,
     SYSTEM_PROMPT,
-    build_messages,
     parse_glossary,
     parse_participants,
-    render_glossary,
-    render_participants,
+    plan_refinement,
     transcript_date,
 )
 from .protocol import EventWriter
@@ -181,13 +176,8 @@ def refine(
         else []
     )
     meeting_date = meeting_date or transcript_date(transcript_path)
-    context = MinutesContext(
-        background=background.strip() or NO_BACKGROUND,
-        participants=render_participants(participants),
-        glossary=render_glossary(glossary),
-        meeting_date=meeting_date,
-    )
-    if refinement_strategy(transcript) == "single":
+    plan = plan_refinement(transcript, background, participants, glossary, meeting_date)
+    if plan.single is not None:
         events.emit(
             "phase",
             phase="refining",
@@ -196,21 +186,14 @@ def refine(
         )
         expected_chars = max(2000, int(len(transcript) * 0.6))
         document = request_minutes(
-            build_messages(
-                transcript,
-                background,
-                participants,
-                glossary,
-                meeting_date,
-            ),
+            plan.single,
             model,
             api_key,
             events,
             expected_chars,
         )
     else:
-        chunks = split_transcript(transcript)
-        notes = extract_chunk_notes(chunks, context, model, api_key, events)
+        notes = extract_chunk_notes(plan.chunks, plan.context, model, api_key, events)
         events.emit(
             "phase",
             phase="refining",
@@ -218,7 +201,7 @@ def refine(
             message=f"{model} 모델로 최종 회의록을 종합하는 중입니다.",
         )
         document = request_minutes(
-            build_reduce_messages(notes, context, SYSTEM_PROMPT),
+            build_reduce_messages(notes, plan.context, SYSTEM_PROMPT),
             model,
             api_key,
             events,
