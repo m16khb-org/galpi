@@ -17,6 +17,7 @@ from .minutes_pipeline import (
 )
 from .minutes_template import SYSTEM_PROMPT
 from .transcript_hints import analyze as analyze_transcript
+from .transcript_hints import render_corrections
 
 NO_BACKGROUND = "(등록된 사전 정보가 없습니다. 전사본에 있는 근거만 사용하세요.)"
 NO_PARTICIPANTS = "(선택된 참석자가 없습니다. 전사본에 있는 근거만 사용하세요.)"
@@ -150,17 +151,6 @@ def transcript_date(path: Path) -> str | None:
         return None
 
 
-def render_corrections(block: str) -> str:
-    """Wrap correction candidates for a prompt; empty when there are none."""
-
-    if not block.strip():
-        return ""
-    return (
-        "다음은 전사본에서 자동으로 찾은 오인식·화자 후보입니다. 확정이 아니므로 전사본 문맥으로 확인하세요.\n"
-        f"<보정후보>\n{block.strip()}\n</보정후보>\n"
-    )
-
-
 def build_messages(
     transcript: str,
     background: str,
@@ -169,7 +159,10 @@ def build_messages(
     meeting_date: str | None = None,
     corrections: str = "",
 ) -> list[ChatMessage]:
-    """Build the chat messages for one refinement request."""
+    """Build the chat messages for one refinement request.
+
+    `corrections` is the raw candidate block from `transcript_hints.analyze`.
+    """
 
     if not transcript.strip():
         raise InvalidInput("transcript is empty")
@@ -192,7 +185,7 @@ def build_messages(
         "<단어집>\n"
         f"{render_glossary(glossary)}\n"
         "</단어집>\n\n"
-        + (f"{corrections}\n" if corrections else "")
+        + render_corrections(corrections, trailing="\n")
         + "다음은 화자분리된 회의 전사본입니다.\n"
         "<전사본>\n"
         f"{transcript.strip()}\n"
@@ -239,13 +232,12 @@ def plan_refinement(
     if not transcript.strip():
         raise InvalidInput("transcript is empty")
     hints = analyze_transcript(transcript, background, participants, glossary)
-    corrections = render_corrections(hints.block)
     context = MinutesContext(
         background=background.strip() or NO_BACKGROUND,
         participants=render_participants(participants),
         glossary=render_glossary(glossary),
         meeting_date=meeting_date,
-        corrections=corrections,
+        corrections=hints.block,
     )
     chosen = strategy or refinement_strategy(transcript)
     if chosen == "single":
@@ -258,7 +250,7 @@ def plan_refinement(
                 participants,
                 glossary,
                 meeting_date,
-                corrections,
+                hints.block,
             ),
             chunks=[],
         )

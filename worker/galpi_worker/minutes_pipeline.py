@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal, TypedDict
 
+from .transcript_hints import relevant_hints, render_corrections
+
 SINGLE_PASS_CHAR_LIMIT: Final = 48_000
 CHUNK_CHAR_BUDGET: Final = 16_000
 MAP_PROGRESS_START: Final = 35.0
@@ -36,7 +38,7 @@ class MinutesContext:
     participants: str
     glossary: str
     meeting_date: str | None
-    # Correction candidates found in the whole transcript, already wrapped.
+    # Correction candidates for the whole transcript, one per line.
     corrections: str = ""
 
 
@@ -129,7 +131,7 @@ def build_map_messages(
         f"<사전정보>\n{context.background}\n</사전정보>\n"
         f"<참석자>\n{context.participants}\n</참석자>\n"
         f"<단어집>\n{context.glossary}\n</단어집>\n"
-        f"{context.corrections}"
+        f"{render_corrections(relevant_hints(context.corrections, chunk.text))}"
         f"</회의정보>\n\n"
         f"{preamble}"
         f'<전사구간 번호="{chunk.number}" 전체="{chunk.total}">\n'
@@ -158,7 +160,7 @@ def build_reduce_messages(
         f"<사전정보>\n{context.background}\n</사전정보>\n\n"
         f"<참석자>\n{context.participants}\n</참석자>\n\n"
         f"<단어집>\n{context.glossary}\n</단어집>\n\n"
-        + (f"{context.corrections}\n" if context.corrections else "")
+        + render_corrections(context.corrections, trailing="\n")
         + "아래 부분 노트들은 긴 전사본의 시간순 구간에서 추출한 사실 후보입니다. "
         "중복을 합치고, 뒤 구간에서 수정·철회된 앞 구간 결정을 최신 상태로 정리하세요. "
         "부분 노트에 없는 사실을 만들지 마세요.\n\n"

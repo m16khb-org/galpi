@@ -2,6 +2,12 @@
 
 import unittest
 
+from ..galpi_worker.minutes_pipeline import (
+    MinutesContext,
+    TranscriptChunk,
+    build_map_messages,
+    build_reduce_messages,
+)
 from ..galpi_worker.minutes_prompt import GlossaryEntry, Participant, plan_refinement
 from ..galpi_worker.transcript_hints import analyze, distance
 
@@ -170,3 +176,28 @@ class RequestEvidenceTests(unittest.TestCase):
 
         # Then
         self.assertNotIn("보정후보>", plan.requests()[0][1]["content"])
+
+    def test_each_map_chunk_gets_only_the_candidates_it_can_use(self) -> None:
+        # Given whole-meeting candidates and a chunk that holds one of them
+        block = (
+            '- 용어: "웹서켓" → "웹소켓"\n'
+            '- 용어: "래디스" → "Redis"\n'
+            "- 화자: SPEAKER_01 → 누리\n"
+            "- 화자 경계: (12s) SPEAKER_00 → SPEAKER_01\n"
+            "- 화자 경계: (95s) SPEAKER_01 → SPEAKER_00"
+        )
+        context = MinutesContext("", "", "", None, corrections=block)
+        chunk = TranscriptChunk(1, 2, "[SPEAKER_00] (12s) 네, 웹서켓이요.")
+
+        # When
+        content = build_map_messages(chunk, context)[1]["content"]
+        reduced = build_reduce_messages(["노트"], context, "system")[1]["content"]
+
+        # Then the chunk keeps its own spelling, every speaker mapping, and
+        # only boundaries inside it; the reduce pass sees everything.
+        self.assertIn(
+            '<보정후보>\n- 용어: "웹서켓" → "웹소켓"\n- 화자: SPEAKER_01 → 누리\n'
+            "- 화자 경계: (12s) SPEAKER_00 → SPEAKER_01\n</보정후보>",
+            content,
+        )
+        self.assertIn(block, reduced)

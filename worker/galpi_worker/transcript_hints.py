@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from .minutes_prompt import GlossaryEntry, Participant
 
 LINE: Final = re.compile(r"^\[(SPEAKER_\d+|UNKNOWN)\]\s*\((\d+)s\)\s*(.*)$")
+QUOTED: Final = re.compile(r'"([^"]+)"')
+TIMESTAMP: Final = re.compile(r"\((\d+)s\)")
 HANGUL_BASE: Final = 0xAC00
 INITIALS: Final = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 MEDIALS: Final = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
@@ -970,6 +972,42 @@ def compact_transcript(lines: list[TranscriptLine], keep: set[int]) -> str:
     return (
         "\n".join(f"[{label}] ({second}s) {text}" for label, second, text in merged)
         + "\n"
+    )
+
+
+def relevant_hints(block: str, text: str) -> str:
+    """The candidates a transcript excerpt can use.
+
+    Speaker mappings hold for the whole meeting; a spelling, grouping, or
+    boundary candidate only matters where its words or timestamp appear.
+    """
+
+    kept: list[str] = []
+    for line in block.splitlines():
+        quoted = QUOTED.findall(line)
+        if line.startswith("- 화자:"):
+            kept.append(line)
+        elif line.startswith("- 화자 경계:"):
+            second = TIMESTAMP.search(line)
+            if second is not None and f"({second.group(1)}s)" in text:
+                kept.append(line)
+        elif line.startswith("- 같은 표현:"):
+            if any(word in text for word in quoted):
+                kept.append(line)
+        elif quoted and quoted[0] in text:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def render_corrections(block: str, trailing: str = "") -> str:
+    """Wrap correction candidates for a prompt; empty when there are none."""
+
+    if not block.strip():
+        return ""
+    return (
+        "다음은 전사본에서 자동으로 찾은 오인식·화자 후보입니다. "
+        "확정이 아니므로 전사본 문맥으로 확인하세요.\n"
+        f"<보정후보>\n{block.strip()}\n</보정후보>\n{trailing}"
     )
 
 
