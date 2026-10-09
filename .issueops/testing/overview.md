@@ -46,6 +46,22 @@ Manual Windows gates (not automated):
   confirm they persist (Windows Credential Manager entries
   `com.m16khb.galpi:hugging-face-token` / `:assistant-api-key`).
 
+Benchmarks (no network, no ML stack; not part of CI or `check:all`):
+
+```bash
+python3 scripts/bench/worker_bench.py          # post-processing timing on a seeded 3-hour fixture
+python3 scripts/bench/minutes_prompt_eval.py   # static rubric for the minutes prompts (0-100)
+bash autoresearch.sh                           # worker unittest + ruff, then the prompt rubric
+```
+
+- `worker_bench.py` prints `postprocess_ms` plus output-shape metrics and exits
+  non-zero when the pipeline output stops being well formed.
+- `minutes_prompt_eval.py` scores only the prompt text (format/exemplar
+  agreement, fluent-korean lint, style and fidelity rules, size penalty above
+  4,400 characters). A full score does not prove minutes quality: confirm prompt
+  changes by generating minutes from a real transcript and comparing them with
+  the previous prompt's output.
+
 ## Test structure in this repo
 
 - Tests are colocated beside implementations: `src/**/*.test.ts` and
