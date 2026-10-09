@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import pairwise
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
@@ -801,6 +802,27 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                 break
         else:
             groups.append({stem})
+    # An unlisted word split by a space joins the group its joined spelling
+    # belongs to. Only groups that already show several spellings qualify,
+    # and neither half may be a spelling of its own (`그 {단어}`).
+    spelled = [group for group in groups if len(group) > 1]
+    for line in lines:
+        for first, second in pairwise(line.text.split()):
+            if first.endswith((",", ".", "?", "!")):
+                continue
+            tail, _ = split_particle(second)
+            joined = first + tail
+            if syllables(joined) < 3 or joined in vocabulary.known:
+                continue
+            for group in spelled:
+                if first in group or tail in group:
+                    continue
+                if any(
+                    close(joined, member, CLUSTER_THRESHOLD) is not None
+                    for member in group
+                ):
+                    group.add(f"{first} {tail}")
+                    break
     hints: list[str] = []
     for group in groups:
         if len(group) < 2:
