@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import unicodedata
 import wave
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict, cast
@@ -568,27 +569,58 @@ def build_word_spans(
     return spans
 
 
-def speaker_for_span(span: WordSpan, turns: list[SpeakerTurn]) -> str:
-    """Pick the turn covering the most of one word, or the nearest one."""
+class SpeakerIndex:
+    """Turns sorted by start, so one word only compares the turns near it.
 
-    best_speaker = "UNKNOWN"
-    best_overlap = 0.0
-    for turn in turns:
-        overlap = min(span["end"], turn["end"]) - max(span["start"], turn["start"])
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_speaker = turn["speaker"]
-    if best_overlap > 0 or not turns:
-        return best_speaker
-    # A word falling in a gap between turns still has an owner: diarization
-    # simply trimmed the span. The closest turn is a better guess than UNKNOWN.
-    nearest = min(
-        turns,
-        key=lambda turn: min(
-            abs(turn["start"] - span["end"]), abs(span["start"] - turn["end"])
-        ),
-    )
-    return nearest["speaker"]
+    Scanning every turn for every word made speaker assignment quadratic: a
+    three-hour meeting is ~20k words against ~1k turns. The answer is exactly
+    the linear scan's: the turn covering the most of the word (the earliest
+    turn on a tie), else the nearest turn.
+    """
+
+    def __init__(self, turns: list[SpeakerTurn]) -> None:
+        self.turns = turns
+        order = sorted(range(len(turns)), key=lambda index: turns[index]["start"])
+        self.order = order
+        self.starts = [turns[index]["start"] for index in order]
+        # Running maximum of `end` in start order: every turn before the first
+        # index whose running end passes a word's start ends before the word.
+        self.reach: list[float] = []
+        furthest = float("-inf")
+        for index in order:
+            furthest = max(furthest, turns[index]["end"])
+            self.reach.append(furthest)
+
+    def speaker(self, span: WordSpan) -> str:
+        turns = self.turns
+        if not turns:
+            return "UNKNOWN"
+        span_start = span["start"]
+        span_end = span["end"]
+        best_overlap = 0.0
+        best_index = -1
+        first = bisect_right(self.reach, span_start)
+        last = bisect_left(self.starts, span_end)
+        for position in range(first, last):
+            index = self.order[position]
+            turn = turns[index]
+            overlap = min(span_end, turn["end"]) - max(span_start, turn["start"])
+            if overlap > best_overlap or (
+                overlap == best_overlap and best_index > index and overlap > 0
+            ):
+                best_overlap = overlap
+                best_index = index
+        if best_index >= 0:
+            return turns[best_index]["speaker"]
+        # A word falling in a gap between turns still has an owner: diarization
+        # simply trimmed the span. The closest turn is a better guess than UNKNOWN.
+        nearest = min(
+            turns,
+            key=lambda turn: min(
+                abs(turn["start"] - span_end), abs(span_start - turn["end"])
+            ),
+        )
+        return nearest["speaker"]
 
 
 def ends_sentence(piece: str) -> bool:
@@ -629,8 +661,9 @@ def group_word_spans(
             )
         current = []
 
+    index = SpeakerIndex(turns)
     for span in spans:
-        speaker = speaker_for_span(span, turns)
+        speaker = index.speaker(span)
         if current:
             closed = ends_sentence(current[-1])
             if (
