@@ -56,12 +56,16 @@ worker/
   cannot corrupt the protocol stream.
 - Import Torch, WhisperX, pyannote, and imageio-ffmpeg inside runtime functions.
   Package import and pure tests must not require the ML environment.
-- ASR deliberately uses CTranslate2 CPU int8 on every platform. Device policy:
-  torch device is `cuda` > `mps` > `cpu` (`runtime.py::select_torch_device`);
-  alignment and diarization use it, retry once on CPU if an accelerator step
-  fails, and emit the fallback reason as a log event.
-- Windows locks: `requirements-windows-cpu.lock` (default) and
-  `requirements-windows-cuda.lock` (PyTorch cu128). Regenerate with the
+- ASR uses CTranslate2 CUDA float16 when torch runs on CUDA and CTranslate2
+  sees a GPU (the Windows CUDA build), CPU int8 everywhere else
+  (`runtime.py::select_asr_runtime`); a failed CUDA ASR retries once on CPU
+  int8. Torch device policy is `cuda` > `mps` > `cpu`
+  (`runtime.py::select_torch_device`); alignment and diarization use it, retry
+  once on CPU if an accelerator step fails, and emit the fallback reason as a
+  log event.
+- Windows locks: `requirements-windows-cpu.lock` and
+  `requirements-windows-cuda.lock` (PyTorch cu128; the host defaults to it when
+  an NVIDIA driver is detected and no device is saved). Regenerate with the
   `uv pip compile ... --python-platform x86_64-pc-windows-msvc` command in each
   lock header, then run `python3 scripts/verify-windows-lock.py cpu|cuda`.
 - Keep BasedPyright strict. Convert untyped library payloads with explicit

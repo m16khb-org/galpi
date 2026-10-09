@@ -1,5 +1,5 @@
 use super::paths::AppPaths;
-use super::platform::Os;
+use super::platform::{Os, cuda_driver_present};
 use super::secrets::{Secret, SecretStore};
 use crate::application::error::AppError;
 use crate::application::ports::SettingsPort;
@@ -20,6 +20,8 @@ pub struct LocalSettingsStore {
     path: PathBuf,
     /// Decides which engines and devices this machine offers.
     os: Os,
+    /// The device used while the user has not picked one.
+    default_device: ComputeDevice,
     secrets: std::sync::Arc<dyn SecretStore>,
     /// What each secret currently holds, once it has been read.
     ///
@@ -44,17 +46,25 @@ impl LocalSettingsStore {
         app: &AppHandle,
         secrets: std::sync::Arc<dyn SecretStore>,
     ) -> Result<Self, AppError> {
+        let cuda_driver = cuda_driver_present(std::env::var_os("SYSTEMROOT").as_deref());
         Ok(Self::build(
             AppPaths::resolve(app)?.root.join("settings.json"),
             Os::current(),
+            cuda_driver,
             secrets,
         ))
     }
 
-    fn build(path: PathBuf, os: Os, secrets: std::sync::Arc<dyn SecretStore>) -> Self {
+    fn build(
+        path: PathBuf,
+        os: Os,
+        cuda_driver: bool,
+        secrets: std::sync::Arc<dyn SecretStore>,
+    ) -> Self {
         Self {
             path,
             os,
+            default_device: os.default_device(cuda_driver),
             secrets,
             cached_secrets: tokio::sync::Mutex::new(HashMap::new()),
             state: tokio::sync::Mutex::new(None),
@@ -68,16 +78,22 @@ impl LocalSettingsStore {
 
     #[cfg(test)]
     fn for_os(path: PathBuf, os: Os) -> Self {
+        Self::for_machine(path, os, false)
+    }
+
+    #[cfg(test)]
+    fn for_machine(path: PathBuf, os: Os, cuda_driver: bool) -> Self {
         Self::build(
             path,
             os,
+            cuda_driver,
             std::sync::Arc::new(super::secrets::InMemorySecrets::default()),
         )
     }
 
     #[cfg(test)]
     fn with_secrets(path: PathBuf, secrets: std::sync::Arc<dyn SecretStore>) -> Self {
-        Self::build(path, Os::MacOs, secrets)
+        Self::build(path, Os::MacOs, false, secrets)
     }
 
     /// Read a secret, moving it out of the settings file the first time.
@@ -356,7 +372,7 @@ impl SettingsPort for LocalSettingsStore {
             .and_then(|settings| settings.compute_device);
         Ok(stored
             .filter(|device| self.os.devices().contains(device))
-            .unwrap_or_default())
+            .unwrap_or(self.default_device))
     }
 
     async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError> {
@@ -906,6 +922,28 @@ mod tests {
         // When / Then
         assert_eq!(store.load_engine_preset().await?, EnginePreset::WhisperX);
         assert_eq!(store.load_compute_device().await?, ComputeDevice::Cpu);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn os_windows_with_an_nvidia_driver_defaults_to_cuda_until_cpu_is_chosen()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: Windows with an NVIDIA driver and nothing saved
+        let directory = temp_settings("win-cuda-default");
+        let path = directory.join("settings.json");
+        let store = LocalSettingsStore::for_machine(path.clone(), Os::Windows, true);
+
+        // When / Then: CUDA is the default
+        assert_eq!(store.load_compute_device().await?, ComputeDevice::Cuda);
+
+        // When: the user picks CPU
+        store.save_compute_device(ComputeDevice::Cpu).await?;
+
+        // Then: the choice outlives the default, also after a relaunch
+        assert_eq!(store.load_compute_device().await?, ComputeDevice::Cpu);
+        let relaunched = LocalSettingsStore::for_machine(path, Os::Windows, true);
+        assert_eq!(relaunched.load_compute_device().await?, ComputeDevice::Cpu);
+        tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }
 

@@ -56,6 +56,20 @@ impl Os {
         }
     }
 
+    /// The `--python` request the engine venvs are built from.
+    ///
+    /// Windows names the exact patch. A minor request (`3.12`) resolves through
+    /// uv's `cpython-3.12-…` junction, and Windows refuses to traverse a
+    /// junction a standard user created wherever it counts as an untrusted
+    /// mount point (os error 448). The patch directory is a plain folder, so a
+    /// venv built on it never crosses the junction.
+    pub const fn python_request(self) -> &'static str {
+        match self {
+            Self::MacOs => "3.12",
+            Self::Windows => "3.12.14",
+        }
+    }
+
     pub const fn python_relative(self) -> &'static [&'static str] {
         match self {
             Self::MacOs => &[".venv", "bin", "python"],
@@ -100,6 +114,16 @@ impl Os {
         match self {
             Self::MacOs => &[],
             Self::Windows => &WINDOWS_DEVICES,
+        }
+    }
+
+    /// The device used until the user picks one: CUDA wherever it is offered
+    /// and an NVIDIA driver is installed, the standard build otherwise.
+    pub fn default_device(self, cuda_driver: bool) -> ComputeDevice {
+        if cuda_driver && self.devices().contains(&ComputeDevice::Cuda) {
+            ComputeDevice::Cuda
+        } else {
+            ComputeDevice::Cpu
         }
     }
 

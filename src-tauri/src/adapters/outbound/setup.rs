@@ -219,16 +219,7 @@ async fn install_whisperx_engine(
         5.0,
         "Python 3.12 런타임을 준비합니다.",
     )?;
-    run_raw(
-        events,
-        job_id,
-        cancel,
-        &cwd,
-        &uv,
-        os_args(["python", "install", "3.12"]),
-        env,
-    )
-    .await?;
+    install_python(events, job_id, cancel, &cwd, &uv, os, env).await?;
 
     emit_phase(
         events,
@@ -249,7 +240,7 @@ async fn install_whisperx_engine(
             // it keeps retries idempotent instead of tripping uv's refusal.
             "--clear".into(),
             "--python".into(),
-            "3.12".into(),
+            os.python_request().into(),
             paths.engine.join(".venv").into_os_string(),
         ],
         env,
@@ -318,16 +309,7 @@ async fn install_qwen3_engine(
         5.0,
         "Python 3.12 런타임을 준비합니다.",
     )?;
-    run_raw(
-        events,
-        job_id,
-        cancel,
-        &cwd,
-        &uv,
-        os_args(["python", "install", "3.12"]),
-        env,
-    )
-    .await?;
+    install_python(events, job_id, cancel, &cwd, &uv, os, env).await?;
 
     emit_phase(
         events,
@@ -346,7 +328,7 @@ async fn install_qwen3_engine(
             "venv".into(),
             "--clear".into(),
             "--python".into(),
-            "3.12".into(),
+            os.python_request().into(),
             paths.qwen3_root.join(".venv").into_os_string(),
         ],
         env,
@@ -428,6 +410,48 @@ async fn run_worker_prepare(
     )
     .await?;
     Ok(())
+}
+
+/// `uv python install` for the platform's interpreter.
+///
+/// uv completes the installation before it creates the minor-version link,
+/// and on Windows that last step fails with os error 448 wherever a junction
+/// made by a standard user counts as an untrusted mount point. The venv step
+/// that follows resolves the exact patch and reports every real failure (a
+/// missing download included), so only cancellation stops here.
+async fn install_python(
+    events: &dyn JobEvents,
+    job_id: Uuid,
+    cancel: &mut oneshot::Receiver<()>,
+    working_directory: &Path,
+    uv: &Path,
+    os: Os,
+    env: &HashMap<OsString, OsString>,
+) -> Result<(), AppError> {
+    let installed = run_raw(
+        events,
+        job_id,
+        cancel,
+        working_directory,
+        uv,
+        os_args(["python", "install", os.python_request()]),
+        env,
+    )
+    .await;
+    match installed {
+        Err(error) if error.code != "CANCELLED" => emit(
+            events,
+            job_id,
+            WorkerEvent::Log {
+                stream: "stderr".to_owned(),
+                message: format!(
+                    "Python 설치의 마지막 단계가 실패해 설치된 런타임으로 계속합니다: {}",
+                    error.message
+                ),
+            },
+        ),
+        result => result,
+    }
 }
 
 async fn run_raw(

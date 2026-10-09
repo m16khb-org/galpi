@@ -61,7 +61,7 @@ bun run dev
 2. Run the unsigned NSIS installer (`.exe`). If SmartScreen warns, choose **More info → Run anyway**.
 3. Follow "2. Prepare the local engine" below.
 
-On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. ASR itself stays on CTranslate2 CPU int8; CUDA accelerates only alignment and diarization.
+On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). CUDA is the default when an NVIDIA driver (`System32\nvcuda.dll`) is detected, CPU otherwise; either can be changed in settings, and a device you pick yourself wins over detection. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and runs ASR (CTranslate2 float16), alignment, and diarization on the GPU. If ASR fails on the GPU, it retries once on CPU int8.
 
 ### 2. Prepare the local engine
 
@@ -79,7 +79,7 @@ The token is only required when the diarization model is downloaded for the firs
 1. Accept the terms for [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1).
 2. Create a **Fine-grained** token in [Hugging Face Access Tokens](https://huggingface.co/settings/tokens).
 3. Grant **Read** access only to that repository.
-4. Save the `hf_...` value in Galpi Settings.
+4. Save the `hf_...` value in Galpi Settings. To replace a saved token, paste the new one into the field.
 
 Write access and Inference Providers access are not required.
 

@@ -61,7 +61,7 @@ bun run dev
 2. 서명되지 않은 NSIS 설치 프로그램(`.exe`)을 실행합니다. SmartScreen 경고가 나오면 **추가 정보 → 실행**을 누릅니다.
 3. 아래 '최초 엔진 준비'를 진행합니다.
 
-Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. ASR 자체는 CTranslate2 CPU int8로 동작하며 CUDA는 정렬·화자분리만 가속합니다.
+Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). NVIDIA 드라이버(`System32\nvcuda.dll`)가 감지되면 CUDA가, 없으면 CPU가 기본이며 설정에서 바꿀 수 있습니다. 직접 고른 장치는 감지 결과보다 우선합니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고, 음성 인식(CTranslate2 float16)·정렬·화자분리를 모두 GPU에서 실행합니다. GPU에서 음성 인식이 실패하면 CPU int8로 한 번 다시 시도합니다.
 
 ### 2. 최초 엔진 준비
 
@@ -79,7 +79,7 @@ Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qw
 1. [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)의 이용 조건에 동의합니다.
 2. [Hugging Face Access Tokens](https://huggingface.co/settings/tokens)에서 **Fine-grained** 토큰을 만듭니다.
 3. 해당 저장소에 **Read** 권한만 허용합니다.
-4. `hf_`로 시작하는 값을 Galpi 설정에 저장합니다.
+4. `hf_`로 시작하는 값을 Galpi 설정에 저장합니다. 저장된 토큰을 바꾸려면 입력란에 새 토큰을 붙여 넣으면 됩니다.
 
 쓰기 권한과 Inference Providers 권한은 필요하지 않습니다.
 

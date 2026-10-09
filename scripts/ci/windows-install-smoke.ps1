@@ -34,8 +34,9 @@ $venv = Join-Path $env:RUNNER_TEMP 'galpi-smoke-venv'
 if (-not $env:RUNNER_TEMP) { $venv = Join-Path $env:TEMP 'galpi-smoke-venv' }
 
 & $uv --version; Assert-Native 'uv --version'
-& $uv python install 3.12; Assert-Native 'uv python install'
-& $uv venv --python 3.12 $venv; Assert-Native 'uv venv'
+# Same request as platform.rs `Os::python_request(Os::Windows)`; keep in sync.
+& $uv python install 3.12.14; Assert-Native 'uv python install'
+& $uv venv --python 3.12.14 $venv; Assert-Native 'uv venv'
 $python = Join-Path $venv 'Scripts\python.exe'
 & $uv pip install --python $python -r $lock --require-hashes; Assert-Native 'uv pip install'
 

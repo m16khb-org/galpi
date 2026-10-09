@@ -227,7 +227,7 @@ export const appTemplate = `
               <label><input type="radio" name="compute-device" value="cpu" checked /><span>CPU</span></label>
               <label><input type="radio" name="compute-device" value="cuda" /><span>NVIDIA GPU (CUDA)<em id="engine-device-cuda-note"></em></span></label>
             </div>
-            <p id="engine-device-help">CUDA를 처음 선택하면 약 3.5 GB의 PyTorch CUDA 빌드를 내려받으며, 바꾼 뒤에는 로컬 엔진 준비를 다시 실행해야 합니다.</p>
+            <p id="engine-device-help">NVIDIA 드라이버가 감지되면 CUDA를 기본으로 사용합니다. CUDA는 약 3.5 GB의 PyTorch CUDA 빌드를 내려받으며, 장치를 바꾼 뒤에는 로컬 엔진 준비를 다시 실행해야 합니다.</p>
           </div>
         </section>
         <section class="settings-section" aria-labelledby="token-settings-title">
@@ -237,10 +237,10 @@ export const appTemplate = `
           </div>
           <label class="sr-only" for="settings-hf-token">Hugging Face 토큰</label>
           <div class="secret-field">
-            <input id="settings-hf-token" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="hf_..." aria-describedby="settings-token-help" data-visible="false" readonly />
+            <input id="settings-hf-token" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="hf_..." aria-describedby="settings-token-help" data-visible="false" />
             <button id="toggle-token-visibility" class="secret-visibility-button ${iconOutline}" type="button" data-action="toggle-token-visibility" aria-label="Hugging Face 토큰 표시"><i class="ph ph-eye" aria-hidden="true"></i></button>
           </div>
-          <p id="settings-token-help">저장한 값은 이 컴퓨터의 Galpi 앱 설정에 유지되며 모델 준비 때 자동으로 사용됩니다.</p>
+          <p id="settings-token-help">저장한 값은 이 컴퓨터의 Galpi 앱 설정에 유지되며 모델 준비 때 자동으로 사용됩니다. 바꾸려면 입력란에 새 토큰을 붙여 넣으세요.</p>
           <div class="token-guide-anchor">
             <button id="token-guide-trigger" class="token-guide-trigger ${ghost}" type="button" aria-expanded="false" aria-controls="token-guide-popover">필요 권한과 발급 방법 <i class="ph ph-info" aria-hidden="true"></i></button>
             <div id="token-guide-popover" class="token-guide-popover" role="dialog" aria-label="Hugging Face 토큰 발급 안내" hidden>

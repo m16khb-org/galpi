@@ -15,8 +15,9 @@ pub const ENGINE_VERSION: &str = "3.8.6";
 /// it was installed from. Editing a pin invalidates the existing virtualenv.
 ///
 /// macOS keeps its historical `<version>+<hash>` form byte for byte so an
-/// update never forces a reinstall. Windows names the lock too, so switching
-/// between the CPU and CUDA builds invalidates the environment.
+/// update never forces a reinstall. Windows names the lock and the Python
+/// request too, so switching between the CPU and CUDA builds, or moving off a
+/// venv built on uv's minor-version junction, invalidates the environment.
 pub fn whisperx_marker(os: Os, device: ComputeDevice) -> String {
     match os {
         Os::MacOs => format!(
@@ -29,8 +30,9 @@ pub fn whisperx_marker(os: Os, device: ComputeDevice) -> String {
                 ComputeDevice::Cuda => env!("GALPI_WHISPERX_WIN_CUDA_LOCK_HASH"),
             };
             format!(
-                "{ENGINE_VERSION}+{}-{hash}",
-                whisperx_lock_hash_name(os, device)
+                "{ENGINE_VERSION}+{}-{hash}+py{}",
+                whisperx_lock_hash_name(os, device),
+                os.python_request()
             )
         }
     }

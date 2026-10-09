@@ -70,7 +70,8 @@ high unless noted.
   (`scripts/sidecar-targets.ts`).
 - Worker locks per platform/device: macOS `requirements.lock` (WhisperX) and
   `requirements-qwen3.lock` (Qwen3); Windows `requirements-windows-cpu.lock`
-  (default) and `requirements-windows-cuda.lock` (PyTorch cu128, optional).
+  and `requirements-windows-cuda.lock` (PyTorch cu128, default when an NVIDIA
+  driver is detected and no device is saved).
   Windows has no Qwen3 preset (MLX requires Apple Silicon).
 - Rust platform deps: `dunce` (all targets), `windows-sys` (`cfg(windows)`),
   `nix` (`cfg(unix)`), `security-framework` (`cfg(target_os = "macos")`).

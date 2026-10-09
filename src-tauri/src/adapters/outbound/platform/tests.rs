@@ -75,6 +75,13 @@ fn the_first_preset_is_the_platform_default() {
 }
 
 #[test]
+fn cuda_is_the_default_device_only_where_offered_and_a_driver_is_installed() {
+    assert_eq!(Os::Windows.default_device(true), ComputeDevice::Cuda);
+    assert_eq!(Os::Windows.default_device(false), ComputeDevice::Cpu);
+    assert_eq!(Os::MacOs.default_device(true), ComputeDevice::Cpu);
+}
+
+#[test]
 fn lock_selection_depends_on_platform_and_device() {
     let mac = Os::MacOs.whisperx_lock(ComputeDevice::Cuda);
     assert_eq!(mac.file_name, "requirements.lock");

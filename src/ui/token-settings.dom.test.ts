@@ -28,7 +28,6 @@ describe("TokenSettingsView (real DOM)", () => {
 
     // Then
     expect(input.value).not.toContain("hf_real_secret_value")
-    expect(input.readOnly).toBeTrue()
     expect(view.token()).toBe("hf_real_secret_value")
   })
 
@@ -54,9 +53,8 @@ describe("TokenSettingsView (real DOM)", () => {
     // is what keeps opening settings from reaching the keychain
     view.setStored(true)
 
-    // When / Then: the field is masked, locked, and has nothing to reveal
+    // When / Then: the field is masked and has nothing to reveal
     expect(input.value).not.toBe("")
-    expect(input.readOnly).toBeTrue()
     const toggle = input
       .closest("body")
       ?.querySelector("#toggle-token-visibility") as HTMLElement
@@ -70,6 +68,34 @@ describe("TokenSettingsView (real DOM)", () => {
     view.setStored(true)
 
     // When / Then: autosave has no token to write, so no keychain prompt
+    expect(view.pendingToken()).toBeNull()
+  })
+
+  test("replaces a stored token with one typed over the mask", () => {
+    // Given: a stored token the window never received
+    view.setStored(true)
+
+    // When: the user focuses the field and pastes a new token
+    input.focus()
+    expect(input.value).toBe("")
+    input.value = "  hf_replacement  "
+
+    // Then: autosave offers the new token
+    expect(input.readOnly).toBeFalse()
+    expect(view.pendingToken()).toBe("hf_replacement")
+  })
+
+  test("restores the mask when the field is left empty", () => {
+    // Given
+    view.setStored(true)
+    const masked = input.value
+
+    // When: the user focuses the field and leaves without typing
+    input.focus()
+    input.blur()
+
+    // Then: the stored token stays and nothing is offered for saving
+    expect(input.value).toBe(masked)
     expect(view.pendingToken()).toBeNull()
   })
 

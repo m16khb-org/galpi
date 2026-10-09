@@ -23,6 +23,15 @@ export class TokenSettingsView {
     this.root.ownerDocument.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !this.element("#settings-dialog").hidden) this.close()
     })
+    // A stored token is replaced by typing over it: the mask clears when the
+    // field takes focus and comes back if the user leaves it empty.
+    const input = this.element<HTMLInputElement>("#settings-hf-token")
+    input.addEventListener("focus", () => {
+      if (input.value === MASKED_TOKEN) input.value = ""
+    })
+    input.addEventListener("blur", () => {
+      if (this.stored && input.value.trim() === "") this.render(true, this.persistedToken)
+    })
   }
 
   show(): void {
@@ -67,12 +76,12 @@ export class TokenSettingsView {
 
   /// A token the user has typed and not yet saved.
   ///
-  /// Null once a token is stored: the host keeps the value in the keychain and
-  /// the field shows only a mask, so there is nothing here to save again.
+  /// The mask and the token this window already saved are not new input, so
+  /// an autosave triggered elsewhere in the sheet never rewrites the secret.
   pendingToken(): string | null {
-    if (this.stored) return null
     const value = this.element<HTMLInputElement>("#settings-hf-token").value.trim()
-    return value.length > 0 ? value : null
+    if (value.length === 0 || value === MASKED_TOKEN || value === this.persistedToken) return null
+    return value
   }
 
   setToken(token: string | null): void {
@@ -83,8 +92,8 @@ export class TokenSettingsView {
   /// Show that a token is saved without knowing what it says.
   ///
   /// Reading the value is a keychain access, and macOS asks the user about
-  /// each one, so opening settings must not need it. Changing a stored token
-  /// means clearing it and entering the new one.
+  /// each one, so opening settings must not need it. Typing over the mask
+  /// replaces the stored token.
   setStored(stored: boolean): void {
     this.persistedToken = null
     this.render(stored, null)
@@ -95,7 +104,6 @@ export class TokenSettingsView {
     this.stored = stored
     this.visible = false
     input.value = stored ? tokenDisplayValue(token ?? "", false) : ""
-    input.readOnly = stored
     input.dataset["visible"] = "false"
     this.renderVisibility(false)
     this.setConfigured(stored)
