@@ -17,6 +17,11 @@ use tauri::AppHandle;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
+/// The `CPython` patch the pinned uv installs for 3.12. Naming the patch keeps
+/// every venv on the real install directory instead of uv's `cpython-3.12-…`
+/// minor-version junction, which Windows may refuse to traverse.
+const PYTHON_VERSION: &str = "3.12.14";
+
 pub async fn prepare(
     app: &AppHandle,
     events: &dyn JobEvents,
@@ -212,23 +217,7 @@ async fn install_whisperx_engine(
     let os = Os::current();
     let uv = uv_binary()?;
     let cwd = os.neutral_working_directory(paths);
-    emit_phase(
-        events,
-        job_id,
-        "engine",
-        5.0,
-        "Python 3.12 런타임을 준비합니다.",
-    )?;
-    run_raw(
-        events,
-        job_id,
-        cancel,
-        &cwd,
-        &uv,
-        os_args(["python", "install", "3.12"]),
-        env,
-    )
-    .await?;
+    install_python(events, job_id, cancel, paths, &cwd, &uv, env).await?;
 
     emit_phase(
         events,
@@ -249,7 +238,7 @@ async fn install_whisperx_engine(
             // it keeps retries idempotent instead of tripping uv's refusal.
             "--clear".into(),
             "--python".into(),
-            "3.12".into(),
+            PYTHON_VERSION.into(),
             paths.engine.join(".venv").into_os_string(),
         ],
         env,
@@ -311,23 +300,7 @@ async fn install_qwen3_engine(
     let os = Os::current();
     let uv = uv_binary()?;
     let cwd = os.neutral_working_directory(paths);
-    emit_phase(
-        events,
-        job_id,
-        "engine",
-        5.0,
-        "Python 3.12 런타임을 준비합니다.",
-    )?;
-    run_raw(
-        events,
-        job_id,
-        cancel,
-        &cwd,
-        &uv,
-        os_args(["python", "install", "3.12"]),
-        env,
-    )
-    .await?;
+    install_python(events, job_id, cancel, paths, &cwd, &uv, env).await?;
 
     emit_phase(
         events,
@@ -346,7 +319,7 @@ async fn install_qwen3_engine(
             "venv".into(),
             "--clear".into(),
             "--python".into(),
-            "3.12".into(),
+            PYTHON_VERSION.into(),
             paths.qwen3_root.join(".venv").into_os_string(),
         ],
         env,
@@ -383,6 +356,63 @@ async fn install_qwen3_engine(
     tokio::fs::write(&paths.qwen3_engine_manifest, qwen3_marker())
         .await
         .map_err(|error| AppError::io("엔진 준비 마커를 쓰지 못했습니다", &error))
+}
+
+async fn install_python(
+    events: &dyn JobEvents,
+    job_id: Uuid,
+    cancel: &mut oneshot::Receiver<()>,
+    paths: &AppPaths,
+    cwd: &Path,
+    uv: &Path,
+    env: &HashMap<OsString, OsString>,
+) -> Result<(), AppError> {
+    emit_phase(
+        events,
+        job_id,
+        "engine",
+        5.0,
+        "Python 3.12 런타임을 준비합니다.",
+    )?;
+    let Err(error) = run_raw(
+        events,
+        job_id,
+        cancel,
+        cwd,
+        uv,
+        os_args(["python", "install", PYTHON_VERSION]),
+        env,
+    )
+    .await
+    else {
+        return Ok(());
+    };
+    let interpreter = paths
+        .python_installations
+        .join(format!("cpython-{PYTHON_VERSION}-windows-x86_64-none"))
+        .join("python.exe");
+    if !python_installed_despite(Os::current(), &error, interpreter.is_file()) {
+        return Err(error);
+    }
+    emit(
+        events,
+        job_id,
+        WorkerEvent::Log {
+            stream: "stderr".to_owned(),
+            message: format!(
+                "Windows가 uv의 Python 3.12 연결 폴더(junction)를 막았지만 Python {PYTHON_VERSION} 설치는 끝났으므로 계속 진행합니다."
+            ),
+        },
+    )
+}
+
+/// Windows 11 can refuse to traverse a junction a standard user created
+/// (os error 448, untrusted mount point). uv creates its minor-version
+/// junction only after the interpreter is fully installed, then fails the
+/// whole command, so an exited `uv python install` with the interpreter on
+/// disk still delivered everything Galpi uses. Cancellation never counts.
+fn python_installed_despite(os: Os, error: &AppError, interpreter_present: bool) -> bool {
+    os == Os::Windows && error.code == "PROCESS_FAILED" && interpreter_present
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -479,8 +509,9 @@ fn os_args<const N: usize>(values: [&str; N]) -> Vec<OsString> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComputeDevice, Os, whisperx_install_args};
+    use super::{ComputeDevice, Os, python_installed_despite, whisperx_install_args};
     use crate::adapters::outbound::environment::QWEN3_ALIGNER_ID;
+    use crate::application::error::AppError;
     use std::ffi::OsString;
     use std::path::Path;
 
@@ -520,6 +551,22 @@ mod tests {
             cuda.windows(2)
                 .any(|pair| pair == ["--index-strategy", "unsafe-best-match"])
         );
+    }
+
+    #[test]
+    fn only_a_finished_windows_python_install_survives_a_failed_uv_exit() {
+        // Given
+        let exited = AppError::new(
+            "PROCESS_FAILED",
+            "Failed to create Python minor version link directory",
+        );
+        let cancelled = AppError::new("CANCELLED", "사용자가 작업을 취소했습니다.");
+
+        // When / Then
+        assert!(python_installed_despite(Os::Windows, &exited, true));
+        assert!(!python_installed_despite(Os::Windows, &exited, false));
+        assert!(!python_installed_despite(Os::Windows, &cancelled, true));
+        assert!(!python_installed_despite(Os::MacOs, &exited, true));
     }
 
     #[test]
