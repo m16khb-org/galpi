@@ -88,10 +88,45 @@ PARTICLES: Final = (
     "만",
 )
 HONORIFICS: Final = ("님", "씨")
+# Job titles said between a name and its honorific ("{이름} 매니저님").
+TITLES: Final = frozenset(
+    [
+        "매니저",
+        "팀장",
+        "파트장",
+        "실장",
+        "본부장",
+        "센터장",
+        "대리",
+        "과장",
+        "차장",
+        "부장",
+        "주임",
+        "사원",
+        "책임",
+        "선임",
+        "수석",
+        "연구원",
+        "교수",
+        "박사",
+        "선생",
+        "대표",
+        "이사",
+        "상무",
+        "전무",
+        "리드",
+        "프로",
+    ]
+)
 REPLY: Final = re.compile(
     r"^(네|예|응|아|어|음|맞아요|맞습니다|맞아|그렇죠|그렇습니다|좋습니다|좋아요|알겠습니다)([,.!?\s]|$)"
 )
 SENTENCE_END: Final = re.compile(r"[.?!…]$|(요|다|죠|까|네|군|지)$")
+# Inflected verbs and adjectives: their spellings differ only by ending and
+# are never one misheard word.
+PREDICATE_END: Final = re.compile(
+    r"(요|다|면|까|죠|데|며|니|게|야|고|서|가|간|할|된|한|난|던|은|는|을|지만|잖아)$"
+)
 SELF_INTRO: Final = (
     re.compile(r"(?:^|\s)저(?:는)?\s+(\S+?)(?:이|가)?\s"),
     re.compile(r"(\S+?)(?:입니다|이고요|이고|인데요|이에요)(?:[.,\s]|$)"),
@@ -293,7 +328,12 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
     for line in lines:
         for word in line.text.split():
             stem, _ = split_particle(word)
-            if syllables(stem) >= 3 and re.fullmatch(r"[가-힣]+", stem):
+            if (
+                syllables(stem) >= 3
+                and re.fullmatch(r"[가-힣]+", stem)
+                and PREDICATE_END.search(stem) is None
+                and not stem.endswith(HONORIFICS)
+            ):
                 counts[stem] = counts.get(stem, 0) + 1
     stems = [
         stem
@@ -305,7 +345,12 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
     groups: list[set[str]] = []
     for stem in stems:
         for group in groups:
-            if any(0 < distance(stem, member) <= CLUSTER_THRESHOLD for member in group):
+            if any(
+                0 < distance(stem, member) <= CLUSTER_THRESHOLD
+                and stem not in member
+                and member not in stem
+                for member in group
+            ):
                 group.add(stem)
                 break
         else:
@@ -341,36 +386,53 @@ def speaker_hints(
                 if name is not None:
                     vote(line.label, name)
         words = line.text.split()
-        # Vocative at the start of a sentence: "{이름} 님, ..." -> the next
-        # speaker is that person.
+        # A sentence opening with an address ("{이름} 님, ...") hands the floor
+        # to that person; a reply opening with one ("네, {이름}님.") answers them.
         for position, word in enumerate(words):
-            starts_sentence = position == 0 or words[position - 1].endswith(
-                (".", "?", "!")
+            prefix = words[:position]
+            is_reply = (
+                0 < len(prefix) <= 2 and REPLY.match(" ".join(prefix)) is not None
             )
-            stem, honorific = split_honorific(word.rstrip(","))
-            spaced = position + 1 < len(words) and words[position + 1].startswith(
-                HONORIFICS
+            starts_sentence = (
+                position == 0
+                or is_reply
+                or words[position - 1].endswith((".", "?", "!"))
             )
-            vocative = word.endswith(",") or (
-                spaced and words[position + 1].endswith(",")
+            if not starts_sentence:
+                continue
+            stem, honorific = split_honorific(word.rstrip(",.?!"))
+            tail = position
+            if not honorific and tail + 1 < len(words):
+                title, title_honorific = split_honorific(words[tail + 1].rstrip(",.?!"))
+                if title in HONORIFICS or (title in TITLES and title_honorific):
+                    honorific, tail = title_honorific or title, tail + 1
+            closing = words[tail].endswith(",") or (
+                is_reply and words[tail].endswith((".", "!"))
             )
-            if not (starts_sentence and (honorific or spaced) and vocative):
+            if not (honorific and closing):
                 continue
             name = roster_name(stem)
             if name is None:
                 continue
-            is_reply = (
-                position > 0 and REPLY.match(" ".join(words[:position])) is not None
-            )
             if is_reply:
                 previous = next(
-                    (l for l in reversed(lines[:index]) if l.label != line.label), None
+                    (
+                        l
+                        for l in reversed(lines[:index])
+                        if l.label not in (line.label, "UNKNOWN")
+                    ),
+                    None,
                 )
                 if previous is not None:
                     vote(previous.label, name)
             else:
                 following = next(
-                    (l for l in lines[index + 1 :] if l.label != line.label), None
+                    (
+                        l
+                        for l in lines[index + 1 :]
+                        if l.label not in (line.label, "UNKNOWN")
+                    ),
+                    None,
                 )
                 if following is not None:
                     vote(following.label, name)
@@ -400,14 +462,18 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
         following = lines[index + 1] if index + 1 < len(lines) else None
         if REPLY.match(line.text) and len(line.text) <= 12:
             asked = previous.text.endswith("?")
-            misattributed = line.label == "UNKNOWN" or (asked and line.label == previous.label)
+            misattributed = line.label == "UNKNOWN" or (
+                asked and line.label == previous.label
+            )
             if (
                 misattributed
                 and following is not None
                 and following.label not in (line.label, "UNKNOWN")
                 and following.label != previous.label
             ):
-                hints.append(f"- 화자 경계: ({line.second}s) {line.label} → {following.label}")
+                hints.append(
+                    f"- 화자 경계: ({line.second}s) {line.label} → {following.label}"
+                )
                 flagged.add(index)
             continue
         cut_off = SENTENCE_END.search(previous.text) is None
