@@ -128,7 +128,9 @@ TITLES: Final = frozenset(
 REPLY: Final = re.compile(
     r"^(네|예|응|아|어|음|맞아요|맞습니다|맞아|그렇죠|그렇습니다|좋습니다|좋아요|알겠습니다)([,.!?\s]|$)"
 )
-SENTENCE_END: Final = re.compile(r"[.?!…]$|(요|다|죠|까|네|군|지)$")
+# Without punctuation only endings that never close a noun count; `지`, `네`,
+# and `군` also end nouns such as `휴지`.
+SENTENCE_END: Final = re.compile(r"[.?!…]$|(요|다|죠|까)$")
 # Inflected verbs and adjectives: their spellings differ only by ending and
 # are never one misheard word.
 PREDICATE_END: Final = re.compile(
