@@ -8,7 +8,7 @@ use crate::domain::chatgpt::{
     ChatGptSettings, ChatGptSignInEvent, ChatGptTokens, RefreshFailure, RevocationOutcome,
     SignInGrant, SignInRequest,
 };
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::job::{SetupRequest, SpeakerHint};
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use crate::domain::worker::WorkerEvent;
@@ -19,14 +19,14 @@ use uuid::Uuid;
 
 #[async_trait]
 pub trait EnginePort: Send + Sync {
-    async fn diagnose(&self, preset: EnginePreset) -> Result<EnvironmentStatus, AppError>;
+    async fn diagnose(&self, selection: EngineSelection) -> Result<EnvironmentStatus, AppError>;
 
     async fn prepare(
         &self,
         job_id: Uuid,
         cancel: &mut oneshot::Receiver<()>,
         request: &SetupRequest,
-        preset: EnginePreset,
+        selection: EngineSelection,
     ) -> Result<EnvironmentStatus, AppError>;
 }
 
@@ -102,6 +102,8 @@ pub trait SettingsPort: Send + Sync {
     async fn save_assistant(&self, settings: AssistantSettings) -> Result<(), AppError>;
     async fn load_engine_preset(&self) -> Result<EnginePreset, AppError>;
     async fn save_engine_preset(&self, preset: EnginePreset) -> Result<(), AppError>;
+    async fn load_compute_device(&self) -> Result<ComputeDevice, AppError>;
+    async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError>;
 }
 
 /// One transcript refinement request handed to the assistant worker.

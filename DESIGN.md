@@ -95,8 +95,8 @@ Former 600 weights round up to bold; SEED has no letter-spacing tokens, so track
 
 ### Font Stack
 
-- Primary: `var(--seed-font-family)` (SEED system stack: `-apple-system`, Apple SD Gothic Neo, Pretendard).
-- Mono: `"SFMono-Regular", Menlo, monospace`; SEED ships no mono token.
+- Primary: `var(--seed-font-family), "Segoe UI", "Malgun Gothic", sans-serif` (SEED system stack: `-apple-system`, Apple SD Gothic Neo, Pretendard; the Windows fonts follow it).
+- Mono: `"SFMono-Regular", Menlo, Consolas, monospace`; SEED ships no mono token.
 
 ### Korean line breaking
 
@@ -300,4 +300,4 @@ Strategy: tonal layers plus SEED shadow tokens only.
 | Item | Location | Why accepted | Owner / Exit |
 |---|---|---|---|
 | No dark theme in first release | Whole app | The desktop utility uses one controlled light workspace (`data-seed-color-mode="light-only"`); a second theme would double initial visual QA without changing task completion. | Add only after a user preference request. |
-| macOS ARM64 packaging first | Build pipeline | Current target workstation is Apple Silicon and ML dependencies are platform-heavy. | Add signed Intel/Windows packages with platform-specific QA. |
+| macOS ARM64 and Windows x64 only | Build pipeline | Apple Silicon macOS and Windows 10/11 x64 are the supported targets; ML dependencies are platform-heavy. | Intel macOS and Linux remain unsupported; Windows x64 ships as an unsigned NSIS installer. Add signing and further targets with platform-specific QA. |

@@ -11,9 +11,16 @@ concurrency:
 
 jobs:
   frontend:
-    # Apple Silicon: the app only ships for arm64 macOS 14+, so the gates run
-    # on the platform they describe.
-    runs-on: macos-15
+    # The app ships for arm64 macOS 14+ and x64 Windows, so the gates run on
+    # the platforms they describe.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -24,7 +31,19 @@ jobs:
       - run: bun test
 
   rust:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+        include:
+          - os: macos-15
+            target_args: ""
+          - os: windows-latest
+            target_args: "--target x86_64-pc-windows-msvc"
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -43,11 +62,18 @@ jobs:
         with:
           workspaces: src-tauri
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.target_args }} -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.target_args }}
 
   worker:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -55,3 +81,73 @@ jobs:
       - run: uvx ruff format --check worker
       # The pure helpers import no ML stack, so they run on a bare interpreter.
       - run: PYTHONPATH=. uv run --python 3.12 python -m unittest discover -s worker/tests -t . -v
+
+  windows-engine:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run vite:build
+      - run: bun run sidecar:stage
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: astral-sh/setup-uv@v5
+      - run: uv venv --python 3.12 .engine-venv
+      - run: uv pip install --python .engine-venv/Scripts/python.exe -r worker/requirements-windows-cpu.lock --require-hashes
+      - run: .engine-venv/Scripts/python.exe -c "import whisperx, torch, pyannote.audio"
+      - name: Worker environment starts the engine Python
+        run: |
+          GALPI_TEST_PYTHON="$(pwd -W)/.engine-venv/Scripts/python.exe" \
+            cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc -- --ignored windows_worker_environment_starts_python
+      # Resolve-only: proves the CUDA lock still resolves without pulling the
+      # multi-GB wheels.
+      - run: uv pip install --python .engine-venv/Scripts/python.exe --dry-run -r worker/requirements-windows-cuda.lock --require-hashes --index-strategy unsafe-best-match
+
+  bundle-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: bun install --frozen-lockfile
+      - run: cargo install tauri-cli --version 2.11.4 --locked
+      - run: bun run build
+      - name: Assert the NSIS installer exists
+        run: ls src-tauri/target/release/bundle/nsis/*.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: galpi-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  windows-install-smoke:
+    needs: bundle-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: galpi-nsis
+          path: installer
+      - name: Install and verify the engine
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem installer -Filter *.exe | Select-Object -First 1).FullName
+          & pwsh -File scripts/ci/windows-install-smoke.ps1 -Installer $installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

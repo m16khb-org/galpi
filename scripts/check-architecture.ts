@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
+import { isInsideDirectory } from "./architecture-paths"
 
 const RUST_ROOT = join(import.meta.dir, "..", "src-tauri", "src")
 const TS_ROOT = join(import.meta.dir, "..", "src")
@@ -11,21 +12,30 @@ interface Fence {
   readonly extension: ".rs" | ".ts"
 }
 
+// Platform branching lives only in outbound adapters.
+const PLATFORM_CFG = ["cfg(windows)", "cfg(unix)", "target_os", "cfg!("] as const
+
 const fences: readonly Fence[] = [
   {
     root: join(RUST_ROOT, "domain"),
     extension: ".rs",
-    forbidden: ["crate::application", "crate::adapters", "crate::composition", "tauri::"],
+    forbidden: [
+      "crate::application",
+      "crate::adapters",
+      "crate::composition",
+      "tauri::",
+      ...PLATFORM_CFG,
+    ],
   },
   {
     root: join(RUST_ROOT, "application"),
     extension: ".rs",
-    forbidden: ["crate::adapters", "crate::composition", "tauri::"],
+    forbidden: ["crate::adapters", "crate::composition", "tauri::", ...PLATFORM_CFG],
   },
   {
     root: join(RUST_ROOT, "adapters", "inbound"),
     extension: ".rs",
-    forbidden: ["adapters::outbound", "crate::composition"],
+    forbidden: ["adapters::outbound", "crate::composition", ...PLATFORM_CFG],
   },
   {
     root: join(RUST_ROOT, "adapters", "outbound"),
@@ -110,7 +120,7 @@ async function checkFrameworkLocality(): Promise<readonly string[]> {
     if (
       (source.includes("tokio::process") || usesNix) &&
       path !== processAdapter &&
-      !path.startsWith(`${processAdapterDirectory}/`)
+      !isInsideDirectory(path, processAdapterDirectory)
     ) {
       violations.push(`${path}: process primitives belong in the process adapter`)
     }

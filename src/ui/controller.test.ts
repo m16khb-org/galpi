@@ -26,6 +26,7 @@ function unavailableBackend(): BackendPort {
     loadAssistantSettings: unavailable,
     saveAssistantSettings: unavailable,
     saveEnginePreset: unavailable,
+    saveComputeDevice: unavailable,
     refineTranscript: unavailable,
     transcribe: unavailable,
     importTranscript: unavailable,
@@ -144,6 +145,10 @@ describe("AppController engine preset", () => {
           dataDirectory: "/tmp/galpi",
           defaultOutputDirectory: "/tmp/Documents/Galpi",
           engineVersion: "test",
+          computeDevice: "cpu" as const,
+          availablePresets: ["qwen3", "whisperx"] as const,
+          availableDevices: [] as const,
+          cudaDriverDetected: false,
         }
       },
       prepare: unavailable,
@@ -163,6 +168,7 @@ describe("AppController engine preset", () => {
       saveEnginePreset: async (preset: "qwen3" | "whisperx") => {
         state.preset = preset
       },
+      saveComputeDevice: unavailable,
       refineTranscript: unavailable,
       transcribe: unavailable,
       importTranscript: unavailable,
@@ -242,6 +248,10 @@ describe("AppController transcript import", () => {
         dataDirectory: "/tmp/galpi",
         defaultOutputDirectory: "/tmp/Documents/Galpi",
         engineVersion: "test",
+        computeDevice: "cpu" as const,
+        availablePresets: ["qwen3", "whisperx"] as const,
+        availableDevices: [] as const,
+        cudaDriverDetected: false,
       }),
       prepare: unavailable,
       huggingFaceTokenStored: async () => false,
@@ -258,6 +268,7 @@ describe("AppController transcript import", () => {
       }),
       saveAssistantSettings: unavailable,
       saveEnginePreset: unavailable,
+      saveComputeDevice: unavailable,
       refineTranscript: unavailable,
       transcribe: unavailable,
       importTranscript: async () => ({
@@ -345,6 +356,10 @@ describe("AppController ChatGPT sign-in", () => {
         dataDirectory: "/tmp/galpi",
         defaultOutputDirectory: "/tmp/galpi/out",
         engineVersion: "test",
+        computeDevice: "cpu" as const,
+        availablePresets: ["qwen3", "whisperx"] as const,
+        availableDevices: [] as const,
+        cudaDriverDetected: false,
       }),
       huggingFaceTokenStored: async () => false,
       loadAssistantSettings: async () => ({
@@ -588,6 +603,84 @@ describe("AppController ChatGPT sign-in", () => {
       "dev@example.com로 로그인됨",
     )
     expect((root.querySelector("#app-error") as HTMLElement).hidden).toBe(true)
+    controller.stop()
+  })
+})
+
+describe("AppController compute device", () => {
+  test("switching the device saves it and re-diagnoses the environment", async () => {
+    // Given: a Windows-like host where whisperx is the only preset and the
+    // diagnosed device follows the saved choice
+    const window = new Window()
+    const sheet = window.document.createElement("style")
+    sheet.textContent = styles
+    window.document.head.appendChild(sheet)
+    const root = window.document.createElement("div") as unknown as HTMLElement
+    window.document.body.appendChild(root as unknown as never)
+    const state: { device: "cpu" | "cuda"; saved: string[]; diagnoses: number } = {
+      device: "cpu",
+      saved: [],
+      diagnoses: 0,
+    }
+    const backend: BackendPort = {
+      ...unavailableBackend(),
+      diagnose: async () => {
+        state.diagnoses += 1
+        return {
+          enginePreset: "whisperx" as const,
+          engineReady: true,
+          modelsReady: true,
+          ffmpegReady: true,
+          qwen3Ready: false,
+          whisperxReady: true,
+          dataDirectory: "C:\\Galpi",
+          defaultOutputDirectory: "C:\\Galpi\\out",
+          engineVersion: "test",
+          computeDevice: state.device,
+          availablePresets: ["whisperx"] as const,
+          availableDevices: ["cpu", "cuda"] as const,
+          cudaDriverDetected: true,
+        }
+      },
+      huggingFaceTokenStored: async () => false,
+      loadAssistantSettings: async () => ({
+        apiKeyStored: false,
+        model: null,
+        baseUrl: null,
+        reasoningEffort: null,
+        background: null,
+        participants: [],
+        glossary: [],
+      }),
+      saveComputeDevice: async (device) => {
+        state.saved.push(device)
+        state.device = device
+      },
+      loadChatGptSettings: async () => ({
+        authMode: "apiKey",
+        model: null,
+        welcomeAcknowledged: true,
+        account: { state: "signedOut", email: null },
+      }),
+      listenToJobs: async () => () => undefined,
+      listenToRecordingFailures: async () => () => undefined,
+      listenToChatGptEvents: async () => () => undefined,
+    }
+    const controller = new AppController(backend, new AppView(root))
+    await controller.start()
+    const before = state.diagnoses
+
+    // When
+    ;(root.querySelector('input[name="compute-device"][value="cuda"]') as HTMLInputElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Then: saved first, then diagnosed again
+    expect(state.saved).toEqual(["cuda"])
+    expect(state.diagnoses).toBe(before + 1)
+    expect(
+      (root.querySelector('input[name="compute-device"][value="cuda"]') as HTMLInputElement).checked,
+    ).toBe(true)
     controller.stop()
   })
 })

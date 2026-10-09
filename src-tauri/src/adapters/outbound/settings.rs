@@ -1,15 +1,15 @@
 use super::paths::AppPaths;
-use super::secrets::{Secret, SecretStore, SettingsFile};
+use super::platform::Os;
+use super::secrets::{Secret, SecretStore};
 use crate::application::error::AppError;
 use crate::application::ports::SettingsPort;
 use crate::domain::chatgpt::AssistantAuthMode;
-use crate::domain::engine::EnginePreset;
+use crate::domain::engine::{ComputeDevice, EnginePreset};
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
@@ -18,6 +18,8 @@ mod chatgpt;
 #[derive(Debug)]
 pub struct LocalSettingsStore {
     path: PathBuf,
+    /// Decides which engines and devices this machine offers.
+    os: Os,
     secrets: std::sync::Arc<dyn SecretStore>,
     /// What each secret currently holds, once it has been read.
     ///
@@ -36,33 +38,46 @@ pub struct LocalSettingsStore {
 }
 
 impl LocalSettingsStore {
-    pub fn new(app: &AppHandle) -> Result<Self, AppError> {
-        Ok(Self {
-            path: AppPaths::resolve(app)?.root.join("settings.json"),
-            // Swap for `Keychain` once the app ships with a stable
-            // Developer ID signature; see the secrets module.
-            secrets: std::sync::Arc::new(SettingsFile),
+    /// `secrets` is chosen by the composition root: the Windows Credential
+    /// Manager there, the settings file elsewhere (see the secrets module).
+    pub fn new(
+        app: &AppHandle,
+        secrets: std::sync::Arc<dyn SecretStore>,
+    ) -> Result<Self, AppError> {
+        Ok(Self::build(
+            AppPaths::resolve(app)?.root.join("settings.json"),
+            Os::current(),
+            secrets,
+        ))
+    }
+
+    fn build(path: PathBuf, os: Os, secrets: std::sync::Arc<dyn SecretStore>) -> Self {
+        Self {
+            path,
+            os,
+            secrets,
             cached_secrets: tokio::sync::Mutex::new(HashMap::new()),
             state: tokio::sync::Mutex::new(None),
-        })
+        }
     }
 
     #[cfg(test)]
     fn for_path(path: PathBuf) -> Self {
-        Self::with_secrets(
+        Self::for_os(path, Os::MacOs)
+    }
+
+    #[cfg(test)]
+    fn for_os(path: PathBuf, os: Os) -> Self {
+        Self::build(
             path,
+            os,
             std::sync::Arc::new(super::secrets::InMemorySecrets::default()),
         )
     }
 
     #[cfg(test)]
     fn with_secrets(path: PathBuf, secrets: std::sync::Arc<dyn SecretStore>) -> Self {
-        Self {
-            path,
-            secrets,
-            cached_secrets: tokio::sync::Mutex::new(HashMap::new()),
-            state: tokio::sync::Mutex::new(None),
-        }
+        Self::build(path, Os::MacOs, secrets)
     }
 
     /// Read a secret, moving it out of the settings file the first time.
@@ -238,7 +253,12 @@ impl LocalSettingsStore {
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 struct LocalSettings {
-    engine_preset: EnginePreset,
+    // Unset means "this platform's default". Both are skipped when `None`
+    // because a serialized `null` makes older builds fail to parse the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    engine_preset: Option<EnginePreset>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compute_device: Option<ComputeDevice>,
     hugging_face_token: Option<String>,
     assistant_api_key: Option<String>,
     hugging_face_token_stored: bool,
@@ -263,9 +283,8 @@ struct LocalSettings {
 
 impl LocalSettings {
     fn is_empty(&self) -> bool {
-        // The default preset is what an absent file already means, so storing
-        // only the default does not justify keeping the file around.
-        self.engine_preset == EnginePreset::default()
+        self.engine_preset.is_none()
+            && self.compute_device.is_none()
             && self.hugging_face_token.is_none()
             && self.assistant_api_key.is_none()
             && !self.hugging_face_token_stored
@@ -305,16 +324,49 @@ impl SettingsPort for LocalSettingsStore {
     }
 
     async fn load_engine_preset(&self) -> Result<EnginePreset, AppError> {
-        Ok(self
+        let stored = self
             .load()
             .await?
             .as_ref()
-            .map(|settings| settings.engine_preset)
+            .and_then(|settings| settings.engine_preset);
+        // A stored preset this machine cannot run (a Qwen3 choice synced from
+        // a Mac, say) falls back to the platform default.
+        Ok(stored
+            .filter(|preset| self.os.presets().contains(preset))
+            .or_else(|| self.os.presets().first().copied())
             .unwrap_or_default())
     }
 
     async fn save_engine_preset(&self, preset: EnginePreset) -> Result<(), AppError> {
-        self.update(|settings| settings.engine_preset = preset)
+        if !self.os.presets().contains(&preset) {
+            return Err(AppError::new(
+                "ENGINE_PRESET_UNAVAILABLE",
+                "이 컴퓨터에서는 사용할 수 없는 전사 엔진입니다.",
+            ));
+        }
+        self.update(|settings| settings.engine_preset = Some(preset))
+            .await
+    }
+
+    async fn load_compute_device(&self) -> Result<ComputeDevice, AppError> {
+        let stored = self
+            .load()
+            .await?
+            .as_ref()
+            .and_then(|settings| settings.compute_device);
+        Ok(stored
+            .filter(|device| self.os.devices().contains(device))
+            .unwrap_or_default())
+    }
+
+    async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError> {
+        if !self.os.devices().contains(&device) {
+            return Err(AppError::new(
+                "COMPUTE_DEVICE_UNAVAILABLE",
+                "이 컴퓨터에서는 선택할 수 없는 연산 장치입니다.",
+            ));
+        }
+        self.update(|settings| settings.compute_device = Some(device))
             .await
     }
 
@@ -399,9 +451,14 @@ async fn write_settings(path: &Path, settings: &LocalSettings) -> Result<(), App
     tokio::fs::write(&temporary, contents)
         .await
         .map_err(|error| AppError::io("임시 앱 설정 파일을 쓰지 못했습니다", &error))?;
-    tokio::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600))
-        .await
-        .map_err(|error| AppError::io("앱 설정 파일 권한을 지정하지 못했습니다", &error))?;
+    // Windows keeps the ACL inherited from the per-user app data folder.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600))
+            .await
+            .map_err(|error| AppError::io("앱 설정 파일 권한을 지정하지 못했습니다", &error))?;
+    }
     if let Err(error) = tokio::fs::rename(&temporary, path).await {
         let _cleanup_result = tokio::fs::remove_file(&temporary).await;
         return Err(AppError::io("앱 설정 파일을 교체하지 못했습니다", &error));
@@ -419,13 +476,13 @@ async fn remove_settings(path: &Path) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::platform::Os;
     use super::super::secrets::{InMemorySecrets, Secret, SecretStore};
     use super::LocalSettingsStore;
     use crate::application::error::AppError;
     use crate::application::ports::SettingsPort;
-    use crate::domain::engine::EnginePreset;
+    use crate::domain::engine::{ComputeDevice, EnginePreset};
     use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
-    use std::os::unix::fs::PermissionsExt;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -474,8 +531,11 @@ mod tests {
             !document.contains("hf_saved"),
             "the token must not be written in plaintext:\n{document}"
         );
+        #[cfg(unix)]
         assert_eq!(
-            tokio::fs::metadata(&path).await?.permissions().mode() & 0o777,
+            std::os::unix::fs::PermissionsExt::mode(
+                &tokio::fs::metadata(&path).await?.permissions()
+            ) & 0o777,
             0o600
         );
 
@@ -611,8 +671,11 @@ mod tests {
         );
         assert!(store.hugging_face_token_stored().await?);
         assert!(tokio::fs::read_to_string(&path).await?.contains("hf_saved"));
+        #[cfg(unix)]
         assert_eq!(
-            tokio::fs::metadata(&path).await?.permissions().mode() & 0o777,
+            std::os::unix::fs::PermissionsExt::mode(
+                &tokio::fs::metadata(&path).await?.permissions()
+            ) & 0o777,
             0o600
         );
 
@@ -827,6 +890,131 @@ mod tests {
         let document = tokio::fs::read_to_string(&path).await.unwrap_or_default();
         assert!(!document.contains("zai_key"), "cleared key survived");
         let _removed = tokio::fs::remove_dir_all(directory).await;
+        Ok(())
+    }
+
+    fn temp_settings(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("galpi-{label}-{}", Uuid::now_v7()))
+    }
+
+    #[tokio::test]
+    async fn os_windows_defaults_to_whisperx_and_cpu() -> Result<(), Box<dyn std::error::Error>> {
+        // Given: Windows rules and nothing saved
+        let directory = temp_settings("win-default");
+        let store = LocalSettingsStore::for_os(directory.join("settings.json"), Os::Windows);
+
+        // When / Then
+        assert_eq!(store.load_engine_preset().await?, EnginePreset::WhisperX);
+        assert_eq!(store.load_compute_device().await?, ComputeDevice::Cpu);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn os_windows_refuses_to_save_qwen3() -> Result<(), Box<dyn std::error::Error>> {
+        // Given
+        let directory = temp_settings("win-qwen3");
+        let store = LocalSettingsStore::for_os(directory.join("settings.json"), Os::Windows);
+
+        // When
+        let result = store.save_engine_preset(EnginePreset::Qwen3).await;
+
+        // Then
+        assert_eq!(
+            result.err().map(|error| error.code),
+            Some("ENGINE_PRESET_UNAVAILABLE".to_owned())
+        );
+        assert_eq!(store.load_engine_preset().await?, EnginePreset::WhisperX);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn os_windows_corrects_a_stored_qwen3_preset() -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a file written on a Mac
+        let directory = temp_settings("win-corrects");
+        tokio::fs::create_dir_all(&directory).await?;
+        let path = directory.join("settings.json");
+        tokio::fs::write(&path, r#"{"enginePreset":"qwen3"}"#).await?;
+        let store = LocalSettingsStore::for_os(path, Os::Windows);
+
+        // When / Then
+        assert_eq!(store.load_engine_preset().await?, EnginePreset::WhisperX);
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn os_windows_saves_and_reloads_the_cuda_device() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // Given
+        let directory = temp_settings("win-cuda");
+        let path = directory.join("settings.json");
+        let store = LocalSettingsStore::for_os(path.clone(), Os::Windows);
+
+        // When
+        store.save_compute_device(ComputeDevice::Cuda).await?;
+
+        // Then: the same process and a relaunch both see it
+        assert_eq!(store.load_compute_device().await?, ComputeDevice::Cuda);
+        let relaunched = LocalSettingsStore::for_os(path, Os::Windows);
+        assert_eq!(relaunched.load_compute_device().await?, ComputeDevice::Cuda);
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn os_macos_keeps_qwen3_and_has_no_device_choice()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: an older settings file without the new keys
+        let directory = temp_settings("mac-compat");
+        tokio::fs::create_dir_all(&directory).await?;
+        let path = directory.join("settings.json");
+        tokio::fs::write(&path, r#"{"assistantModel":"glm"}"#).await?;
+        let store = LocalSettingsStore::for_os(path, Os::MacOs);
+
+        // When / Then
+        assert_eq!(store.load_engine_preset().await?, EnginePreset::Qwen3);
+        assert_eq!(store.load_compute_device().await?, ComputeDevice::Cpu);
+        assert_eq!(
+            store
+                .save_compute_device(ComputeDevice::Cuda)
+                .await
+                .err()
+                .map(|error| error.code),
+            Some("COMPUTE_DEVICE_UNAVAILABLE".to_owned())
+        );
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unset_engine_keys_are_never_written_so_older_builds_can_still_read_the_file()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: other settings saved while preset and device were never chosen
+        let directory = temp_settings("rollback");
+        let path = directory.join("settings.json");
+        let store = LocalSettingsStore::for_os(path.clone(), Os::MacOs);
+        store
+            .save_assistant(AssistantSettings {
+                model: Some("glm-5.3".to_owned()),
+                ..AssistantSettings::default()
+            })
+            .await?;
+
+        // Then: neither key is present, not even as null
+        let document = tokio::fs::read_to_string(&path).await?;
+        assert!(!document.contains("enginePreset"), "{document}");
+        assert!(!document.contains("computeDevice"), "{document}");
+
+        // When: the preset is chosen explicitly
+        store.save_engine_preset(EnginePreset::WhisperX).await?;
+
+        // Then: it is persisted
+        let document = tokio::fs::read_to_string(&path).await?;
+        assert!(
+            document.contains(r#""enginePreset":"whisperx""#),
+            "{document}"
+        );
+        tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }
 }

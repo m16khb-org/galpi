@@ -56,8 +56,14 @@ worker/
   cannot corrupt the protocol stream.
 - Import Torch, WhisperX, pyannote, and imageio-ffmpeg inside runtime functions.
   Package import and pure tests must not require the ML environment.
-- ASR deliberately uses CTranslate2 CPU int8. Alignment and diarization prefer
-  MPS, retry once on CPU, and emit the fallback reason as a log event.
+- ASR deliberately uses CTranslate2 CPU int8 on every platform. Device policy:
+  torch device is `cuda` > `mps` > `cpu` (`runtime.py::select_torch_device`);
+  alignment and diarization use it, retry once on CPU if an accelerator step
+  fails, and emit the fallback reason as a log event.
+- Windows locks: `requirements-windows-cpu.lock` (default) and
+  `requirements-windows-cuda.lock` (PyTorch cu128). Regenerate with the
+  `uv pip compile ... --python-platform x86_64-pc-windows-msvc` command in each
+  lock header, then run `python3 scripts/verify-windows-lock.py cpu|cuda`.
 - Keep BasedPyright strict. Convert untyped library payloads with explicit
   casts to local `TypedDict` contracts; maintain realistic `.pyi` stubs.
 - Publish checkpoint, SRT, speaker text, and manifests through sibling
@@ -76,7 +82,7 @@ worker/
 - Do not rename `.aligned.v2.json`, `.srt`, or `_화자별.txt` artifacts.
 - Do not change a protocol version, event, or field in Python alone.
 - Do not import heavy ML libraries at module scope or in pure tests.
-- Do not move ASR to MPS; CTranslate2 CPU int8 is deliberate.
-- Do not add retries beyond the single MPS-to-CPU fallback.
+- Do not move ASR to an accelerator; CTranslate2 CPU int8 is deliberate.
+- Do not add retries beyond the single accelerator-to-CPU fallback.
 - Do not write final artifacts in place.
 - Do not weaken a stub merely to hide an installed-library mismatch.

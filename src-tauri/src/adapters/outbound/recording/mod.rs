@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use crate::adapters::outbound::paths::recording_folder_name;
+use crate::adapters::outbound::paths::{canonical_blocking, recording_folder_name};
 use cleanup::{
     cancel_and_remove, microphone_error, remove_if_exists, remove_partial, state_lock, with_cleanup,
 };
@@ -93,7 +93,7 @@ fn start_sync(
     }
     std::fs::create_dir_all(output_root)
         .map_err(|error| AppError::io("녹음 폴더를 만들지 못했습니다", &error))?;
-    let root = std::fs::canonicalize(output_root)
+    let root = canonical_blocking(output_root)
         .map_err(|error| AppError::io("녹음 폴더를 확인하지 못했습니다", &error))?;
     // A recording immediately owns a meeting folder named after itself, so the
     // finished `.wav` and every later artifact share one predictable name.
@@ -222,7 +222,7 @@ fn stop_sync(
             remove_if_exists(&recording.partial_path),
         ));
     }
-    let path = std::fs::canonicalize(&recording.final_path)
+    let path = canonical_blocking(&recording.final_path)
         .map_err(|error| AppError::io("완료된 녹음 파일을 확인하지 못했습니다", &error))?;
     Ok(RecordingResult {
         recording_id,

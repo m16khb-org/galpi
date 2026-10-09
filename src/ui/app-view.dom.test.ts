@@ -33,6 +33,10 @@ function environment(ready: boolean): EnvironmentStatus {
     dataDirectory: "/tmp/galpi",
     defaultOutputDirectory: "/tmp/galpi/out",
     engineVersion: "Qwen3-ASR-1.7B · 1",
+    computeDevice: "cpu" as const,
+    availablePresets: ["qwen3", "whisperx"] as const,
+    availableDevices: [] as const,
+    cudaDriverDetected: false,
   }
 }
 
@@ -451,6 +455,132 @@ describe("AppView state presentation (real DOM)", () => {
     // Then
     expect(text(root, "#transcript-title")).toBe("대상 전사문")
     expect(root.querySelector("#augment-panel .choice-divider")).toBeNull()
+  })
+})
+
+describe("AppView platform capabilities (real DOM)", () => {
+  let view: AppView
+  let root: HTMLElement
+  let window: Window
+
+  beforeEach(() => {
+    ;({ view, root, window } = createView())
+  })
+
+  const windowsEnvironment = (cudaDriverDetected: boolean): EnvironmentStatus => ({
+    ...environment(true),
+    enginePreset: "whisperx",
+    whisperxReady: true,
+    qwen3Ready: false,
+    availablePresets: ["whisperx"],
+    availableDevices: ["cpu", "cuda"],
+    cudaDriverDetected,
+  })
+
+  const display = (selector: string): string =>
+    window.getComputedStyle(root.querySelector(selector) as unknown as never).display
+
+  test("hides presets the platform does not offer", () => {
+    // When
+    view.setEnvironment(windowsEnvironment(true))
+
+    // Then: the unavailable preset is out of layout, not merely unlabeled
+    const qwen3 = root.querySelector('[data-engine-option="qwen3"]') as HTMLElement
+    const whisperx = root.querySelector('[data-engine-option="whisperx"]') as HTMLElement
+    expect(qwen3.hidden).toBe(true)
+    expect(display('[data-engine-option="qwen3"]')).toBe("none")
+    expect(whisperx.hidden).toBe(false)
+    expect(display('[data-engine-option="whisperx"]')).not.toBe("none")
+  })
+
+  test("badges the first available preset as the default", () => {
+    // When
+    view.setEnvironment(windowsEnvironment(true))
+
+    // Then
+    expect(text(root, "#engine-whisperx-state")).toBe("기본 · 준비됨")
+
+    // When: macOS offers qwen3 first
+    view.setEnvironment(environment(true))
+
+    // Then
+    expect(text(root, "#engine-qwen3-state")).toContain("기본")
+    expect(text(root, "#engine-whisperx-state")).toContain("이전 엔진")
+  })
+
+  test("shows the device group only for whisperx with selectable devices", () => {
+    // When: macOS has no devices to pick
+    view.setEnvironment(environment(true))
+
+    // Then
+    expect(hidden(root, "#engine-device")).toBe(true)
+    expect(display("#engine-device")).toBe("none")
+
+    // When: Windows with whisperx
+    view.setEnvironment(windowsEnvironment(true))
+
+    // Then
+    expect(hidden(root, "#engine-device")).toBe(false)
+    expect(display("#engine-device")).not.toBe("none")
+    expect(text(root, "#engine-device-help")).toContain("3.5 GB")
+    expect(text(root, "#engine-device-help")).toContain("엔진 준비")
+  })
+
+  test("disables CUDA with a reason when no NVIDIA driver is found", () => {
+    // When
+    view.setEnvironment(windowsEnvironment(false))
+
+    // Then
+    const cuda = root.querySelector('input[name="compute-device"][value="cuda"]') as HTMLInputElement
+    expect(cuda.disabled).toBe(true)
+    expect(cuda.closest("label")?.textContent).toContain("NVIDIA 드라이버 필요")
+
+    // When: a driver appears
+    view.setEnvironment(windowsEnvironment(true))
+
+    // Then
+    expect(cuda.disabled).toBe(false)
+    expect(cuda.closest("label")?.textContent).not.toContain("NVIDIA 드라이버 필요")
+  })
+
+  test("reports the chosen compute device", () => {
+    // Given
+    const chosen: string[] = []
+    view.onComputeDeviceChange((device) => chosen.push(device))
+    view.setEnvironment({ ...windowsEnvironment(true), computeDevice: "cuda" })
+    const cpu = root.querySelector('input[name="compute-device"][value="cpu"]') as HTMLInputElement
+    expect(
+      (root.querySelector('input[name="compute-device"][value="cuda"]') as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+
+    // When
+    cpu.click()
+
+    // Then
+    expect(chosen).toEqual(["cpu"])
+  })
+
+  test("names the meeting from a Windows path", () => {
+    // Given
+    view.setEnvironment(environment(true))
+
+    // When
+    view.setAudio("C:\\Users\\me\\Meetings\\2026-10-03 주간 회의.m4a")
+
+    // Then
+    expect(text(root, "#task-title")).toBe("2026-10-03 주간 회의")
+  })
+
+  test("copy is platform neutral", () => {
+    // Then
+    const html = root.innerHTML
+    expect(html).not.toContain("CoreAudio")
+    expect(html).not.toContain("Finder")
+    expect(html).not.toContain("이 Mac")
+    expect(html).toContain("시스템 마이크 · 16-bit PCM WAV")
+    expect(html).toContain("출력 폴더 열기")
+    expect(html).toContain("이 컴퓨터")
   })
 })
 

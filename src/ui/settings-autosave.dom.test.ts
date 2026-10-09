@@ -50,6 +50,10 @@ function createBackend(
       dataDirectory: "/tmp/galpi",
       defaultOutputDirectory: "/tmp/galpi/out",
       engineVersion: "test",
+      computeDevice: "cpu" as const,
+      availablePresets: ["qwen3", "whisperx"] as const,
+      availableDevices: [] as const,
+      cudaDriverDetected: false,
     }),
     prepare: async () => {
       throw new Error("unused prepare")
@@ -61,6 +65,7 @@ function createBackend(
       onSaveKey(key)
     },
     saveEnginePreset: async () => undefined,
+    saveComputeDevice: async () => undefined,
     saveAssistantSettings: async (settings) => {
       await onSave(settings)
     },

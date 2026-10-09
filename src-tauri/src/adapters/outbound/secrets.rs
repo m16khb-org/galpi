@@ -1,20 +1,35 @@
 //! Secret storage for the two credentials Galpi holds.
 //!
-//! The destination is the macOS Keychain, and [`Keychain`] implements it. It is
-//! not what the app uses yet: macOS ties access to a Keychain item to the code
-//! signature that stored it, and Galpi's ad-hoc signature changes on every
-//! build, so each release would ask every user to re-authorize a token they
-//! never touched. Until the app ships with a Developer ID signature, secrets
-//! stay in the settings file, which [`SettingsFile`] represents, and the switch
-//! is one line in `LocalSettingsStore::new`.
+//! Where a secret lives depends on the platform, and the composition root
+//! picks the store:
+//!
+//! - Windows: the Credential Manager ([`credential_manager`]), the app's first
+//!   OS-backed store.
+//! - macOS: the settings file ([`SettingsFile`]). The Keychain ([`keychain`])
+//!   is implemented but dormant: macOS ties access to a Keychain item to the
+//!   code signature that stored it, and Galpi's ad-hoc signature changes on
+//!   every build, so each release would ask every user to re-authorize a token
+//!   they never touched. It switches on with a Developer ID signature.
 
 use crate::application::error::AppError;
-use security_framework::passwords::{
-    delete_generic_password, get_generic_password, set_generic_password,
-};
 
-/// The Keychain service every Galpi secret is filed under.
-#[expect(dead_code, reason = "used once the app switches to Keychain storage")]
+#[cfg(windows)]
+mod credential;
+#[cfg(all(test, not(windows)))]
+mod credential;
+#[cfg(windows)]
+mod credential_manager;
+#[cfg(target_os = "macos")]
+mod keychain;
+
+#[cfg(windows)]
+pub use credential_manager::CredentialManager;
+
+/// The service every Galpi secret is filed under.
+#[cfg_attr(
+    all(not(test), not(windows)),
+    expect(dead_code, reason = "used once the app switches to Keychain storage")
+)]
 const SERVICE: &str = "com.m16khb.galpi";
 
 /// One stored credential.
@@ -28,7 +43,7 @@ pub enum Secret {
 
 impl Secret {
     #[cfg_attr(
-        not(test),
+        all(not(test), not(windows)),
         expect(dead_code, reason = "used once the app switches to Keychain storage")
     )]
     const fn account(self) -> &'static str {
@@ -55,44 +70,6 @@ pub trait SecretStore: std::fmt::Debug + Send + Sync {
     /// does not would be erasing the only copy.
     fn keeps_plaintext_in_settings(&self) -> bool {
         false
-    }
-}
-
-/// The macOS login keychain.
-///
-/// Not wired up yet — see the module comment. Kept compiled so the switch is a
-/// one-line change rather than a rewrite once the app is signed.
-#[expect(dead_code, reason = "wired up once the app ships a stable signature")]
-#[derive(Debug, Default)]
-pub struct Keychain;
-
-impl SecretStore for Keychain {
-    fn read(&self, secret: Secret) -> Result<Option<String>, AppError> {
-        match get_generic_password(SERVICE, secret.account()) {
-            Ok(bytes) => String::from_utf8(bytes)
-                .map(Some)
-                .map_err(|error| AppError::new("KEYCHAIN_INVALID", error.to_string())),
-            // Any read failure is treated as "nothing stored": the item may be
-            // absent, or the user may have declined access. Either way there is
-            // no token to work with, and the caller's own message about a
-            // missing token is more useful than a Keychain error code.
-            Err(_) => Ok(None),
-        }
-    }
-
-    fn write(&self, secret: Secret, value: Option<&str>) -> Result<(), AppError> {
-        let Some(value) = value else {
-            // Deleting something that was never there is the desired end
-            // state, not a failure.
-            let _removed = delete_generic_password(SERVICE, secret.account());
-            return Ok(());
-        };
-        set_generic_password(SERVICE, secret.account(), value.as_bytes()).map_err(|error| {
-            AppError::new(
-                "KEYCHAIN_WRITE_FAILED",
-                format!("키체인에 토큰을 저장하지 못했습니다: {error}"),
-            )
-        })
     }
 }
 
@@ -154,12 +131,17 @@ impl SecretStore for InMemorySecrets {
 
 /// Keeps a secret in the settings file rather than the keychain.
 ///
-/// The file is created 0600 in the app's own Application Support directory.
+/// The file is created 0600 in the app's own Application Support directory
+/// (on Windows it inherits the per-user app data ACL).
 /// That is weaker than the keychain — it is readable by anything running as
 /// this user, and it travels into backups — and it is what Galpi did before
 /// and still does until the app is signed. `LocalSettingsStore` writes and
 /// clears the fields; this type exists so the choice of destination stays in
 /// one place.
+#[cfg_attr(
+    all(windows, not(test)),
+    expect(dead_code, reason = "Windows keeps secrets in Credential Manager")
+)]
 #[derive(Debug, Default)]
 pub struct SettingsFile;
 

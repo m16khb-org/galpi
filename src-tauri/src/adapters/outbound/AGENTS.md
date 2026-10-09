@@ -34,17 +34,21 @@ outbound/
 | Change capture details | `recording/capture.rs` |
 | Change backpressure/RIFF caps | `recording/writer.rs` |
 | Change error mapping | `recording/cleanup.rs`, `recording/failure.rs` |
-| Change worker variables | `process_environment` in `environment.rs` |
+| Change worker variables | `platform::worker_environment` in `platform.rs` (used by `environment.rs`) |
 | Change refinement transport variables | `assistant_environment` in `environment.rs`; `GALPI_ASSISTANT_TRANSPORT=responses` is set only for the ChatGPT Responses transport |
 | Change meeting folder or artifact naming | `paths.rs` (`meeting_stem`, `create_meeting_directory`, `recording_folder_name`, `sanitize_name`); default root in `environment.rs` (`~/Documents/Galpi`) |
 | Change debug/release paths | `uv_binary`, `worker_root` in `paths.rs` |
 
 ## CONVENTIONS
 
-- Spawn with `env_clear`, the explicit process environment, null stdin,
-  `kill_on_drop`, and a dedicated process group.
-- Cancellation sends SIGTERM to the group, waits three seconds, then SIGKILLs.
-  The armed guard also SIGKILLs on Drop; normal exits disarm it.
+- Spawn with `env_clear`, the environment built only by
+  `platform::worker_environment`, null stdin, `kill_on_drop`, and the
+  platform process guard (`process/guard.rs`).
+- Cancellation on Unix signals the dedicated process group: SIGTERM, a three
+  second wait, then SIGKILL. On Windows the child joins a Job Object
+  (`KILL_ON_JOB_CLOSE`); there is no group SIGTERM, so the graceful step is an
+  immediate `TerminateJobObject`. The armed guard also kills on Drop; normal
+  exits disarm it.
 - Protocol stdout is one bounded JSON envelope per line; duplicate completion
   is rejected. Stderr remains logs and its 20-line tail explains failures.
 - The CPAL callback only converts samples and `try_send`s bounded chunks.

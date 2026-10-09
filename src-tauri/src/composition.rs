@@ -2,6 +2,11 @@ use crate::adapters::inbound::tauri::TauriEvents;
 use crate::adapters::outbound::chatgpt::{ChatGptOAuthAdapter, SystemClock, TauriBrowser};
 use crate::adapters::outbound::desktop::DesktopAdapter;
 use crate::adapters::outbound::recording::NativeRecorder;
+#[cfg(windows)]
+use crate::adapters::outbound::secrets::CredentialManager;
+use crate::adapters::outbound::secrets::SecretStore;
+#[cfg(not(windows))]
+use crate::adapters::outbound::secrets::SettingsFile;
 use crate::adapters::outbound::settings::LocalSettingsStore;
 use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::ports::{
@@ -29,9 +34,15 @@ pub fn run() {
             let refinement: Arc<dyn RefinementPort> = desktop.clone();
             let artifacts: Arc<dyn ArtifactPort> = desktop;
             let recording: Arc<dyn RecordingPort> = Arc::new(NativeRecorder::new(recording_events));
+            // Windows has an OS credential store; macOS keeps secrets in the
+            // settings file until the app ships a stable signature.
+            #[cfg(windows)]
+            let secrets: Arc<dyn SecretStore> = Arc::new(CredentialManager::default());
+            #[cfg(not(windows))]
+            let secrets: Arc<dyn SecretStore> = Arc::new(SettingsFile);
             // One store behind both ports: two objects over the same
             // settings.json would race each other's read-modify-write.
-            let local_settings = Arc::new(LocalSettingsStore::new(app.handle())?);
+            let local_settings = Arc::new(LocalSettingsStore::new(app.handle(), secrets)?);
             let settings: Arc<dyn SettingsPort> = local_settings.clone();
             let chatgpt_store: Arc<dyn ChatGptStore> = local_settings;
             let clock: Arc<dyn ClockPort> = Arc::new(SystemClock);
@@ -61,6 +72,7 @@ pub fn run() {
             crate::adapters::inbound::tauri::save_assistant_api_key,
             crate::adapters::inbound::tauri::save_assistant_settings,
             crate::adapters::inbound::tauri::save_engine_preset,
+            crate::adapters::inbound::tauri::save_compute_device,
             crate::adapters::inbound::tauri::refine_transcript,
             crate::adapters::inbound::tauri::start_transcription,
             crate::adapters::inbound::tauri::import_transcript,

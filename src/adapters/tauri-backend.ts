@@ -16,6 +16,7 @@ import type {
 } from "../domain/backend"
 import type {
   AssistantSettings,
+  ComputeDevice,
   EnginePreset,
   EnvironmentStatus,
   ImportedTranscript,
@@ -32,6 +33,7 @@ import type {
 } from "../domain/chatgpt"
 
 const enginePresetSchema = z.enum(["qwen3", "whisperx"])
+const computeDeviceSchema = z.enum(["cpu", "cuda"])
 
 const environmentSchema = z.object({
   enginePreset: enginePresetSchema,
@@ -43,6 +45,10 @@ const environmentSchema = z.object({
   dataDirectory: z.string(),
   defaultOutputDirectory: z.string(),
   engineVersion: z.string(),
+  computeDevice: computeDeviceSchema,
+  availablePresets: z.array(enginePresetSchema),
+  availableDevices: z.array(computeDeviceSchema),
+  cudaDriverDetected: z.boolean(),
 })
 
 const transcriptionResultSchema = z.object({
@@ -214,6 +220,10 @@ export class TauriBackend implements BackendPort {
 
   async saveEnginePreset(preset: EnginePreset): Promise<void> {
     await invoke("save_engine_preset", { preset })
+  }
+
+  async saveComputeDevice(device: ComputeDevice): Promise<void> {
+    await invoke("save_compute_device", { device })
   }
 
   async refineTranscript(

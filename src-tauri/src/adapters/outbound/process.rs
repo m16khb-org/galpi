@@ -1,11 +1,8 @@
 use crate::application::error::AppError;
 use crate::application::ports::JobEvents;
 use crate::domain::worker::{WorkerEvent, is_assistant_error_code, parse_worker_event};
-use nix::sys::signal::Signal;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -17,7 +14,7 @@ use uuid::Uuid;
 
 mod guard;
 
-use guard::ProcessGroupGuard;
+use guard::{Escalation, ProcessGroupGuard, configure};
 
 const MAX_LINE_BYTES: usize = 64 * 1024;
 
@@ -39,6 +36,7 @@ pub struct ProcessResult {
 }
 
 /// End a cancelled run: ask politely, then insist, and reap either way.
+/// On Windows both steps end the whole job at once; see [`Escalation`].
 ///
 /// Returning the error rather than raising it keeps both call sites a single
 /// expression, and the child is always waited on so no zombie survives.
@@ -46,10 +44,10 @@ async fn terminate_on_cancel(
     guard: &mut ProcessGroupGuard,
     child: &mut tokio::process::Child,
 ) -> Result<AppError, AppError> {
-    guard.terminate(Signal::SIGTERM)?;
+    guard.terminate(Escalation::Graceful)?;
     let wait = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;
     if wait.is_err() {
-        guard.terminate(Signal::SIGKILL)?;
+        guard.terminate(Escalation::Force)?;
         let _status = child.wait().await;
     }
     guard.disarm();
@@ -102,18 +100,12 @@ pub async fn run_process(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    #[cfg(unix)]
-    {
-        command.as_std_mut().process_group(0);
-    }
+    configure(&mut command);
 
     let mut child = command
         .spawn()
         .map_err(|error| AppError::io("프로세스를 시작하지 못했습니다", &error))?;
-    let process_id = child
-        .id()
-        .ok_or_else(|| AppError::new("PROCESS_ERROR", "프로세스 ID를 확인하지 못했습니다."))?;
-    let mut process_guard = ProcessGroupGuard::new(process_id);
+    let mut process_guard = ProcessGroupGuard::attach(&child)?;
     let stdout = child
         .stdout
         .take()

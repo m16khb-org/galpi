@@ -2,6 +2,7 @@ import type { GlossaryEntry } from "./glossary"
 import type { Participant } from "./participant"
 
 export type EnginePreset = "qwen3" | "whisperx"
+export type ComputeDevice = "cpu" | "cuda"
 
 export interface EnvironmentStatus {
   readonly enginePreset: EnginePreset
@@ -13,6 +14,12 @@ export interface EnvironmentStatus {
   readonly dataDirectory: string
   readonly defaultOutputDirectory: string
   readonly engineVersion: string
+  readonly computeDevice: ComputeDevice
+  /** Presets this platform offers; the first is the platform default. */
+  readonly availablePresets: readonly EnginePreset[]
+  /** Devices the platform can run on; empty when there is no choice to make. */
+  readonly availableDevices: readonly ComputeDevice[]
+  readonly cudaDriverDetected: boolean
 }
 
 export interface TranscriptionResult {

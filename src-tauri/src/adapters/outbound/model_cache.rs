@@ -1,4 +1,5 @@
-use super::paths::AppPaths;
+use super::paths::{AppPaths, canonical_blocking};
+use super::platform::{Os, home_directory};
 use crate::application::error::AppError;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
@@ -10,10 +11,8 @@ const MODEL_DIRECTORIES: [&str; 3] = [
 ];
 
 pub async fn import_standard_cache(paths: &AppPaths) -> Result<usize, AppError> {
-    let Some(home) = std::env::var_os("HOME") else {
-        return Ok(0);
-    };
-    let source = Path::new(&home).join(".cache/huggingface/hub");
+    let home = home_directory(Os::current(), &|key| std::env::var_os(key));
+    let source = home.join(".cache/huggingface/hub");
     let destination = paths.cache.join("huggingface/hub");
     tokio::task::spawn_blocking(move || import_models(&source, &destination))
         .await
@@ -36,7 +35,7 @@ fn import_models(source_hub: &Path, destination_hub: &Path) -> Result<usize, Err
         if !source.is_dir() {
             continue;
         }
-        let canonical_source = std::fs::canonicalize(&source)?;
+        let canonical_source = canonical_blocking(&source)?;
         copy_tree(&source, &destination_hub.join(directory), &canonical_source)?;
         imported += 1;
     }
@@ -65,15 +64,28 @@ fn copy_symlink(source: &Path, destination: &Path, source_root: &Path) -> Result
     if std::fs::symlink_metadata(destination).is_ok() {
         return Ok(());
     }
-    let resolved = std::fs::canonicalize(source)?;
+    let resolved = canonical_blocking(source)?;
     if !resolved.starts_with(source_root) {
         return Err(Error::new(
             ErrorKind::InvalidData,
             "model cache symlink escapes its repository",
         ));
     }
+    link_or_copy(source, destination, &resolved)
+}
+
+/// Keep the repository's relative symlink layout on unix.
+#[cfg(unix)]
+fn link_or_copy(source: &Path, destination: &Path, _resolved: &Path) -> Result<(), Error> {
     let target = std::fs::read_link(source)?;
     std::os::unix::fs::symlink(target, destination)
+}
+
+/// Creating symlinks on Windows needs a privilege ordinary users lack, so the
+/// already-contained target is hard-linked or copied instead.
+#[cfg(windows)]
+fn link_or_copy(_source: &Path, destination: &Path, resolved: &Path) -> Result<(), Error> {
+    copy_file(resolved, destination)
 }
 
 fn copy_file(source: &Path, destination: &Path) -> Result<(), Error> {
@@ -89,9 +101,9 @@ fn copy_file(source: &Path, destination: &Path) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::{MODEL_DIRECTORIES, can_use_offline_cache, import_models};
-    use std::os::unix::fs::{MetadataExt, symlink};
     use uuid::Uuid;
 
+    #[cfg(unix)]
     #[test]
     fn imports_fixed_model_cache_with_hard_links_and_safe_symlinks()
     -> Result<(), Box<dyn std::error::Error>> {
@@ -104,7 +116,7 @@ mod tests {
         std::fs::create_dir_all(&snapshot)?;
         std::fs::create_dir_all(blob.parent().ok_or("blob parent missing")?)?;
         std::fs::write(&blob, b"model")?;
-        symlink("../../blobs/model-data", snapshot.join("config.json"))?;
+        std::os::unix::fs::symlink("../../blobs/model-data", snapshot.join("config.json"))?;
 
         let imported = import_models(&source_hub, &destination_hub)?;
 
@@ -117,14 +129,41 @@ mod tests {
         assert_eq!(imported, 1);
         assert_eq!(std::fs::read(&imported_link)?, b"model");
         assert_eq!(
-            std::fs::metadata(&blob)?.ino(),
-            std::fs::metadata(&imported_blob)?.ino()
+            std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&blob)?),
+            std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&imported_blob)?)
         );
         assert!(
             std::fs::symlink_metadata(imported_link)?
                 .file_type()
                 .is_symlink()
         );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn imports_fixed_model_cache_by_hard_linking_or_copying_files()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a snapshot entry that is a regular file standing in for a link
+        let root = std::env::temp_dir().join(format!("galpi-model-cache-{}", Uuid::now_v7()));
+        let source_hub = root.join("source");
+        let destination_hub = root.join("destination");
+        let snapshot = source_hub
+            .join(MODEL_DIRECTORIES[0])
+            .join("snapshots/revision");
+        std::fs::create_dir_all(&snapshot)?;
+        std::fs::write(snapshot.join("config.json"), b"model")?;
+
+        // When
+        let imported = import_models(&source_hub, &destination_hub)?;
+
+        // Then
+        assert_eq!(imported, 1);
+        let copied = destination_hub
+            .join(MODEL_DIRECTORIES[0])
+            .join("snapshots/revision/config.json");
+        assert_eq!(std::fs::read(copied)?, b"model");
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

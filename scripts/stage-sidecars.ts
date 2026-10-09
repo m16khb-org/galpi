@@ -2,19 +2,13 @@ import { createHash } from "node:crypto"
 import { chmod, cp, mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { resolveSidecarTarget, SidecarStageError, UV_VERSION } from "./sidecar-targets"
 
-const UV_VERSION = "0.12.5"
-const TARGET = "aarch64-apple-darwin"
-const ARCHIVE_SHA256 = "5bb0e5fe008a773c3dbcb97ff79cd89e1241464fe9d2f986d52ad8f1b037bd62"
-const BINARY_SHA256 = "ad3564874e19defa0debefcf48e8381ac1d087c584190c1323c247bd351dd25f"
+const sidecar = resolveSidecarTarget(process.platform, process.arch, process.env)
 const BINARY_DIR = join(import.meta.dir, "..", "src-tauri", "binaries")
-const BINARY_PATH = join(BINARY_DIR, `uv-${TARGET}`)
+const BINARY_PATH = join(BINARY_DIR, sidecar.stagedName)
 const WORKER_SOURCE = join(import.meta.dir, "..", "worker")
 const WORKER_DESTINATION = join(import.meta.dir, "..", "src-tauri", "resources", "worker")
-
-class SidecarStageError extends Error {
-  readonly name = "SidecarStageError"
-}
 
 async function run(command: readonly string[]): Promise<void> {
   const child = Bun.spawn([...command], {
@@ -27,30 +21,52 @@ async function run(command: readonly string[]): Promise<void> {
   }
 }
 
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+function extractCommand(archivePath: string, workDir: string): readonly string[] {
+  if (sidecar.archiveName.endsWith(".tar.gz")) return ["tar", "-xzf", archivePath, "-C", workDir]
+  if (sidecar.archiveName.endsWith(".zip")) {
+    return process.platform === "win32"
+      ? [
+          "powershell",
+          "-NoProfile",
+          "-Command",
+          `Expand-Archive -LiteralPath '${archivePath}' -DestinationPath '${workDir}' -Force`,
+        ]
+      : ["unzip", "-q", "-o", archivePath, "-d", workDir]
+  }
+  throw new SidecarStageError(`unsupported archive type: ${sidecar.archiveName}`)
+}
+
 async function stageUv(): Promise<void> {
   if (await Bun.file(BINARY_PATH).exists()) {
-    const checksum = createHash("sha256")
-      .update(new Uint8Array(await Bun.file(BINARY_PATH).arrayBuffer()))
-      .digest("hex")
-    if (checksum === BINARY_SHA256) return
+    const checksum = sha256(new Uint8Array(await Bun.file(BINARY_PATH).arrayBuffer()))
+    if (checksum === sidecar.binarySha256) return
     await rm(BINARY_PATH)
   }
 
   await mkdir(BINARY_DIR, { recursive: true })
   const workDir = await mkdtemp(join(tmpdir(), "galpi-uv-"))
-  const archivePath = join(workDir, `uv-${TARGET}.tar.gz`)
-  const releaseUrl = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${TARGET}.tar.gz`
+  const archivePath = join(workDir, sidecar.archiveName)
+  const releaseUrl = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${sidecar.archiveName}`
 
-  await run(["curl", "-fsSL", releaseUrl, "-o", archivePath])
-  const archive = new Uint8Array(await Bun.file(archivePath).arrayBuffer())
-  const checksum = createHash("sha256").update(archive).digest("hex")
-  if (checksum !== ARCHIVE_SHA256) {
+  const response = await fetch(releaseUrl)
+  if (!response.ok) {
+    throw new SidecarStageError(`uv download failed: ${response.status} ${releaseUrl}`)
+  }
+  const archive = new Uint8Array(await response.arrayBuffer())
+  const checksum = sha256(archive)
+  if (checksum !== sidecar.archiveSha256) {
     throw new SidecarStageError(`uv archive checksum mismatch: ${checksum}`)
   }
+  await Bun.write(archivePath, archive)
 
-  await run(["tar", "-xzf", archivePath, "-C", workDir])
-  await Bun.write(BINARY_PATH, Bun.file(join(workDir, `uv-${TARGET}`, "uv")))
-  await chmod(BINARY_PATH, 0o755)
+  await run(extractCommand(archivePath, workDir))
+  await Bun.write(BINARY_PATH, Bun.file(join(workDir, sidecar.innerPath)))
+  if (process.platform !== "win32") await chmod(BINARY_PATH, 0o755)
+  await rm(workDir, { recursive: true, force: true })
 }
 
 async function stageWorker(): Promise<void> {
@@ -68,6 +84,8 @@ async function stageWorker(): Promise<void> {
     "requirements.lock",
     "requirements-qwen3.txt",
     "requirements-qwen3.lock",
+    "requirements-windows-cpu.lock",
+    "requirements-windows-cuda.lock",
   ]
   for (const file of requirements) {
     await cp(join(WORKER_SOURCE, file), join(WORKER_DESTINATION, file))

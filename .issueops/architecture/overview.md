@@ -32,10 +32,15 @@ adapters/tauri-backend composition.rs (root)          domain pure modules
 - DDD tactical: value objects (`SpeakerHint`, `Participant`, `GlossaryEntry`,
   `AssistantSettings`), aggregate root `Artifacts::path_for(kind)`, domain
   services as pure functions, conceptual in-memory `JobRegistry`.
-- Inbound adapters: `tauri.rs` (14 `#[tauri::command]`s + event bridge),
+- Inbound adapters: `tauri.rs` (24 `#[tauri::command]`s incl. `save_compute_device`, + event bridge),
   `tauri-backend.ts` (Zod boundary), worker `__main__.py`.
 - Outbound adapters: `process.rs` (worker supervision), `NativeRecorder`
   (CPAL), settings/paths adapters, worker `EventWriter` (stdout JSONL v1).
+- Platform branching lives only in outbound adapters and `composition.rs`:
+  outbound code branches on `Os` (`platform.rs`, `Os::current()` is the single
+  `cfg!(windows)`); `#[cfg]` is reserved for code that cannot compile elsewhere
+  (Win32 FFI, `nix`). `check-architecture.ts` forbids `cfg(windows)`,
+  `cfg(unix)`, `target_os`, `cfg!(` in domain/application/inbound.
 
 ## Enforcement
 

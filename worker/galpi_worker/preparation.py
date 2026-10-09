@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import cast
 
 from .protocol import EventWriter
-from .runtime import configure_warnings, ffmpeg_executable, select_torch_device
+from .runtime import (
+    configure_warnings,
+    detect_torch_device,
+    ffmpeg_executable,
+    ffmpeg_link_name,
+    needs_cpu_fallback,
+)
 
 PYANNOTE_MODEL_ID = "pyannote/speaker-diarization-community-1"
 QWEN3_ASR_MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
@@ -121,7 +127,7 @@ def prepare_models(
 def link_ffmpeg(engine_bin: Path) -> None:
     engine_bin.mkdir(parents=True, exist_ok=True)
     ffmpeg_target = Path(ffmpeg_executable())
-    ffmpeg_link = engine_bin / "ffmpeg"
+    ffmpeg_link = engine_bin / ffmpeg_link_name()
     if ffmpeg_link.exists() or ffmpeg_link.is_symlink():
         ffmpeg_link.unlink()
     try:
@@ -132,11 +138,10 @@ def link_ffmpeg(engine_bin: Path) -> None:
 
 
 def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
-    import torch
     import whisperx
     from whisperx.diarize import DiarizationPipeline
 
-    device = select_torch_device(mps_available=torch.backends.mps.is_available())
+    device = detect_torch_device()
 
     events.emit(
         "phase", phase="models", percent=10.0, message="전사 모델을 준비합니다."
@@ -167,9 +172,11 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
             language_code="ko", device=alignment_device
         )
     except Exception:
-        if alignment_device != "mps":
+        if not needs_cpu_fallback(alignment_device):
             raise
-        events.log("MPS 정렬 모델 준비에 실패해 CPU로 다시 시도합니다.")
+        events.log(
+            f"{alignment_device.upper()} 정렬 모델 준비에 실패해 CPU로 다시 시도합니다."
+        )
         alignment_device = "cpu"
         align_model, _metadata = whisperx.load_align_model(
             language_code="ko", device=alignment_device
@@ -183,19 +190,26 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
         percent=78.0,
         message=f"{device.upper()}용 화자분리 모델을 준비합니다.",
     )
+    # The community diarizer is gated, and the worker runs with implicit
+    # tokens disabled, so the settings token must be handed over explicitly.
+    token = os.environ.get("HF_TOKEN") or None
     diarization_device = device
     try:
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
+            token=token,
             device=diarization_device,
         )
     except Exception:
-        if diarization_device != "mps":
+        if not needs_cpu_fallback(diarization_device):
             raise
-        events.log("MPS 화자분리 모델 준비에 실패해 CPU로 다시 시도합니다.")
+        events.log(
+            f"{diarization_device.upper()} 화자분리 모델 준비에 실패해 CPU로 다시 시도합니다."
+        )
         diarization_device = "cpu"
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
+            token=token,
             device=diarization_device,
         )
     del diarization
@@ -226,7 +240,7 @@ def prepare_qwen3_models(manifest: Path, events: EventWriter) -> None:
     import torch
     from huggingface_hub import snapshot_download
 
-    device = select_torch_device(mps_available=torch.backends.mps.is_available())
+    device = detect_torch_device()
     token = os.environ.get("HF_TOKEN") or None
 
     events.emit(

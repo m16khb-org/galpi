@@ -14,7 +14,7 @@
 }
 
 :root {
-  font-family: var(--seed-font-family);
+  font-family: var(--seed-font-family), "Segoe UI", "Malgun Gothic", sans-serif;
   color: var(--seed-color-fg-neutral);
   background: var(--seed-color-bg-neutral-muted);
   font-synthesis: none;
@@ -523,6 +523,7 @@ summary:focus-visible {
   font:
     var(--seed-font-size-t1) / var(--seed-line-height-t1) "SFMono-Regular",
     Menlo,
+    Consolas,
     monospace;
 }
 
@@ -865,6 +866,7 @@ button:disabled:not(.seed-action-button) {
   font:
     var(--seed-font-weight-bold) var(--seed-font-size-t4) "SFMono-Regular",
     Menlo,
+    Consolas,
     monospace;
   font-variant-numeric: tabular-nums;
 }
@@ -958,7 +960,7 @@ button:disabled:not(.seed-action-button) {
   margin-top: var(--seed-dimension-x1_5);
   overflow: hidden;
   color: var(--seed-color-fg-neutral-muted);
-  font-family: "SFMono-Regular", Menlo, monospace;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: var(--seed-font-size-t1);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1429,6 +1431,7 @@ button:disabled:not(.seed-action-button) {
   font:
     var(--seed-font-size-t1) / var(--seed-line-height-t1) "SFMono-Regular",
     Menlo,
+    Consolas,
     monospace;
   white-space: pre-wrap;
 }
@@ -1557,4 +1560,27 @@ button:disabled:not(.seed-action-button) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* Both tie with the global `html [hidden]` rule, so each needs its own hide. */
+.engine-segmented label[hidden],
+#engine-device[hidden] {
+  display: none;
+}
+
+#engine-device {
+  display: grid;
+  gap: var(--seed-dimension-x2);
+  margin-top: var(--seed-dimension-x2);
+}
+
+#engine-device p {
+  margin: 0;
+  font-size: var(--seed-font-size-t1);
+  color: var(--seed-color-fg-neutral-muted);
+}
+
+.segmented-control input:disabled + span {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

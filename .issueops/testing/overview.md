@@ -28,6 +28,24 @@ uvx ruff format --check worker
 PYTHONPATH=. python3 -m unittest discover -s worker/tests -t . -v
 ```
 
+CI (`.github/workflows/ci.yml`) runs the `rust`, `frontend`, and `worker` jobs
+as a matrix on `macos-15` and `windows-latest`. Windows-only jobs:
+`windows-engine` (installs `requirements-windows-cpu.lock`, imports
+whisperx/torch/pyannote, runs the ignored worker-environment test, and
+dry-run resolves the CUDA lock), `bundle-windows` (`bun run build`, asserts and
+uploads the NSIS `.exe`), and `windows-install-smoke` (installs that artifact
+and verifies the engine via `scripts/ci/windows-install-smoke.ps1`).
+
+Manual Windows gates (not automated):
+
+- Run the NSIS installer, prepare the engine, and transcribe a sample file.
+- Record from the microphone, then cancel; confirm the recording is discarded.
+- Cancel a running job and confirm in Task Manager that no worker/Python
+  process remains.
+- Save the Hugging Face token and assistant API key, restart the app, and
+  confirm they persist (Windows Credential Manager entries
+  `com.m16khb.galpi:hugging-face-token` / `:assistant-api-key`).
+
 ## Test structure in this repo
 
 - Tests are colocated beside implementations: `src/**/*.test.ts` and

@@ -50,6 +50,32 @@ test("workspace grid reserves a row for the app-error banner", async () => {
   expect(rows?.trim()).toBe("auto auto minmax(0, 1fr) auto")
 })
 
+test("font stacks cover Windows system fonts", async () => {
+  // Given
+  const stylesheet = await Bun.file(new URL("./styles.css", import.meta.url)).text()
+
+  // When
+  const root = stylesheet.match(/:root\s*\{[^}]*?font-family:([^;]+);/u)?.at(1) ?? ""
+  const monoStacks = [...stylesheet.matchAll(/"SFMono-Regular"[^;]*?;/gu)].map((match) => match[0])
+
+  // Then: Korean UI text and mono blocks fall back to Windows fonts before generic families
+  expect(root).toContain('"Segoe UI"')
+  expect(root).toContain('"Malgun Gothic"')
+  expect(monoStacks.length).toBeGreaterThan(0)
+  for (const stack of monoStacks) expect(stack).toContain("Consolas")
+})
+
+test("component display rules do not outrank the hidden attribute", async () => {
+  // Given
+  const stylesheet = await Bun.file(new URL("./styles.css", import.meta.url)).text()
+
+  // Then: `html [hidden]` ties with single-class rules, so these need own hides
+  const hideRule = stylesheet.match(/([^{}]+)\{([^}]*display:\s*none[^}]*)\}/gu) ?? []
+  const selectors = hideRule.join("\n")
+  expect(selectors).toMatch(/\.engine-segmented\s+label\[hidden\]/u)
+  expect(selectors).toMatch(/#engine-device\[hidden\]/u)
+})
+
 test("loads SEED tokens and the action-button recipe before any app rule", async () => {
   // Given
   const stylesheet = await readStylesheet()

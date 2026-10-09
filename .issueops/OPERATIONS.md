@@ -8,6 +8,7 @@ description: Operations quick-start, reference map, and runtime procedures.
 Installation and runtime operation. This root is the family index; focused detail lives under [operations/guides/](operations/guides/).
 
 - [Operations overview](operations/guides/overview.md)
+- Supported hosts: macOS 14+ (Apple Silicon) and Windows 10/11 x64; per-OS prerequisites and build outputs are in the overview.
 
 ## Appending knowledge
 

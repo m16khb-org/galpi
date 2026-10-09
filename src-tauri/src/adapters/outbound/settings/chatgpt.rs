@@ -181,7 +181,6 @@ mod tests {
         ChatGptTokens,
     };
     use serde_json::Value;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -285,8 +284,11 @@ mod tests {
                 .as_str()
                 .is_some_and(|tokens| tokens.contains("refresh-value-1"))
         );
+        #[cfg(unix)]
         assert_eq!(
-            tokio::fs::metadata(&path).await?.permissions().mode() & 0o777,
+            std::os::unix::fs::PermissionsExt::mode(
+                &tokio::fs::metadata(&path).await?.permissions()
+            ) & 0o777,
             0o600
         );
 

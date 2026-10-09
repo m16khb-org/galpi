@@ -21,7 +21,7 @@ from .core import (
     validate_speaker_hint,
 )
 from .protocol import EventWriter
-from .runtime import configure_warnings, select_torch_device
+from .runtime import configure_warnings, detect_torch_device, needs_cpu_fallback
 
 if TYPE_CHECKING:
     from whisperx.diarize import DiarizationPipeline, DiarizationSegments
@@ -83,11 +83,10 @@ def transcribe_whisperx(
     output_dir.mkdir(parents=True, exist_ok=True)
     configure_warnings()
 
-    import torch
     import whisperx
     from whisperx.diarize import DiarizationPipeline, assign_word_speakers
 
-    device = select_torch_device(mps_available=torch.backends.mps.is_available())
+    device = detect_torch_device()
     base_name = audio_path.stem
     checkpoint_path = output_dir / f"{base_name}.aligned.v2.json"
     audio = whisperx.load_audio(str(audio_path))
@@ -108,7 +107,7 @@ def transcribe_whisperx(
             "phase",
             phase="transcribing",
             percent=5.0,
-            message="한국어 음성을 전사합니다. (CTranslate2 CPU · Apple Accelerate)",
+            message="한국어 음성을 전사합니다. (CTranslate2 CPU int8)",
         )
         asr_options: dict[str, object] = {
             "no_speech_threshold": 0.75,
@@ -161,9 +160,9 @@ def transcribe_whisperx(
                 ),
             )
         except Exception:
-            if device != "mps":
+            if not needs_cpu_fallback(device):
                 raise
-            events.log("MPS 문장 정렬에 실패해 CPU로 다시 시도합니다.")
+            events.log(f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다.")
             align_model, metadata = whisperx.load_align_model(
                 language_code="ko", device="cpu"
             )
@@ -195,9 +194,9 @@ def transcribe_whisperx(
         )
         diarization_segments = _diarize(diarization, audio, speaker_hint)
     except Exception:
-        if device != "mps":
+        if not needs_cpu_fallback(device):
             raise
-        events.log("MPS 화자분리에 실패해 CPU로 다시 시도합니다.")
+        events.log(f"{device.upper()} 화자분리에 실패해 CPU로 다시 시도합니다.")
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
             device="cpu",
