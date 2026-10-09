@@ -42,9 +42,12 @@ Manual Windows gates (not automated):
 - Record from the microphone, then cancel; confirm the recording is discarded.
 - Cancel a running job and confirm in Task Manager that no worker/Python
   process remains.
-- Save the Hugging Face token and assistant API key, restart the app, and
-  confirm they persist (Windows Credential Manager entries
-  `com.m16khb.galpi:hugging-face-token` / `:assistant-api-key`).
+- Save the assistant API key, restart the app, and confirm it persists
+  (Windows Credential Manager entry `com.m16khb.galpi:assistant-api-key`).
+- Upgrade from a build with a Hugging Face token: with a stored
+  `com.m16khb.galpi:hugging-face-token` entry and `huggingFaceTokenStored: true`
+  in `settings.json`, launch once and confirm the entry is gone, the settings
+  load, and the file no longer names the token.
 
 ## Test structure in this repo
 

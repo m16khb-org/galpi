@@ -26,7 +26,7 @@ pub struct WhisperxLock {
     pub extra_args: &'static [&'static str],
 }
 
-const MAC_PRESETS: [EnginePreset; 2] = [EnginePreset::Qwen3, EnginePreset::WhisperX];
+const MAC_PRESETS: [EnginePreset; 2] = [EnginePreset::WhisperX, EnginePreset::Qwen3];
 const WINDOWS_PRESETS: [EnginePreset; 1] = [EnginePreset::WhisperX];
 const WINDOWS_DEVICES: [ComputeDevice; 2] = [ComputeDevice::Cpu, ComputeDevice::Cuda];
 

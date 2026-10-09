@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-/// Selectable transcription engine preset. `Qwen3` is the default; the legacy
-/// `WhisperX` stack stays selectable as the previous engine set.
+/// Selectable transcription engine preset. `WhisperX` is the default on every
+/// platform; `Qwen3` is an opt-in preset that only macOS offers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EnginePreset {
-    #[default]
     Qwen3,
+    #[default]
     WhisperX,
 }
 
@@ -44,14 +44,14 @@ mod tests {
     use super::{ComputeDevice, EnginePreset, EngineSelection};
 
     #[test]
-    fn defaults_to_qwen3_and_round_trips_wire_names() {
-        // Given / When / Then: fresh installs start on the candidate set
+    fn defaults_to_whisperx_and_round_trips_wire_names() {
+        // Given / When / Then: fresh installs start on WhisperX
         assert!(matches!(
             serde_json::to_value(EnginePreset::default()),
-            Ok(value) if value == serde_json::json!("qwen3")
+            Ok(value) if value == serde_json::json!("whisperx")
         ));
-        let parsed: Result<EnginePreset, _> = serde_json::from_value(serde_json::json!("whisperx"));
-        assert!(matches!(parsed, Ok(EnginePreset::WhisperX)));
+        let parsed: Result<EnginePreset, _> = serde_json::from_value(serde_json::json!("qwen3"));
+        assert!(matches!(parsed, Ok(EnginePreset::Qwen3)));
     }
 
     #[test]
@@ -81,6 +81,6 @@ mod tests {
         };
         assert_eq!(selection.preset, EnginePreset::WhisperX);
         assert_eq!(selection.device, ComputeDevice::Cuda);
-        assert_eq!(EngineSelection::default().preset, EnginePreset::Qwen3);
+        assert_eq!(EngineSelection::default().preset, EnginePreset::WhisperX);
     }
 }

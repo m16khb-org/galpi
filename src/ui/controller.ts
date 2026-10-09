@@ -69,7 +69,6 @@ export class AppController {
       this.outputRoot = environment.defaultOutputDirectory
       this.view.setOutput(environment.defaultOutputDirectory)
       this.view.setEnvironment(environment)
-      this.view.tokenSettings.setStored(await this.backend.huggingFaceTokenStored())
       const assistant = await this.backend.loadAssistantSettings()
       this.view.assistantSettings.setStored(assistant.apiKeyStored)
       this.view.setAssistantKeyReady(this.chatgpt.ready(assistant.apiKeyStored))
@@ -94,8 +93,7 @@ export class AppController {
   private bind(): void {
     this.view.on("prepare", () => void this.prepare())
     this.view.on("open-settings", () => void this.openSettings())
-    this.view.on("close-settings", () => this.view.tokenSettings.close())
-    this.view.on("toggle-token-visibility", () => this.view.tokenSettings.toggleVisibility())
+    this.view.on("close-settings", () => this.view.settingsDialog.close())
     this.view.on("toggle-assistant-visibility", () =>
       this.view.assistantSettings.toggleVisibility(),
     )
@@ -105,11 +103,9 @@ export class AppController {
     this.view.on("clear-attendees", () => this.view.attendees.clear())
     this.view.onEnginePresetChange((preset) => void this.switchEngine(preset))
     this.view.onComputeDeviceChange((device) => void this.switchComputeDevice(device))
-    this.view.on("clear-token", () => void this.clearToken())
     this.view.on("clear-assistant-key", () => void this.clearAssistantKey())
     this.view.on("refine", () => void this.refine())
     this.view.on("open-minutes", () => void this.openArtifact("minutes"))
-    this.view.on("model-access", () => void this.openModelAccess())
     this.view.on("choose-audio", () => void this.chooseAudio())
     this.view.on("import-transcript", () => void this.importTranscript())
     this.view.on("choose-output", () => void this.chooseOutput())
@@ -178,14 +174,12 @@ export class AppController {
   }
 
   private async openSettings(): Promise<void> {
-    const settings = this.view.tokenSettings
+    const settings = this.view.settingsDialog
     const assistant = this.view.assistantSettings
     settings.show()
-    settings.setBusy(true)
     assistant.setBusy(true)
     settings.showMessage("저장된 설정을 불러오는 중입니다.")
     try {
-      settings.setStored(await this.backend.huggingFaceTokenStored())
       const loaded = await this.backend.loadAssistantSettings()
       assistant.setSettings(loaded)
       this.view.setAssistantKeyReady(this.chatgpt.ready(loaded.apiKeyStored))
@@ -197,28 +191,20 @@ export class AppController {
       settings.showMessage(errorMessage(error), "error")
       return
     } finally {
-      settings.setBusy(false)
       assistant.setBusy(false)
     }
     await this.chatgpt.showModels()
   }
 
   private async persistSettings(): Promise<void> {
-    const settings = this.view.tokenSettings
+    const settings = this.view.settingsDialog
     const assistant = this.view.assistantSettings
     settings.showMessage("변경사항을 자동 저장하는 중입니다.", "saving")
     try {
-      // Autosave runs on every edit anywhere in the sheet. Saving the token
-      // only when the user has actually typed a new one keeps a roster edit
-      // from reaching the keychain, which on macOS means a prompt.
-      const pending = settings.pendingToken()
-      if (pending !== null) {
-        await this.backend.saveHuggingFaceToken(pending)
-        settings.setToken(pending)
-      }
-      // The same rule as the token above: the sheet does not hold a stored key,
-      // so only one the user just typed is worth sending. The key has its own
-      // command, which keeps it out of the settings payload entirely.
+      // Autosave runs on every edit anywhere in the sheet. The sheet does not
+      // hold a stored key, so only one the user just typed is worth sending.
+      // The key has its own command, which keeps it out of the settings
+      // payload entirely.
       const pendingKey = assistant.pendingKey()
       if (pendingKey !== null) {
         await this.backend.saveAssistantApiKey(pendingKey)
@@ -259,24 +245,10 @@ export class AppController {
     }
   }
 
-  private async clearToken(): Promise<void> {
-    const settings = this.view.tokenSettings
-    settings.setBusy(true)
-    try {
-      await this.backend.saveHuggingFaceToken("")
-      settings.clearToken()
-      settings.showMessage("저장된 토큰을 지웠습니다.")
-    } catch (error) {
-      settings.showMessage(errorMessage(error), "error")
-    } finally {
-      settings.setBusy(false)
-    }
-  }
-
   /// Clearing is how a stored key is replaced: the window never receives the
   /// value, so there is nothing to edit in place.
   private async clearAssistantKey(): Promise<void> {
-    const settings = this.view.tokenSettings
+    const settings = this.view.settingsDialog
     const assistant = this.view.assistantSettings
     assistant.setBusy(true)
     try {
@@ -288,14 +260,6 @@ export class AppController {
       settings.showMessage(errorMessage(error), "error")
     } finally {
       assistant.setBusy(false)
-    }
-  }
-
-  private async openModelAccess(): Promise<void> {
-    try {
-      await this.backend.openModelAccessPage()
-    } catch (error) {
-      this.view.showError(errorMessage(error))
     }
   }
 

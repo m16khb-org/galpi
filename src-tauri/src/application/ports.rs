@@ -9,7 +9,7 @@ use crate::domain::chatgpt::{
     SignInGrant, SignInRequest,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
-use crate::domain::job::{SetupRequest, SpeakerHint};
+use crate::domain::job::SpeakerHint;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use crate::domain::worker::WorkerEvent;
 use async_trait::async_trait;
@@ -25,7 +25,6 @@ pub trait EnginePort: Send + Sync {
         &self,
         job_id: Uuid,
         cancel: &mut oneshot::Receiver<()>,
-        request: &SetupRequest,
         selection: EngineSelection,
     ) -> Result<EnvironmentStatus, AppError>;
 }
@@ -89,10 +88,6 @@ pub trait RecordingEvents: Send + Sync {
 
 #[async_trait]
 pub trait SettingsPort: Send + Sync {
-    /// Whether a Hugging Face token is on file, without reading it.
-    async fn hugging_face_token_stored(&self) -> Result<bool, AppError>;
-    async fn load_hugging_face_token(&self) -> Result<Option<String>, AppError>;
-    async fn save_hugging_face_token(&self, token: Option<String>) -> Result<(), AppError>;
     /// Everything except the API key, which stays in the keychain until a
     /// refinement actually needs it.
     async fn load_assistant(&self) -> Result<AssistantSettings, AppError>;

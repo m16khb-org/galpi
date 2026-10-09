@@ -346,7 +346,6 @@ summary:focus-visible {
   text-align: right;
 }
 
-.setup-grid,
 .transcription-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
@@ -357,6 +356,7 @@ summary:focus-visible {
 .status-list {
   display: grid;
   gap: var(--seed-dimension-x2);
+  margin-top: var(--seed-dimension-x7);
 }
 
 .status-row {
@@ -390,38 +390,6 @@ summary:focus-visible {
   color: var(--seed-color-fg-positive-contrast);
 }
 
-.token-field {
-  padding: var(--seed-dimension-x5);
-  background: var(--seed-color-bg-neutral-weak);
-  border-radius: var(--seed-radius-r3);
-}
-
-.token-summary {
-  display: grid;
-  align-content: start;
-}
-
-.token-summary-header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--seed-dimension-x3);
-  align-items: center;
-}
-
-.token-summary-header strong {
-  font-size: var(--seed-font-size-t2);
-}
-
-.token-summary-header span {
-  color: var(--seed-color-fg-warning-contrast);
-  font-size: var(--seed-font-size-t1);
-  font-weight: var(--seed-font-weight-bold);
-}
-
-.token-summary-header span[data-state="ready"] {
-  color: var(--seed-color-fg-positive-contrast);
-}
-
 .field-label {
   display: flex;
   justify-content: space-between;
@@ -433,7 +401,6 @@ summary:focus-visible {
 
 /* Inputs keep their markup, so the SEED text-input outline values are applied
    to the native controls instead of the recipe's wrapper slots. */
-.token-field input,
 .number-fields input,
 .secret-field input,
 .settings-input,
@@ -459,7 +426,6 @@ summary:focus-visible {
   color: var(--seed-color-fg-neutral-subtle);
 }
 
-.token-field input,
 .number-fields input {
   width: 100%;
   height: var(--seed-dimension-x10);
@@ -467,64 +433,11 @@ summary:focus-visible {
   padding: 0 var(--seed-dimension-x3);
 }
 
-.token-field p,
 .speaker-panel > p {
   margin: var(--seed-dimension-x2_5) 0 0;
   color: var(--seed-color-fg-neutral-muted);
   font-size: var(--seed-font-size-t1);
   line-height: var(--seed-line-height-t1);
-}
-
-.token-guide-anchor {
-  position: relative;
-  margin-top: var(--seed-dimension-x3);
-  padding-top: var(--seed-dimension-x3);
-  border-top: 1px solid var(--seed-color-stroke-neutral-weak);
-}
-
-.token-guide-popover {
-  position: fixed;
-  z-index: 30;
-  width: min(420px, calc(100vw - 40px));
-  max-height: min(480px, calc(100dvh - var(--popover-top) - 20px));
-  padding: var(--seed-dimension-x4_5);
-  overflow: auto;
-  background: var(--seed-color-bg-layer-default);
-  border: 1px solid var(--seed-color-stroke-neutral-weak);
-  border-radius: var(--seed-radius-r3);
-  box-shadow: var(--seed-shadow-s3);
-}
-
-.token-guide-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.token-guide-header > strong {
-  font-size: var(--seed-font-size-t3);
-}
-
-.token-guide-popover ol {
-  margin: var(--seed-dimension-x2_5) 0 0;
-  padding-left: var(--seed-dimension-x4_5);
-  color: var(--seed-color-fg-neutral-muted);
-  font-size: var(--seed-font-size-t1);
-  line-height: var(--seed-line-height-t1);
-}
-
-.token-guide-popover li + li {
-  margin-top: var(--seed-dimension-x1_5);
-}
-
-.token-guide-popover code {
-  overflow-wrap: anywhere;
-  color: var(--seed-color-fg-neutral);
-  font:
-    var(--seed-font-size-t1) / var(--seed-line-height-t1) "SFMono-Regular",
-    Menlo,
-    Consolas,
-    monospace;
 }
 
 .settings-dialog {
@@ -632,7 +545,6 @@ summary:focus-visible {
 }
 
 .settings-section-heading p,
-#settings-token-help,
 #settings-assistant-help,
 #settings-background-help,
 #chatgpt-plan-line,
@@ -740,8 +652,7 @@ summary:focus-visible {
 /* Text actions sit under copy: start-aligned (the recipe centers content, which
    floats mid-row inside grid cards) and with the recipe's public inline padding
    hook narrowed so the label keeps the copy's left edge. */
-.text-button,
-.token-guide-trigger {
+.text-button {
   justify-self: start;
   --seed-box-padding-left: var(--seed-dimension-x1_5);
   --seed-box-padding-right: var(--seed-dimension-x1_5);

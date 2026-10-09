@@ -24,8 +24,6 @@ import type { SpeakerHint } from "./speaker"
 export interface BackendPort {
   diagnose(): Promise<EnvironmentStatus>
   prepare(jobId: string): Promise<SetupResult>
-  huggingFaceTokenStored(): Promise<boolean>
-  saveHuggingFaceToken(token: string): Promise<void>
   loadAssistantSettings(): Promise<AssistantSettings>
   /** Stores the key on its own so a settings autosave can never carry it; "" clears it. */
   saveAssistantApiKey(key: string): Promise<void>
@@ -50,7 +48,6 @@ export interface BackendPort {
   /** Opens at the Galpi meeting root when one is known (default ~/Documents/Galpi). */
   chooseTranscript(defaultPath: string | null): Promise<string | null>
   chooseOutputDirectory(): Promise<string | null>
-  openModelAccessPage(): Promise<void>
   listenToJobs(handler: (event: JobEvent) => void): Promise<() => void>
   loadChatGptSettings(): Promise<ChatGptSettings>
   /** Saves only what the window owns; the account and its tokens stay with the host. */

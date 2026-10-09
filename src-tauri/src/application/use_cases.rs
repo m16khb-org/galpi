@@ -86,21 +86,10 @@ impl Application {
     }
 
     pub async fn prepare(&self, request: SetupRequest) -> Result<SetupResult, AppError> {
-        let request = if request.hugging_face_token.is_some() {
-            request
-        } else {
-            SetupRequest {
-                job_id: request.job_id,
-                hugging_face_token: self.settings.load_hugging_face_token().await?,
-            }
-        };
         let selection = self.engine_selection().await?;
         let (job, mut cancel) = self.jobs.claim_with_id(request.job_id)?;
         let job_id = job.id();
-        let result = self
-            .engine
-            .prepare(job_id, &mut cancel, &request, selection)
-            .await;
+        let result = self.engine.prepare(job_id, &mut cancel, selection).await;
         result.map(|status| SetupResult { job_id, status })
     }
 
@@ -110,17 +99,6 @@ impl Application {
 
     pub async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError> {
         self.settings.save_compute_device(device).await
-    }
-
-    pub async fn hugging_face_token_stored(&self) -> Result<bool, AppError> {
-        self.settings.hugging_face_token_stored().await
-    }
-
-    pub async fn save_hugging_face_token(&self, token: String) -> Result<(), AppError> {
-        let token = token.trim();
-        self.settings
-            .save_hugging_face_token((!token.is_empty()).then(|| token.to_owned()))
-            .await
     }
 
     pub async fn load_assistant_settings(&self) -> Result<AssistantSettings, AppError> {

@@ -20,8 +20,6 @@ function unavailableBackend(): BackendPort {
   return {
     diagnose: unavailable,
     prepare: unavailable,
-    huggingFaceTokenStored: unavailable,
-    saveHuggingFaceToken: unavailable,
     saveAssistantApiKey: unavailable,
     loadAssistantSettings: unavailable,
     saveAssistantSettings: unavailable,
@@ -40,7 +38,6 @@ function unavailableBackend(): BackendPort {
     chooseAudio: unavailable,
     chooseTranscript: unavailable,
     chooseOutputDirectory: unavailable,
-    openModelAccessPage: unavailable,
     listenToJobs: unavailable,
     loadChatGptSettings: unavailable,
     saveChatGptPreferences: unavailable,
@@ -101,10 +98,10 @@ describe("AppController startup without a native runtime", () => {
     const banner = root.querySelector("#app-error") as HTMLElement
     const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-    // When: the user triggers the three unguarded direct actions. Transcript
+    // When: the user triggers the two unguarded direct actions. Transcript
     // import is absent here: without a runtime the output folder is unknown and
     // the import action reports that guard error instead of reaching IPC.
-    for (const action of ["choose-audio", "choose-output", "model-access"]) {
+    for (const action of ["choose-audio", "choose-output"]) {
       banner.textContent = ""
       ;(root.querySelector(`[data-action="${action}"]`) as HTMLElement).click()
       await flush()
@@ -132,8 +129,8 @@ describe("AppController engine preset", () => {
     const backend = {
       diagnose: async () => {
         const preset = (state.preset ?? "qwen3") as "qwen3" | "whisperx"
-        // In this fake only the legacy whisperx stack is installed: qwen3 is
-        // the unready default, whisperx becomes ready once selected.
+        // In this fake only the whisperx stack is installed: a qwen3 selection
+        // is unready, whisperx becomes ready once selected.
         const ready = preset === "whisperx"
         return {
           enginePreset: preset,
@@ -152,8 +149,6 @@ describe("AppController engine preset", () => {
         }
       },
       prepare: unavailable,
-      huggingFaceTokenStored: async () => false,
-      saveHuggingFaceToken: unavailable,
       saveAssistantApiKey: unavailable,
       loadAssistantSettings: async () => ({
         apiKeyStored: false,
@@ -182,7 +177,6 @@ describe("AppController engine preset", () => {
       chooseAudio: unavailable,
       chooseTranscript: unavailable,
       chooseOutputDirectory: unavailable,
-      openModelAccessPage: unavailable,
       listenToJobs: async () => () => undefined,
       loadChatGptSettings: async () => signedOutChatGpt,
       saveChatGptPreferences: unavailable,
@@ -196,7 +190,7 @@ describe("AppController engine preset", () => {
     const controller = new AppController(backend as unknown as BackendPort, new AppView(root))
     await controller.start()
 
-    // When: the user opens settings and switches to the legacy engine
+    // When: the user opens settings and switches to the other engine
     ;(root.querySelector('[data-action="open-settings"]') as HTMLElement).click()
     await new Promise((resolve) => setTimeout(resolve, 0))
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -254,8 +248,6 @@ describe("AppController transcript import", () => {
         cudaDriverDetected: false,
       }),
       prepare: unavailable,
-      huggingFaceTokenStored: async () => false,
-      saveHuggingFaceToken: unavailable,
       saveAssistantApiKey: unavailable,
       loadAssistantSettings: async () => ({
         apiKeyStored: true,
@@ -289,7 +281,6 @@ describe("AppController transcript import", () => {
         return "/tmp/팀미팅.txt"
       },
       chooseOutputDirectory: unavailable,
-      openModelAccessPage: unavailable,
       listenToJobs: async () => () => undefined,
       loadChatGptSettings: async () => signedOutChatGpt,
       saveChatGptPreferences: unavailable,
@@ -361,7 +352,6 @@ describe("AppController ChatGPT sign-in", () => {
         availableDevices: [] as const,
         cudaDriverDetected: false,
       }),
-      huggingFaceTokenStored: async () => false,
       loadAssistantSettings: async () => ({
         apiKeyStored: false,
         model: null,
@@ -642,7 +632,6 @@ describe("AppController compute device", () => {
           cudaDriverDetected: true,
         }
       },
-      huggingFaceTokenStored: async () => false,
       loadAssistantSettings: async () => ({
         apiKeyStored: false,
         model: null,

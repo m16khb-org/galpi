@@ -23,8 +23,8 @@ the values, so none are copied here.
 | Role | Token | SEED step (light) | Usage |
 |---|---|---|---|
 | Canvas | `--seed-color-bg-neutral-muted` | gray-100 | Window canvas, status and artifact rows, file pickers, footer |
-| Grouped surface | `--seed-color-bg-neutral-weak` | gray-200 | Setup rail, token, speaker, and settings sections, path display, completed job row |
-| Layer | `--seed-color-bg-layer-default` | gray-00 | Panels, settings sheet, popover, inputs, selected segment, engine chip |
+| Grouped surface | `--seed-color-bg-neutral-weak` | gray-200 | Setup rail, speaker, and settings sections, path display, completed job row |
+| Layer | `--seed-color-bg-layer-default` | gray-00 | Panels, settings sheet, inputs, selected segment, engine chip |
 | Inverse | `--seed-color-bg-neutral-inverted` | gray-900 | Log panel |
 | Track | `--seed-color-bg-neutral-weak-alpha` | black alpha-200 | Segmented-control track behind the selected option |
 | Overlay | `--seed-color-bg-overlay` | black alpha-700 | Settings dialog backdrop |
@@ -32,7 +32,7 @@ the values, so none are copied here.
 | Text/muted | `--seed-color-fg-neutral-muted` | gray-800 | Supporting copy (6.6:1 on white, 6.0:1 on gray-200) |
 | Placeholder | `--seed-color-fg-neutral-subtle` | gray-700 | Input placeholders only, never copy (3.4:1) |
 | Text/inverse | `--seed-color-fg-neutral-inverted` | gray-00 | Log text (13.3:1) |
-| Stroke | `--seed-color-stroke-neutral-weak` | gray-400 | Inputs, dividers, sheet and popover edges, waveform track |
+| Stroke | `--seed-color-stroke-neutral-weak` | gray-400 | Inputs, dividers, sheet edges, waveform track |
 | Stroke/subtle | `--seed-color-stroke-neutral-muted` | black alpha-300 | Surface separation, selected-segment edge, chip edge |
 | Brand fill | `--seed-color-bg-brand-solid` | carrot-800 (AA override) | Primary action, selected chip, record button, waveform fill |
 | Brand pressed | `--seed-color-bg-brand-solid-pressed` | carrot-900 (AA override) | Primary action hover, read by the recipe |
@@ -121,7 +121,7 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px ch
 | `--seed-dimension-x3` | 12px | Input interior spacing |
 | `--seed-dimension-x3_5` | 14px | Card and row interior spacing |
 | `--seed-dimension-x4` | 16px | Standard grouping |
-| `--seed-dimension-x4_5` | 18px | Popover padding, settings status line |
+| `--seed-dimension-x4_5` | 18px | Settings status line |
 | `--seed-dimension-x5` | 20px | Panel interior spacing |
 | `--seed-dimension-x6` | 24px | Section padding |
 | `--seed-dimension-x7` | 28px | Panel padding |
@@ -174,8 +174,8 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px ch
   is set through the recipe hook `--seed-box-color` (`--seed-color-fg-brand` for text actions); destructive →
   `neutralOutline` with a `--seed-color-fg-critical-contrast` label, because SEED has no critical outline.
 - **Sizes**: `medium` (40px) everywhere a touch target is required; `xsmall` (32px pill) only for the
-  recorder stop/discard pair and the token-guide close button, which were already compact.
-- **Text actions**: ghost text buttons (`text-button`, the token-guide trigger) start-align and narrow the
+  recorder stop/discard pair, which was already compact.
+- **Text actions**: ghost text buttons (`text-button`) start-align and narrow the
   recipe's inline padding through `--seed-box-padding-left` / `--seed-box-padding-right`
   (`--seed-dimension-x1_5`) so the label keeps the left edge of the copy above it.
 - **Emphasis follows the task**: one primary action per stage. After a transcription renders, `전사 시작` steps down to a secondary `새 전사 시작` until new audio arrives; after minutes render, `회의록 열기` becomes primary and the augment action steps down to a secondary `다시 증강`. The step-down swaps the recipe variant together with the Galpi class.
@@ -205,7 +205,7 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 132px ch
 
 ### Engine Preset Picker
 
-- **Structure**: the settings dialog hosts a `전사 엔진` section with a two-slot segmented picker (`Qwen3 기본`, `WhisperX 이전 엔진`); each slot carries a readiness badge (`준비됨`/`준비 필요`) and the section header shows the active preset. The picker lives in settings — never in the setup panel — because the setup panel hides itself once the selected engine is ready, which would swallow the control.
+- **Structure**: the settings dialog hosts a `전사 엔진` section with a two-slot segmented picker (`WhisperX 기본`, `Qwen3 선택 · Apple Silicon`); WhisperX is the default engine on every platform and comes first, while the Qwen3 slot only appears on macOS and is an opt-in choice. Each slot carries a readiness badge (`준비됨`/`준비 필요`) and the section header shows the active preset. The picker lives in settings — never in the setup panel — because the setup panel hides itself once the selected engine is ready, which would swallow the control.
 - **States**: switching saves immediately and re-diagnoses; an unready selection re-opens the setup panel path via `로컬 엔진 준비`. Badges pair text with color.
 - **Behavior**: the change applies from the next transcription; a running job is unaffected.
 
@@ -276,7 +276,7 @@ Strategy: tonal layers plus SEED shadow tokens only.
 |---|---|---|
 | Edge | 1px `--seed-color-stroke-neutral-weak` border | Inputs and compact controls |
 | Rest | `--seed-shadow-s1` | Panels, engine chip, brand mark |
-| Raised | `--seed-shadow-s3` | Settings sheet, token-guide popover |
+| Raised | `--seed-shadow-s3` | Settings sheet |
 
 - Radius: `--seed-radius-r3_5` panels; `--seed-radius-r4` settings sheet; `--seed-radius-r3` sections,
   cards, and pickers; `--seed-radius-r2_5` rows, engine chip, segmented track, and log; `--seed-radius-r2`

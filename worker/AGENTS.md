@@ -20,7 +20,8 @@ worker/
 │   ├── runtime.py         # Device selection and warning suppression
 │   ├── preparation.py     # Per-engine model warmup, ffmpeg link, manifest
 │   ├── engine.py          # Transcription dispatch and WhisperX pipeline
-│   ├── qwen3.py           # Qwen3 candidate pipeline (ASR + aligner + diarize)
+│   ├── mlx_asr.py         # macOS WhisperX ASR stage on MLX (mlx-whisper)
+│   ├── qwen3.py           # Opt-in macOS Qwen3 pipeline (ASR + aligner + diarize)
 │   ├── artifacts.py       # Typed segments, filtering, atomic writers
 │   ├── minutes_template.py # Normative minutes format and compact exemplar
 │   ├── minutes_prompt.py  # Typed context parsing and single-pass prompt
@@ -28,7 +29,7 @@ worker/
 │   ├── assistant_stream.py # OpenAI-compatible SSE transport and progress
 │   ├── responses_stream.py # ChatGPT Responses SSE transport and stable error codes
 │   └── refine.py          # Short/long refinement orchestration and publication
-├── stubs/whisperx/        # Local types for the untyped dependency
+├── stubs/                 # Local types for untyped deps (whisperx, mlx_whisper, …)
 └── tests/                 # Pure contract tests; no ML stack required
 ```
 
@@ -56,18 +57,25 @@ worker/
   cannot corrupt the protocol stream.
 - Import Torch, WhisperX, pyannote, and imageio-ffmpeg inside runtime functions.
   Package import and pure tests must not require the ML environment.
-- ASR uses CTranslate2 CUDA float16 when torch runs on CUDA and CTranslate2
-  sees a GPU (the Windows CUDA build), CPU int8 everywhere else
-  (`runtime.py::select_asr_runtime`); a failed CUDA ASR retries once on CPU
-  int8. Torch device policy is `cuda` > `mps` > `cpu`
-  (`runtime.py::select_torch_device`); alignment and diarization use it, retry
-  once on CPU if an accelerator step fails, and emit the fallback reason as a
-  log event.
-- Windows locks: `requirements-windows-cpu.lock` and
+- WhisperX is the default engine everywhere. Only its ASR stage is
+  platform-specific (`runtime.py::select_asr_runtime`): MLX float16 through
+  `mlx_asr.py` wherever `mlx-whisper` is installed (the macOS lock), CTranslate2
+  CUDA float16 when torch runs on CUDA and CTranslate2 sees a GPU, CPU int8
+  otherwise; a failed accelerator ASR retries once on CPU int8. VAD, chunking,
+  alignment and diarization are the official WhisperX code on every platform.
+  Torch device policy is `cuda` > `mps` > `cpu` (`runtime.py::select_torch_device`);
+  alignment and diarization use it, retry once on CPU if an accelerator step
+  fails, and emit the fallback reason as a log event.
+- Diarization loads `pyannote-community/speaker-diarization-community-1`
+  (`preparation.py::PYANNOTE_MODEL_ID`), a byte-identical non-gated mirror of
+  the gated pyannote repo, so no Hugging Face token exists anywhere.
+- Locks: `requirements.lock` (macOS, compiled with
+  `MACOSX_DEPLOYMENT_TARGET=14.0`), `requirements-windows-cpu.lock`,
   `requirements-windows-cuda.lock` (PyTorch cu128; the host defaults to it when
-  an NVIDIA driver is detected and no device is saved). Regenerate with the
-  `uv pip compile ... --python-platform x86_64-pc-windows-msvc` command in each
-  lock header, then run `python3 scripts/verify-windows-lock.py cpu|cuda`.
+  an NVIDIA driver is detected and no device is saved), and
+  `requirements-qwen3.lock`. Regenerate all with the command in each lock
+  header, one shared `--exclude-newer` cutoff and `-U`, then run
+  `python3 scripts/verify-windows-lock.py cpu|cuda`.
 - Keep BasedPyright strict. Convert untyped library payloads with explicit
   casts to local `TypedDict` contracts; maintain realistic `.pyi` stubs.
 - Publish checkpoint, SRT, speaker text, and manifests through sibling

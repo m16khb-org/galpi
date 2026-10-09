@@ -118,7 +118,6 @@ impl LocalSettingsStore {
         let legacy = {
             let state = self.load().await?;
             state.as_ref().and_then(|settings| match secret {
-                Secret::HuggingFaceToken => settings.hugging_face_token.clone(),
                 Secret::AssistantApiKey => settings.assistant_api_key.clone(),
                 Secret::ChatGptTokens => settings.chatgpt_tokens.clone(),
             })
@@ -157,14 +156,6 @@ impl LocalSettingsStore {
         let kept_here = self.secrets.keeps_plaintext_in_settings();
         let retained = kept_here.then(|| value.map(str::to_owned));
         self.update(|settings| match secret {
-            Secret::HuggingFaceToken => {
-                if let Some(value) = retained {
-                    settings.hugging_face_token = value;
-                } else {
-                    settings.hugging_face_token = None;
-                }
-                settings.hugging_face_token_stored = present;
-            }
             Secret::AssistantApiKey => {
                 if let Some(value) = retained {
                     settings.assistant_api_key = value;
@@ -190,7 +181,6 @@ impl LocalSettingsStore {
         let already = {
             let state = self.load().await?;
             state.as_ref().is_some_and(|settings| match secret {
-                Secret::HuggingFaceToken => settings.hugging_face_token_stored == present,
                 Secret::AssistantApiKey => settings.assistant_api_key_stored == present,
                 Secret::ChatGptTokens => settings.chatgpt_tokens_stored == present,
             })
@@ -199,7 +189,6 @@ impl LocalSettingsStore {
             return Ok(());
         }
         self.update(|settings| match secret {
-            Secret::HuggingFaceToken => settings.hugging_face_token_stored = present,
             Secret::AssistantApiKey => settings.assistant_api_key_stored = present,
             Secret::ChatGptTokens => settings.chatgpt_tokens_stored = present,
         })
@@ -219,10 +208,6 @@ impl LocalSettingsStore {
         let recorded = {
             let state = self.load().await?;
             state.as_ref().map(|settings| match secret {
-                Secret::HuggingFaceToken => (
-                    settings.hugging_face_token_stored,
-                    settings.hugging_face_token.is_some(),
-                ),
                 Secret::AssistantApiKey => (
                     settings.assistant_api_key_stored,
                     settings.assistant_api_key.is_some(),
@@ -243,9 +228,30 @@ impl LocalSettingsStore {
     async fn load(&self) -> Result<tokio::sync::MutexGuard<'_, Option<LocalSettings>>, AppError> {
         let mut state = self.state.lock().await;
         if state.is_none() {
-            *state = Some(read_settings(&self.path).await?);
+            let mut settings = read_settings(&self.path).await?;
+            self.retire_hugging_face_token(&mut settings).await;
+            *state = Some(settings);
         }
         Ok(state)
+    }
+
+    /// Clean up after the removed Hugging Face token feature.
+    ///
+    /// A file an earlier build wrote may carry the token itself, or a flag
+    /// saying the Windows Credential Manager holds it. The credential is
+    /// deleted once, best effort — a failure leaves one stale entry, never a
+    /// reason to refuse the settings — and the file is rewritten without
+    /// either key, so the next launch finds nothing to do.
+    async fn retire_hugging_face_token(&self, settings: &mut LocalSettings) {
+        if settings.hugging_face_token.is_none() && !settings.hugging_face_token_stored {
+            return;
+        }
+        if settings.hugging_face_token_stored {
+            let _deleted = self.secrets.forget_retired_token();
+        }
+        settings.hugging_face_token = None;
+        settings.hugging_face_token_stored = false;
+        let _rewritten = store_settings(&self.path, settings).await;
     }
 
     /// Apply a change and publish it, keeping the cache and file in step.
@@ -275,8 +281,13 @@ struct LocalSettings {
     engine_preset: Option<EnginePreset>,
     #[serde(skip_serializing_if = "Option::is_none")]
     compute_device: Option<ComputeDevice>,
-    hugging_face_token: Option<String>,
     assistant_api_key: Option<String>,
+    // Retired with the Hugging Face token feature. Both keys are still read
+    // from files an earlier build wrote, so `retire_hugging_face_token` can
+    // clean up after them, and are never written back.
+    #[serde(skip_serializing)]
+    hugging_face_token: Option<String>,
+    #[serde(skip_serializing)]
     hugging_face_token_stored: bool,
     assistant_api_key_stored: bool,
     assistant_model: Option<String>,
@@ -301,9 +312,7 @@ impl LocalSettings {
     fn is_empty(&self) -> bool {
         self.engine_preset.is_none()
             && self.compute_device.is_none()
-            && self.hugging_face_token.is_none()
             && self.assistant_api_key.is_none()
-            && !self.hugging_face_token_stored
             && !self.assistant_api_key_stored
             && self.assistant_model.is_none()
             && self.assistant_base_url.is_none()
@@ -326,19 +335,6 @@ impl LocalSettings {
 
 #[async_trait]
 impl SettingsPort for LocalSettingsStore {
-    async fn hugging_face_token_stored(&self) -> Result<bool, AppError> {
-        self.secret_stored(Secret::HuggingFaceToken).await
-    }
-
-    async fn load_hugging_face_token(&self) -> Result<Option<String>, AppError> {
-        self.secret(Secret::HuggingFaceToken).await
-    }
-
-    async fn save_hugging_face_token(&self, token: Option<String>) -> Result<(), AppError> {
-        self.store_secret(Secret::HuggingFaceToken, token.as_deref())
-            .await
-    }
-
     async fn load_engine_preset(&self) -> Result<EnginePreset, AppError> {
         let stored = self
             .load()
@@ -525,27 +521,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn keeps_the_token_out_of_the_settings_file() -> Result<(), Box<dyn std::error::Error>> {
+    async fn keeps_the_assistant_key_out_of_the_settings_file()
+    -> Result<(), Box<dyn std::error::Error>> {
         // Given
         let directory = std::env::temp_dir().join(format!("galpi-settings-{}", Uuid::now_v7()));
         let path = directory.join("settings.json");
         let store = LocalSettingsStore::for_path(path.clone());
 
-        // When: a token is saved alongside an ordinary preference
+        // When: a key is saved alongside an ordinary preference
         store
-            .save_hugging_face_token(Some("hf_saved".to_owned()))
+            .save_assistant_api_key(Some("zai_saved".to_owned()))
             .await?;
         store.save_engine_preset(EnginePreset::WhisperX).await?;
 
         // Then: it reads back, but the file on disk never carries it
         assert_eq!(
-            store.load_hugging_face_token().await?.as_deref(),
-            Some("hf_saved")
+            store.load_assistant_api_key().await?.as_deref(),
+            Some("zai_saved")
         );
         let document = tokio::fs::read_to_string(&path).await?;
         assert!(
-            !document.contains("hf_saved"),
-            "the token must not be written in plaintext:\n{document}"
+            !document.contains("zai_saved"),
+            "the key must not be written in plaintext:\n{document}"
         );
         #[cfg(unix)]
         assert_eq!(
@@ -555,8 +552,8 @@ mod tests {
             0o600
         );
 
-        store.save_hugging_face_token(None).await?;
-        assert_eq!(store.load_hugging_face_token().await?, None);
+        store.save_assistant_api_key(None).await?;
+        assert_eq!(store.load_assistant_api_key().await?, None);
         tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }
@@ -616,15 +613,15 @@ mod tests {
         let store =
             LocalSettingsStore::with_secrets(directory.join("settings.json"), secrets.clone());
         store
-            .save_hugging_face_token(Some("hf_saved".to_owned()))
+            .save_assistant_api_key(Some("zai_saved".to_owned()))
             .await?;
         let reads_before = secrets.reads();
 
-        // When: several parts of the app ask for the token
+        // When: several parts of the app ask for the key
         for _ in 0..5 {
             assert_eq!(
-                store.load_hugging_face_token().await?.as_deref(),
-                Some("hf_saved")
+                store.load_assistant_api_key().await?.as_deref(),
+                Some("zai_saved")
             );
         }
 
@@ -639,7 +636,7 @@ mod tests {
     #[tokio::test]
     async fn a_secret_moved_before_the_flag_existed_is_found_once_and_remembered()
     -> Result<(), Box<dyn std::error::Error>> {
-        // Given: the keychain holds a token, but the settings file predates the
+        // Given: the keychain holds a key, but the settings file predates the
         // flag that records it — the state an install left in by the previous
         // release, where the plaintext was cleared and nothing took its place
         let directory = std::env::temp_dir().join(format!("galpi-settings-{}", Uuid::now_v7()));
@@ -647,16 +644,16 @@ mod tests {
         let path = directory.join("settings.json");
         tokio::fs::write(&path, r#"{"enginePreset":"whisperx"}"#).await?;
         let secrets = std::sync::Arc::new(InMemorySecrets::default());
-        secrets.write(Secret::HuggingFaceToken, Some("hf_migrated"))?;
+        secrets.write(Secret::AssistantApiKey, Some("zai_migrated"))?;
         let store = LocalSettingsStore::with_secrets(path.clone(), secrets.clone());
 
-        // When: the sheet asks whether a token is saved
-        assert!(store.hugging_face_token_stored().await?);
+        // When: the sheet asks whether a key is saved
+        assert!(store.load_assistant().await?.api_key_stored);
         let reads_after_first = secrets.reads();
 
         // Then: a fresh process reads the file, not the keychain
         let next_launch = LocalSettingsStore::with_secrets(path, secrets.clone());
-        assert!(next_launch.hugging_face_token_stored().await?);
+        assert!(next_launch.load_assistant().await?.api_key_stored);
         assert_eq!(secrets.reads(), reads_after_first);
 
         tokio::fs::remove_dir_all(directory).await?;
@@ -676,17 +673,21 @@ mod tests {
 
         // When
         store
-            .save_hugging_face_token(Some("hf_saved".to_owned()))
+            .save_assistant_api_key(Some("zai_saved".to_owned()))
             .await?;
 
-        // Then: the token is readable, reported as stored, and in the document,
+        // Then: the key is readable, reported as stored, and in the document,
         // because with this store the document is where it lives
         assert_eq!(
-            store.load_hugging_face_token().await?.as_deref(),
-            Some("hf_saved")
+            store.load_assistant_api_key().await?.as_deref(),
+            Some("zai_saved")
         );
-        assert!(store.hugging_face_token_stored().await?);
-        assert!(tokio::fs::read_to_string(&path).await?.contains("hf_saved"));
+        assert!(store.load_assistant().await?.api_key_stored);
+        assert!(
+            tokio::fs::read_to_string(&path)
+                .await?
+                .contains("zai_saved")
+        );
         #[cfg(unix)]
         assert_eq!(
             std::os::unix::fs::PermissionsExt::mode(
@@ -696,37 +697,37 @@ mod tests {
         );
 
         // And clearing it removes the value rather than leaving it behind
-        store.save_hugging_face_token(None).await?;
-        assert!(!store.hugging_face_token_stored().await?);
+        store.save_assistant_api_key(None).await?;
+        assert!(!store.load_assistant().await?.api_key_stored);
         let document = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-        assert!(!document.contains("hf_saved"), "cleared token survived");
+        assert!(!document.contains("zai_saved"), "cleared key survived");
 
         let _removed = tokio::fs::remove_dir_all(directory).await;
         Ok(())
     }
 
     #[tokio::test]
-    async fn migrates_a_token_left_in_an_older_settings_file()
+    async fn migrates_a_key_left_in_an_older_settings_file()
     -> Result<(), Box<dyn std::error::Error>> {
-        // Given: a settings file written before tokens moved to the keychain
+        // Given: a settings file written before secrets moved to the keychain
         let directory = std::env::temp_dir().join(format!("galpi-settings-{}", Uuid::now_v7()));
         tokio::fs::create_dir_all(&directory).await?;
         let path = directory.join("settings.json");
-        tokio::fs::write(&path, r#"{"huggingFaceToken":"hf_legacy"}"#).await?;
+        tokio::fs::write(&path, r#"{"assistantApiKey":"zai_legacy"}"#).await?;
         let store = LocalSettingsStore::for_path(path.clone());
 
-        // When: the token is read for the first time
-        let token = store.load_hugging_face_token().await?;
+        // When: the key is read for the first time
+        let key = store.load_assistant_api_key().await?;
 
-        // Then: the user keeps their token and the plaintext copy is gone
-        assert_eq!(token.as_deref(), Some("hf_legacy"));
+        // Then: the user keeps their key and the plaintext copy is gone
+        assert_eq!(key.as_deref(), Some("zai_legacy"));
         assert_eq!(
-            store.load_hugging_face_token().await?.as_deref(),
-            Some("hf_legacy")
+            store.load_assistant_api_key().await?.as_deref(),
+            Some("zai_legacy")
         );
         let document = tokio::fs::read_to_string(&path).await.unwrap_or_default();
         assert!(
-            !document.contains("hf_legacy"),
+            !document.contains("zai_legacy"),
             "plaintext survived:\n{document}"
         );
         tokio::fs::remove_dir_all(directory).await?;
@@ -734,14 +735,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn keeps_assistant_settings_when_the_hugging_face_token_is_cleared()
+    async fn assistant_settings_round_trip_beside_the_stored_key()
     -> Result<(), Box<dyn std::error::Error>> {
         // Given
         let directory = std::env::temp_dir().join(format!("galpi-settings-{}", Uuid::now_v7()));
         let store = LocalSettingsStore::for_path(directory.join("settings.json"));
-        store
-            .save_hugging_face_token(Some("hf_saved".to_owned()))
-            .await?;
         store
             .save_assistant_api_key(Some("zai_key".to_owned()))
             .await?;
@@ -768,10 +766,7 @@ mod tests {
             })
             .await?;
 
-        // When
-        store.save_hugging_face_token(None).await?;
-
-        // Then
+        // When / Then: everything saved reads back
         let assistant = store.load_assistant().await?;
         assert!(assistant.api_key_stored);
         assert_eq!(
@@ -801,6 +796,110 @@ mod tests {
             Some("회의 녹음·전사 데스크톱 앱")
         );
         tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    /// Open the store on a settings file holding `contents`, with an in-memory
+    /// secret store the test can inspect.
+    async fn store_on_file(
+        contents: &str,
+    ) -> Result<
+        (
+            LocalSettingsStore,
+            std::sync::Arc<InMemorySecrets>,
+            std::path::PathBuf,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        let directory = temp_settings("retired-token");
+        tokio::fs::create_dir_all(&directory).await?;
+        let path = directory.join("settings.json");
+        tokio::fs::write(&path, contents).await?;
+        let secrets = std::sync::Arc::new(InMemorySecrets::default());
+        let store = LocalSettingsStore::with_secrets(path.clone(), secrets.clone());
+        Ok((store, secrets, path))
+    }
+
+    #[tokio::test]
+    async fn a_settings_file_from_the_token_era_loads_and_is_scrubbed_once()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a file that still carries the removed token feature's keys
+        let (store, secrets, path) = store_on_file(
+            r#"{"huggingFaceToken":"hf_legacy","huggingFaceTokenStored":true,"assistantModel":"glm-5.3"}"#,
+        )
+        .await?;
+
+        // When: the app loads its settings
+        let assistant = store.load_assistant().await?;
+
+        // Then: loading succeeds, the credential was deleted, and the file no
+        // longer names the token in any form
+        assert_eq!(assistant.model.as_deref(), Some("glm-5.3"));
+        assert_eq!(secrets.retired_purges(), 1);
+        let document = tokio::fs::read_to_string(&path).await?;
+        assert!(document.contains("glm-5.3"), "{document}");
+        assert!(!document.contains("hf_legacy"), "{document}");
+        assert!(!document.contains("huggingFace"), "{document}");
+
+        // And a later launch has nothing left to delete
+        let relaunched = LocalSettingsStore::with_secrets(path.clone(), secrets.clone());
+        assert_eq!(
+            relaunched.load_assistant().await?.model.as_deref(),
+            Some("glm-5.3")
+        );
+        assert_eq!(secrets.retired_purges(), 1);
+
+        // And the next save never brings the keys back
+        store
+            .save_assistant(AssistantSettings {
+                model: Some("glm-5.4".to_owned()),
+                ..AssistantSettings::default()
+            })
+            .await?;
+        let document = tokio::fs::read_to_string(&path).await?;
+        assert!(!document.contains("huggingFace"), "{document}");
+        let _removed = tokio::fs::remove_dir_all(path.parent().unwrap_or(&path)).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_file_holding_only_the_retired_token_is_removed()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: nothing but the flag, and then nothing but the plaintext
+        for contents in [
+            r#"{"huggingFaceTokenStored":true}"#,
+            r#"{"huggingFaceToken":"hf_legacy"}"#,
+        ] {
+            let (store, secrets, path) = store_on_file(contents).await?;
+
+            // When
+            let _assistant = store.load_assistant().await?;
+
+            // Then: the file is gone, and the credential was only deleted when
+            // the flag said there was one
+            assert!(!tokio::fs::try_exists(&path).await?, "{contents}");
+            assert_eq!(
+                secrets.retired_purges(),
+                usize::from(contents.contains("Stored")),
+                "{contents}"
+            );
+            let _removed = tokio::fs::remove_dir_all(path.parent().unwrap_or(&path)).await;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_current_settings_file_never_touches_the_retired_credential()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given
+        let (store, secrets, path) = store_on_file(r#"{"assistantModel":"glm-5.3"}"#).await?;
+
+        // When
+        let _assistant = store.load_assistant().await?;
+
+        // Then
+        assert_eq!(secrets.retired_purges(), 0);
+        let _removed = tokio::fs::remove_dir_all(path.parent().unwrap_or(&path)).await;
         Ok(())
     }
     /// The store the app actually ships with, which keeps the key in the file.
@@ -1000,7 +1099,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn os_macos_keeps_qwen3_and_has_no_device_choice()
+    async fn os_macos_defaults_to_whisperx_and_has_no_device_choice()
     -> Result<(), Box<dyn std::error::Error>> {
         // Given: an older settings file without the new keys
         let directory = temp_settings("mac-compat");
@@ -1010,7 +1109,7 @@ mod tests {
         let store = LocalSettingsStore::for_os(path, Os::MacOs);
 
         // When / Then
-        assert_eq!(store.load_engine_preset().await?, EnginePreset::Qwen3);
+        assert_eq!(store.load_engine_preset().await?, EnginePreset::WhisperX);
         assert_eq!(store.load_compute_device().await?, ComputeDevice::Cpu);
         assert_eq!(
             store
@@ -1020,6 +1119,26 @@ mod tests {
                 .map(|error| error.code),
             Some("COMPUTE_DEVICE_UNAVAILABLE".to_owned())
         );
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn os_macos_honours_a_saved_qwen3_choice() -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a Mac whose user chose Qwen3 before WhisperX became the default
+        let directory = temp_settings("mac-qwen3");
+        tokio::fs::create_dir_all(&directory).await?;
+        let path = directory.join("settings.json");
+        tokio::fs::write(&path, r#"{"enginePreset":"qwen3"}"#).await?;
+        let store = LocalSettingsStore::for_os(path.clone(), Os::MacOs);
+
+        // When / Then: the saved choice wins over the new default, and a fresh
+        // opt-in is accepted and persisted
+        assert_eq!(store.load_engine_preset().await?, EnginePreset::Qwen3);
+        store.save_engine_preset(EnginePreset::WhisperX).await?;
+        store.save_engine_preset(EnginePreset::Qwen3).await?;
+        let relaunched = LocalSettingsStore::for_os(path, Os::MacOs);
+        assert_eq!(relaunched.load_engine_preset().await?, EnginePreset::Qwen3);
         tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }

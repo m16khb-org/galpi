@@ -7,7 +7,6 @@ const secondary = actionButtonClass("neutralOutline")
 const ghost = actionButtonClass("ghost")
 const iconOutline = actionButtonClass("neutralOutline", "medium", "iconOnly")
 const recordAction = actionButtonClass("neutralOutline", "xsmall")
-const dismiss = actionButtonClass("ghost", "xsmall", "iconOnly")
 
 export const appTemplate = `
   <div class="app-shell">
@@ -41,17 +40,10 @@ export const appTemplate = `
             <div><span class="section-index">00 / 준비</span><h2 id="setup-title">로컬 AI 환경</h2></div>
             <p>Galpi가 앱 전용 Python 런타임과 선택한 전사 엔진을 설치하고 필요한 모델을 한 번에 준비합니다. 엔진은 설정의 <strong>전사 엔진</strong>에서 바꿀 수 있습니다.</p>
           </div>
-          <div class="setup-grid">
-            <div class="status-list" aria-label="설치 상태">
-              <div id="engine-check" class="status-row" data-state="pending"><i class="ph ph-cpu" aria-hidden="true"></i><span data-status-label>엔진</span><strong data-status-value>확인 중</strong></div>
-              <div id="model-check" class="status-row" data-state="pending"><i class="ph ph-brain" aria-hidden="true"></i><span data-status-label>전사 모델</span><strong data-status-value>확인 중</strong></div>
-              <div id="ffmpeg-check" class="status-row" data-state="pending"><i class="ph ph-waveform" aria-hidden="true"></i><span data-status-label>내장 ffmpeg</span><strong data-status-value>확인 중</strong></div>
-            </div>
-            <div class="token-field token-summary">
-              <div class="token-summary-header"><strong>Hugging Face 토큰</strong><span id="token-configured-state">확인 중</span></div>
-              <p>화자분리 모델 접근 토큰은 우측 상단 설정에서 저장하고 다시 확인할 수 있습니다.</p>
-              <button class="text-button ${ghost}" type="button" data-action="open-settings">토큰 설정 열기 <i class="ph ph-gear" aria-hidden="true"></i></button>
-            </div>
+          <div class="status-list" aria-label="설치 상태">
+            <div id="engine-check" class="status-row" data-state="pending"><i class="ph ph-cpu" aria-hidden="true"></i><span data-status-label>엔진</span><strong data-status-value>확인 중</strong></div>
+            <div id="model-check" class="status-row" data-state="pending"><i class="ph ph-brain" aria-hidden="true"></i><span data-status-label>전사 모델</span><strong data-status-value>확인 중</strong></div>
+            <div id="ffmpeg-check" class="status-row" data-state="pending"><i class="ph ph-waveform" aria-hidden="true"></i><span data-status-label>내장 ffmpeg</span><strong data-status-value>확인 중</strong></div>
           </div>
           <div id="setup-progress-panel" class="setup-progress-card" hidden>
             <div class="job-header"><div><span class="section-index">앱 전용 환경 설치</span><h3 id="setup-job-title">로컬 환경을 준비하고 있습니다</h3></div><strong id="setup-job-percent">0%</strong></div>
@@ -215,12 +207,12 @@ export const appTemplate = `
         <div class="settings-body">
         <section class="settings-section" aria-labelledby="engine-settings-title">
           <div class="settings-section-heading">
-            <div><strong id="engine-settings-title">전사 엔진</strong><span id="engine-settings-state">Qwen3</span></div>
+            <div><strong id="engine-settings-title">전사 엔진</strong><span id="engine-settings-state">WhisperX</span></div>
             <p>다음 전사부터 적용됩니다. 준비되지 않은 엔진을 고르면 닫힌 준비 패널에서 로컬 엔진 준비를 먼저 실행해야 합니다.</p>
           </div>
           <div class="segmented-control engine-segmented" role="radiogroup" aria-label="전사 엔진 선택">
-            <label data-engine-option="qwen3"><input type="radio" name="engine-preset" value="qwen3" checked /><span>Qwen3<em id="engine-qwen3-state">기본 · 확인 중</em></span></label>
-            <label data-engine-option="whisperx"><input type="radio" name="engine-preset" value="whisperx" /><span>WhisperX<em id="engine-whisperx-state">이전 엔진 · 확인 중</em></span></label>
+            <label data-engine-option="whisperx"><input type="radio" name="engine-preset" value="whisperx" checked /><span>WhisperX<em id="engine-whisperx-state">기본 · 확인 중</em></span></label>
+            <label data-engine-option="qwen3"><input type="radio" name="engine-preset" value="qwen3" /><span>Qwen3<em id="engine-qwen3-state">선택 · Apple Silicon · 확인 중</em></span></label>
           </div>
           <div id="engine-device" hidden>
             <div class="segmented-control engine-segmented" role="radiogroup" aria-label="연산 장치 선택" aria-describedby="engine-device-help">
@@ -229,34 +221,6 @@ export const appTemplate = `
             </div>
             <p id="engine-device-help">NVIDIA 드라이버가 감지되면 CUDA를 기본으로 사용합니다. CUDA는 약 3.5 GB의 PyTorch CUDA 빌드를 내려받으며, 장치를 바꾼 뒤에는 로컬 엔진 준비를 다시 실행해야 합니다.</p>
           </div>
-        </section>
-        <section class="settings-section" aria-labelledby="token-settings-title">
-          <div class="settings-section-heading">
-            <div><strong id="token-settings-title">Hugging Face 토큰</strong><span>선택</span></div>
-            <p>화자분리 모델을 처음 내려받을 때 사용하는 Read 전용 토큰입니다.</p>
-          </div>
-          <label class="sr-only" for="settings-hf-token">Hugging Face 토큰</label>
-          <div class="secret-field">
-            <input id="settings-hf-token" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="hf_..." aria-describedby="settings-token-help" data-visible="false" />
-            <button id="toggle-token-visibility" class="secret-visibility-button ${iconOutline}" type="button" data-action="toggle-token-visibility" aria-label="Hugging Face 토큰 표시"><i class="ph ph-eye" aria-hidden="true"></i></button>
-          </div>
-          <p id="settings-token-help">저장한 값은 이 컴퓨터의 Galpi 앱 설정에 유지되며 모델 준비 때 자동으로 사용됩니다. 바꾸려면 입력란에 새 토큰을 붙여 넣으세요.</p>
-          <div class="token-guide-anchor">
-            <button id="token-guide-trigger" class="token-guide-trigger ${ghost}" type="button" aria-expanded="false" aria-controls="token-guide-popover">필요 권한과 발급 방법 <i class="ph ph-info" aria-hidden="true"></i></button>
-            <div id="token-guide-popover" class="token-guide-popover" role="dialog" aria-label="Hugging Face 토큰 발급 안내" hidden>
-              <div class="token-guide-header"><strong>토큰 발급 안내</strong><button id="token-guide-close" class="${dismiss}" type="button" aria-label="닫기"><i class="ph ph-x" aria-hidden="true"></i></button></div>
-              <p><strong>권장 권한:</strong> Fine-grained 토큰의 읽기(Read) 전용 권한만 사용하세요. 쓰기·추론 API 권한은 필요하지 않습니다.</p>
-              <ol>
-                <li>Hugging Face 계정에 로그인합니다.</li>
-                <li>아래 모델 페이지에서 이용 조건에 동의하고 접근 승인을 받습니다.</li>
-                <li>Settings → Access Tokens → Create new token에서 <strong>Fine-grained</strong>를 선택합니다.</li>
-                <li><code>pyannote/speaker-diarization-community-1</code> 저장소 콘텐츠의 Read 권한만 허용합니다.</li>
-                <li><code>hf_</code>로 시작하는 토큰을 복사해 저장합니다.</li>
-              </ol>
-              <p>접근 승인이 끝났거나 모델이 이미 이 컴퓨터에 준비되어 있으면 토큰을 비워 두어도 됩니다.</p>
-            </div>
-          </div>
-          <button class="text-button ${ghost}" type="button" data-action="model-access">모델 이용 조건 페이지 열기 <i class="ph ph-arrow-up-right" aria-hidden="true"></i></button>
         </section>
         <section class="settings-section" aria-labelledby="participants-settings-title">
           <div class="settings-section-heading">
@@ -342,7 +306,6 @@ export const appTemplate = `
           <p id="settings-background-help">참석자·제품명·약어·도메인 용어를 적어 두면 잘못 들린 단어와 화자를 보정합니다. 이 컴퓨터에만 저장되고 회의록을 만들 때 함께 전송됩니다.</p>
         </section>
         <div class="settings-actions">
-          <button class="secondary-button danger ${secondary}" type="button" data-action="clear-token">Hugging Face 토큰 지우기</button>
           <button class="secondary-button danger ${secondary}" type="button" data-action="clear-assistant-key">AI 증강 API 키 지우기</button>
         </div>
         </div>

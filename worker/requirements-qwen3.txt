@@ -5,8 +5,8 @@
 # mlx-qwen3-asr runs the ASR model and the forced aligner natively on the
 # Metal GPU with 8-bit weights converted during prepare; torch remains for
 # the pyannote diarization stage only.
-mlx-qwen3-asr[aligner]==0.3.5
-mlx==0.32.1
+mlx-qwen3-asr[aligner]==0.4.4
+mlx==0.32.3
 torch==2.8.0
 # pyannote.audio imports torchaudio at module scope; Galpi never calls it
 # (wave-based IO), but the import must resolve for diarization to load.

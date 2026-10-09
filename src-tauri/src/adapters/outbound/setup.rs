@@ -8,7 +8,6 @@ use crate::application::error::AppError;
 use crate::application::model::EnvironmentStatus;
 use crate::application::ports::JobEvents;
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
-use crate::domain::job::SetupRequest;
 use crate::domain::worker::WorkerEvent;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -22,14 +21,13 @@ pub async fn prepare(
     events: &dyn JobEvents,
     job_id: Uuid,
     cancel: &mut oneshot::Receiver<()>,
-    request: &SetupRequest,
     selection: EngineSelection,
 ) -> Result<EnvironmentStatus, AppError> {
     let paths = AppPaths::resolve(app)?;
     paths.create_directories().await?;
     let root = worker_root(app)?;
-    let install_env = process_environment(&paths, &root, None);
-    let mut model_env = process_environment(&paths, &root, request.hugging_face_token.as_deref());
+    let install_env = process_environment(&paths, &root);
+    let mut model_env = process_environment(&paths, &root);
     let current = status(&paths, selection);
     if current.is_ready() {
         emit_phase(
@@ -52,7 +50,6 @@ pub async fn prepare(
                 &root,
                 &install_env,
                 &mut model_env,
-                request,
                 selection.device,
             )
             .await
@@ -81,7 +78,6 @@ async fn prepare_whisperx(
     root: &Path,
     install_env: &HashMap<OsString, OsString>,
     model_env: &mut HashMap<OsString, OsString>,
-    request: &SetupRequest,
     device: ComputeDevice,
 ) -> Result<EnvironmentStatus, AppError> {
     let selection = EngineSelection {
@@ -114,7 +110,7 @@ async fn prepare_whisperx(
             0
         }
     };
-    if can_use_offline_cache(imported, request.hugging_face_token.as_deref()) {
+    if can_use_offline_cache(imported) {
         model_env.insert("HF_HUB_OFFLINE".into(), "1".into());
         model_env.insert("TRANSFORMERS_OFFLINE".into(), "1".into());
     }

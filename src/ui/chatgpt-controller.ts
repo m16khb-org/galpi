@@ -147,7 +147,7 @@ export class ChatGptController {
       view.setModels([], null)
       // The ChatGPT panel hides with the return to API key mode, so the outcome
       // goes to the sheet-wide status line that stays on screen and is announced.
-      this.view.tokenSettings.showMessage(
+      this.view.settingsDialog.showMessage(
         result.remoteRevocationConfirmed
           ? "ChatGPT에서 로그아웃했습니다. API 키 모드로 돌아갑니다."
           : "ChatGPT에서 로그아웃했습니다. 서버 쪽 연결 해제는 확인하지 못했으니, 필요하면 ChatGPT 설정의 연결된 앱에서 갈피를 해제해 주세요.",

@@ -45,11 +45,15 @@ high unless noted.
 ## Python worker (transcription sidecar)
 
 - Two isolated presets, each with its own virtualenv and lock file:
-  - Qwen3 (default): mlx-qwen3-asr 0.3.5 on mlx 0.32.1, plus torch/torchaudio
-    2.8.0 and pyannote.audio 4.0.7 for diarization
+  - WhisperX (default on every platform): WhisperX 3.8.6, torch/torchaudio
+    2.8.0, pyannote.audio 4.0.7, imageio-ffmpeg 0.6.0, plus `mlx-whisper` 0.4.3
+    on macOS only, which runs the Whisper ASR on Metal
+    (`worker/requirements.txt` → `requirements.lock`). Diarization uses the
+    non-gated `pyannote-community/speaker-diarization-community-1` mirror, so no
+    Hugging Face account or token is involved.
+  - Qwen3 (opt-in, macOS only): mlx-qwen3-asr 0.4.4 on mlx 0.32.3, plus
+    torch/torchaudio 2.8.0 and pyannote.audio 4.0.7 for diarization
     (`worker/requirements-qwen3.txt` → `requirements-qwen3.lock`).
-  - WhisperX: WhisperX 3.8.6, torch/torchaudio 2.8.0, pyannote.audio 4.0.7,
-    imageio-ffmpeg 0.6.0 (`worker/requirements.txt` → `requirements.lock`).
 - The app installs from the lock files; the WhisperX lock is hash-pinned, while
   the Qwen3 lock pins versions only because mlx ships a wheel per macOS release.
 - strict Pyright (`pyrightconfig.json`: `typeCheckingMode: strict`,

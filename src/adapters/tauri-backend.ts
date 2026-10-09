@@ -192,18 +192,8 @@ export class TauriBackend implements BackendPort {
 
   async prepare(jobId: string): Promise<SetupResult> {
     return setupResultSchema.parse(
-      await invoke<unknown>("prepare_environment", {
-        request: { jobId, huggingFaceToken: null },
-      }),
+      await invoke<unknown>("prepare_environment", { request: { jobId } }),
     )
-  }
-
-  async huggingFaceTokenStored(): Promise<boolean> {
-    return z.boolean().parse(await invoke<unknown>("hugging_face_token_stored"))
-  }
-
-  async saveHuggingFaceToken(token: string): Promise<void> {
-    await invoke("save_hugging_face_token", { token })
   }
 
   async loadAssistantSettings(): Promise<AssistantSettings> {
@@ -304,10 +294,6 @@ export class TauriBackend implements BackendPort {
   async chooseOutputDirectory(): Promise<string | null> {
     const selection = await open({ multiple: false, directory: true })
     return typeof selection === "string" ? selection : null
-  }
-
-  async openModelAccessPage(): Promise<void> {
-    await openUrl("https://huggingface.co/pyannote/speaker-diarization-community-1")
   }
 
   async listenToJobs(handler: (event: JobEvent) => void): Promise<() => void> {

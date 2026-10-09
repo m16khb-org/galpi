@@ -13,4 +13,5 @@ def snapshot_download(
     local_files_only: bool = ...,
     allow_patterns: list[str] | str | None = ...,
     ignore_patterns: list[str] | str | None = ...,
+    tqdm_class: type[object] | None = ...,
 ) -> str: ...

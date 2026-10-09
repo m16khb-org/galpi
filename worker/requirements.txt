@@ -1,7 +1,14 @@
-# Direct pins. `requirements.lock` is the resolved set the app installs from;
-# regenerate it with `uv pip compile` after editing anything here.
+# Direct pins shared by every platform's WhisperX lock (`requirements.lock` for
+# macOS, `requirements-windows-{cpu,cuda}.lock`). Regenerate all of them with
+# the command in each lock header, the same `--exclude-newer` cutoff and `-U`,
+# so the platforms resolve to the same versions. The macOS lock must be
+# compiled with `MACOSX_DEPLOYMENT_TARGET=14.0` (Galpi's minimum): uv otherwise
+# targets an older macOS and falls back to wheels that predate macOS 14 tags.
 whisperx==3.8.6
 torch==2.8.0
 torchaudio==2.8.0
 pyannote.audio==4.0.7
 imageio-ffmpeg==0.6.0
+# macOS decodes WhisperX ASR on Metal through MLX (CTranslate2 has no Metal
+# backend); the marker keeps it out of the Windows and Linux locks.
+mlx-whisper==0.4.3; sys_platform == "darwin"

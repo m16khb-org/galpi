@@ -34,5 +34,5 @@ Not-tested: <known verification gaps>
 - Do not stage unrelated changes; never stage generated trees
   (`node_modules`, `dist`, `src-tauri/target`, `src-tauri/resources/worker`,
   `src-tauri/binaries`).
-- Manually inspect secret-like paths (tokens `hf_...`, API keys) before
+- Manually inspect secret-like paths (API keys, credential files) before
   committing.

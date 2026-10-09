@@ -29,7 +29,7 @@ This project-specific constitution should be read at session start. Follow the g
 ## Principles
 
 - Host adapters must not bypass core policy.
-- Never put raw secrets (Hugging Face `hf_` tokens, API keys) in docs, logs,
+- Never put raw secrets (API keys, tokens) in docs, logs,
   test fixtures, or MCP/CLI responses.
 - Preserve explicit workspace-root and command-policy boundaries.
 - Harness results observed from Codex and Claude Code should match.

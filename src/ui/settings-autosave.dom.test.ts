@@ -58,8 +58,6 @@ function createBackend(
     prepare: async () => {
       throw new Error("unused prepare")
     },
-    huggingFaceTokenStored: async () => false,
-    saveHuggingFaceToken: async () => undefined,
     loadAssistantSettings: async () => initialAssistant,
     saveAssistantApiKey: async (key) => {
       onSaveKey(key)
@@ -92,7 +90,6 @@ function createBackend(
     chooseAudio: async () => null,
     chooseTranscript: async () => null,
     chooseOutputDirectory: async () => null,
-    openModelAccessPage: async () => undefined,
     listenToJobs: async () => () => undefined,
     loadChatGptSettings: async () => chatGpt,
     saveChatGptPreferences: async (preferences) => {

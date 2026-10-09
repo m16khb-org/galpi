@@ -21,13 +21,13 @@
 
 ## 한눈에 보기
 
-Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져와, 한국어 전사와 화자분리를 로컬에서 수행합니다. 전사 엔진은 설정의 `전사 엔진`에서 선택하며 기본값은 `Qwen3`(Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B)이고 이전 엔진 `WhisperX`(faster-whisper large-v3-turbo)를 그대로 고를 수 있습니다. 화자분리는 두 프리셋이 pyannote community-1을 공용합니다. 전사 결과는 사용자가 고른 폴더에 저장되며, 선택적으로 OpenAI 호환 API를 사용해 한국어 회의록 Markdown을 만들 수 있습니다.
+Galpi는 회의 음성을 앱 안에서 녹음하거나 기존 파일로 가져와, 한국어 전사와 화자분리를 로컬에서 수행합니다. 기본 전사 엔진은 모든 플랫폼에서 `WhisperX`(Whisper large-v3-turbo, 한국어 정렬, pyannote community-1 화자분리)입니다. 음성 인식은 Mac에서 MLX(Metal GPU), NVIDIA GPU가 있는 Windows에서 CUDA, 그 밖에는 CPU로 실행하고, 정렬과 화자분리는 같은 공식 WhisperX 코드를 씁니다. Apple Silicon Mac에서는 설정의 `전사 엔진`에서 `Qwen3`(Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B)를 선택할 수도 있습니다. 전사 결과는 사용자가 고른 폴더에 저장되며, 선택적으로 OpenAI 호환 API를 사용해 한국어 회의록 Markdown을 만들 수 있습니다.
 
 | 기능 | 내용 |
 |---|---|
 | 바로 녹음 | 마이크 입력(CPAL: CoreAudio/WASAPI)을 16-bit PCM WAV로 저장 |
 | 파일 가져오기 | `m4a`, `mp3`, `wav`, `mp4`, `mov`, `aac`, `flac`, `ogg` |
-| 로컬 전사 | `Qwen3`(기본) 또는 `WhisperX` 프리셋 한국어 ASR |
+| 로컬 전사 | `WhisperX`(기본) 또는 Mac 전용 `Qwen3` 프리셋 한국어 ASR |
 | 화자분리 | pyannote 기반 분리, 자동·정확히·최소/최대 화자 수 힌트 |
 | 문장 정렬 | 한국어 문장 정렬과 장기 무음 환각 필터링 |
 | 참석자 명부 | 이름·팀·역할·별칭·설명을 회의마다 재사용 |
@@ -66,22 +66,10 @@ Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qw
 ### 2. 최초 엔진 준비
 
 1. 앱 우측 상단의 **설정**을 엽니다.
-2. 새 Mac에서 화자분리 모델을 처음 받는다면 Hugging Face 토큰을 저장합니다.
-3. **로컬 엔진 준비**를 누릅니다.
-4. 선택한 엔진의 엔진, 전사 모델, ffmpeg가 모두 `준비됨`이 될 때까지 기다립니다. `전사 엔진` 선택지 아래에는 각 프리셋의 준비 상태가 함께 표시됩니다.
+2. **로컬 엔진 준비**를 누릅니다. 화자분리 모델은 토큰 없이 받을 수 있는 공개 미러(`pyannote-community/speaker-diarization-community-1`)에서 내려받으므로 Hugging Face 계정이나 토큰이 필요 없습니다.
+3. 선택한 엔진의 엔진, 전사 모델, ffmpeg가 모두 `준비됨`이 될 때까지 기다립니다. `전사 엔진` 선택지 아래에는 각 프리셋의 준비 상태가 함께 표시됩니다.
 
 최초 준비에서는 앱 전용 Python 3.12 환경과 수 GB의 모델을 내려받을 수 있습니다. 이후에는 같은 앱 데이터 폴더와 모델 캐시를 재사용합니다. 두 프리셋은 서로 다른 가상환경(`engine/`, `engine/qwen3/`)에 설치되므로 한쪽을 준비해도 다른쪽에 영향을 주지 않습니다.
-
-### 3. Hugging Face 토큰
-
-화자분리 모델을 처음 내려받을 때만 필요합니다.
-
-1. [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)의 이용 조건에 동의합니다.
-2. [Hugging Face Access Tokens](https://huggingface.co/settings/tokens)에서 **Fine-grained** 토큰을 만듭니다.
-3. 해당 저장소에 **Read** 권한만 허용합니다.
-4. `hf_`로 시작하는 값을 Galpi 설정에 저장합니다. 저장된 토큰을 바꾸려면 입력란에 새 토큰을 붙여 넣으면 됩니다.
-
-쓰기 권한과 Inference Providers 권한은 필요하지 않습니다.
 
 ## 사용 흐름
 
@@ -181,7 +169,7 @@ API Key 대신 ChatGPT 계정으로 로그인해 회의록 정제 모델을 사�
 
 - 음성과 전사 산출물은 사용자가 선택한 로컬 폴더에 저장됩니다.
 - 전사·정렬·화자분리 모델(Qwen3, WhisperX, pyannote)은 Galpi의 앱 전용 Hugging Face 캐시에 저장됩니다.
-- Hugging Face 토큰, AI 증강 API 키, ChatGPT 로그인 토큰은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이 노출될 수 있습니다.
+- AI 증강 API 키와 ChatGPT 로그인 토큰은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이 노출될 수 있습니다.
 - macOS에서는 자격 증명을 아직 Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. macOS의 Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다.
 - AI 회의록을 실행하지 않으면 전사문은 외부 LLM API로 전송되지 않습니다.
 - worker는 고정된 프로그램과 argv로 실행되며 셸 문자열을 실행하지 않습니다.
@@ -206,7 +194,7 @@ Rust application
 |---|---|
 | `src/` | 도메인 계약(작업·화자·백엔드 포트)과 검증, 상태 머신, Zod 경계, DOM UI |
 | `src-tauri/` | Tauri 명령, Rust use case·도메인 값 객체, 녹음·프로세스 어댑터 |
-| `worker/` | Qwen3·WhisperX 프리셋 전사, 정렬, 화자분리, 회의록 가공 |
+| `worker/` | WhisperX(MLX·CUDA·CPU 음성 인식)·Qwen3 프리셋 전사, 정렬, 화자분리, 회의록 가공 |
 | `scripts/` | 아키텍처 검사, sidecar staging, DMG 패키징 |
 | `DESIGN.md` | UI, 접근성, 컴포넌트 상태의 규범 |
 | `docs/ARCHITECTURE.md` | 레이어 구조와 포트 소유권의 규범 |
@@ -284,7 +272,6 @@ Hardened Runtime에 필요한 entitlement는 `src-tauri/Entitlements.plist`에 �
 | `cargo tauri` 명령을 찾을 수 없음 | `cargo install tauri-cli --version 2.11.4 --locked` |
 | 로컬 엔진 준비가 중간에 실패함 | 같은 버튼을 다시 누르면 이어서 재시도합니다(실패한 부분 설치는 자동으로 정리됩니다). 네트워크 상태도 확인하세요 |
 | Qwen3 준비 시 내려받을 파일이 큼 | Qwen3 프리셋은 전사·정렬 모델 합계 약 6.6GB를 내려받습니다 |
-| 모델 다운로드가 401/403으로 실패 | 모델 이용 조건 동의와 Fine-grained Read 토큰 확인 |
 | 마이크 녹음이 시작되지 않음 | 시스템 설정에서 Galpi 마이크 권한 확인 |
 | 상대방 음성이 녹음되지 않음 | 현재 시스템 오디오 캡처는 지원하지 않음 |
 | AI 회의록이 실패함 | API Key, Base URL, 모델 이름, 제공자 사용량 한도 확인 |

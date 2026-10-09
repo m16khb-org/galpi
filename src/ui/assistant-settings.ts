@@ -1,6 +1,6 @@
 import type { AssistantSettings } from "../domain/job"
-import { nextTokenVisibility, tokenDisplayValue } from "./token-settings"
 import { required } from "./dom"
+import { nextSecretVisibility, secretDisplayValue } from "./secret-mask"
 
 const KEY_SELECTOR = "#settings-assistant-key"
 const MODEL_SELECTOR = "#settings-assistant-model"
@@ -85,7 +85,7 @@ export class AssistantSettingsView {
     const input = this.element<HTMLInputElement>(KEY_SELECTOR)
     this.stored = stored
     this.visible = false
-    input.value = stored ? tokenDisplayValue(apiKey ?? "", false) : ""
+    input.value = stored ? secretDisplayValue(apiKey ?? "", false) : ""
     input.readOnly = stored
     input.dataset["visible"] = "false"
     this.renderVisibility(false)
@@ -97,8 +97,8 @@ export class AssistantSettingsView {
   toggleVisibility(): void {
     if (this.persistedKey === null) return
     const input = this.element<HTMLInputElement>(KEY_SELECTOR)
-    this.visible = nextTokenVisibility(this.visible)
-    input.value = tokenDisplayValue(this.persistedKey, this.visible)
+    this.visible = nextSecretVisibility(this.visible)
+    input.value = secretDisplayValue(this.persistedKey, this.visible)
     input.dataset["visible"] = String(this.visible)
     this.renderVisibility(this.visible)
   }

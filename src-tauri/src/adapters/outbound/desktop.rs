@@ -8,7 +8,7 @@ use crate::application::ports::{
 };
 use crate::domain::artifact::Artifacts;
 use crate::domain::engine::{EnginePreset, EngineSelection};
-use crate::domain::job::{SetupRequest, SpeakerHint};
+use crate::domain::job::SpeakerHint;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -38,18 +38,9 @@ impl EnginePort for DesktopAdapter {
         &self,
         job_id: Uuid,
         cancel: &mut oneshot::Receiver<()>,
-        request: &SetupRequest,
         selection: EngineSelection,
     ) -> Result<EnvironmentStatus, AppError> {
-        setup::prepare(
-            &self.app,
-            self.events.as_ref(),
-            job_id,
-            cancel,
-            request,
-            selection,
-        )
-        .await
+        setup::prepare(&self.app, self.events.as_ref(), job_id, cancel, selection).await
     }
 }
 

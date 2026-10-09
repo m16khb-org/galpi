@@ -1,15 +1,13 @@
 use std::path::Path;
 
-/// Requirements files whose contents decide whether an installed engine is
-/// still current. Their fingerprints are compiled in so that editing a pinned
-/// dependency invalidates every existing virtualenv on its own, instead of
-/// waiting for someone to remember to bump a version constant by hand.
+/// Resolved lock files whose contents decide whether an installed engine is
+/// still current. Their fingerprints are compiled in so that any change to
+/// what gets installed, a direct pin or a transitive one, invalidates every
+/// existing virtualenv on its own, instead of waiting for someone to remember
+/// to bump a version constant by hand.
 const REQUIREMENTS: [(&str, &str); 4] = [
-    ("GALPI_WHISPERX_REQUIREMENTS", "../worker/requirements.txt"),
-    (
-        "GALPI_QWEN3_REQUIREMENTS",
-        "../worker/requirements-qwen3.txt",
-    ),
+    ("GALPI_WHISPERX_MAC_LOCK", "../worker/requirements.lock"),
+    ("GALPI_QWEN3_LOCK", "../worker/requirements-qwen3.lock"),
     (
         "GALPI_WHISPERX_WIN_CPU_LOCK",
         "../worker/requirements-windows-cpu.lock",

@@ -42,7 +42,7 @@ pub const MAX_BLOB_BYTES: usize = 2560;
 /// A lone high surrogate (U+D800, little endian), then `chunks:`.
 const MANIFEST_PREFIX: &[u8] = &[0x00, 0xD8, b'c', b'h', b'u', b'n', b'k', b's', b':'];
 
-/// `com.m16khb.galpi:hugging-face-token` and friends.
+/// `com.m16khb.galpi:assistant-api-key` and friends.
 pub fn credential_target(secret: Secret) -> String {
     credential_target_in(SERVICE, secret)
 }
@@ -50,6 +50,13 @@ pub fn credential_target(secret: Secret) -> String {
 /// Like [`credential_target`] under another service, for isolated tests.
 pub fn credential_target_in(service: &str, secret: Secret) -> String {
     format!("{service}:{}", secret.account())
+}
+
+/// The credential under which earlier builds kept a Hugging Face token, a
+/// feature since removed. Only [`super::SecretStore::forget_retired_token`]
+/// names it, to delete what an upgraded install may still hold.
+pub fn retired_token_target(service: &str) -> String {
+    format!("{service}:hugging-face-token")
 }
 
 /// Where piece `index` of generation `generation` of a long secret lives.
@@ -211,7 +218,7 @@ pub fn assemble(
 mod tests {
     use super::{
         MAX_BLOB_BYTES, assemble, credential_target, decode_blob, encode_blob, layout, live_pieces,
-        orphans, piece_filter, piece_target,
+        orphans, piece_filter, piece_target, retired_token_target,
     };
     use crate::adapters::outbound::secrets::Secret;
     use crate::application::error::AppError;
@@ -243,8 +250,12 @@ mod tests {
     #[test]
     fn targets_are_service_qualified_account_names() {
         assert_eq!(
-            credential_target(Secret::HuggingFaceToken),
+            retired_token_target("com.m16khb.galpi"),
             "com.m16khb.galpi:hugging-face-token"
+        );
+        assert_eq!(
+            piece_filter(&retired_token_target("svc")),
+            "svc:hugging-face-token#*"
         );
         assert_eq!(
             credential_target(Secret::AssistantApiKey),

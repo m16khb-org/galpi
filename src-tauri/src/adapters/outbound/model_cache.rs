@@ -1,36 +1,44 @@
+use super::environment::{ALIGN_MODEL_DIR, PYANNOTE_MODEL_DIR, whisperx_asr_model_dir};
 use super::paths::{AppPaths, canonical_blocking};
 use super::platform::{Os, home_directory};
 use crate::application::error::AppError;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
-const MODEL_DIRECTORIES: [&str; 3] = [
-    "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo",
-    "models--kresnik--wav2vec2-large-xlsr-korean",
-    "models--pyannote--speaker-diarization-community-1",
-];
+/// The Hugging Face cache directories one `WhisperX` preparation downloads.
+const fn model_directories(os: Os) -> [&'static str; 3] {
+    [
+        whisperx_asr_model_dir(os),
+        ALIGN_MODEL_DIR,
+        PYANNOTE_MODEL_DIR,
+    ]
+}
+
+/// How many directories a complete cache holds, whatever the OS.
+const MODEL_COUNT: usize = model_directories(Os::MacOs).len();
 
 pub async fn import_standard_cache(paths: &AppPaths) -> Result<usize, AppError> {
-    let home = home_directory(Os::current(), &|key| std::env::var_os(key));
+    let os = Os::current();
+    let home = home_directory(os, &|key| std::env::var_os(key));
     let source = home.join(".cache/huggingface/hub");
     let destination = paths.cache.join("huggingface/hub");
-    tokio::task::spawn_blocking(move || import_models(&source, &destination))
+    tokio::task::spawn_blocking(move || import_models(&source, &destination, os))
         .await
         .map_err(|error| AppError::new("MODEL_CACHE_IMPORT_FAILED", error.to_string()))?
         .map_err(|error| AppError::io("기존 Hugging Face 모델 캐시를 가져오지 못했습니다", &error))
 }
 
-pub fn can_use_offline_cache(imported: usize, token: Option<&str>) -> bool {
-    imported == MODEL_DIRECTORIES.len() && token.is_none_or(|token| token.trim().is_empty())
+pub fn can_use_offline_cache(imported: usize) -> bool {
+    imported == MODEL_COUNT
 }
 
-fn import_models(source_hub: &Path, destination_hub: &Path) -> Result<usize, Error> {
+fn import_models(source_hub: &Path, destination_hub: &Path, os: Os) -> Result<usize, Error> {
     if !source_hub.is_dir() {
         return Ok(0);
     }
     std::fs::create_dir_all(destination_hub)?;
     let mut imported = 0;
-    for directory in MODEL_DIRECTORIES {
+    for directory in model_directories(os) {
         let source = source_hub.join(directory);
         if !source.is_dir() {
             continue;
@@ -100,8 +108,14 @@ fn copy_file(source: &Path, destination: &Path) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MODEL_DIRECTORIES, can_use_offline_cache, import_models};
+    use super::{MODEL_COUNT, can_use_offline_cache, import_models, model_directories};
+    use crate::adapters::outbound::platform::Os;
     use uuid::Uuid;
+
+    /// The ASR directory of an arbitrary OS; the import tests only need one.
+    fn asr_directory() -> &'static str {
+        model_directories(Os::MacOs)[0]
+    }
 
     #[cfg(unix)]
     #[test]
@@ -110,7 +124,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("galpi-model-cache-{}", Uuid::now_v7()));
         let source_hub = root.join("source");
         let destination_hub = root.join("destination");
-        let model = source_hub.join(MODEL_DIRECTORIES[0]);
+        let model = source_hub.join(asr_directory());
         let blob = model.join("blobs/model-data");
         let snapshot = model.join("snapshots/revision");
         std::fs::create_dir_all(&snapshot)?;
@@ -118,13 +132,13 @@ mod tests {
         std::fs::write(&blob, b"model")?;
         std::os::unix::fs::symlink("../../blobs/model-data", snapshot.join("config.json"))?;
 
-        let imported = import_models(&source_hub, &destination_hub)?;
+        let imported = import_models(&source_hub, &destination_hub, Os::MacOs)?;
 
         let imported_blob = destination_hub
-            .join(MODEL_DIRECTORIES[0])
+            .join(asr_directory())
             .join("blobs/model-data");
         let imported_link = destination_hub
-            .join(MODEL_DIRECTORIES[0])
+            .join(asr_directory())
             .join("snapshots/revision/config.json");
         assert_eq!(imported, 1);
         assert_eq!(std::fs::read(&imported_link)?, b"model");
@@ -149,19 +163,17 @@ mod tests {
         let root = std::env::temp_dir().join(format!("galpi-model-cache-{}", Uuid::now_v7()));
         let source_hub = root.join("source");
         let destination_hub = root.join("destination");
-        let snapshot = source_hub
-            .join(MODEL_DIRECTORIES[0])
-            .join("snapshots/revision");
+        let snapshot = source_hub.join(asr_directory()).join("snapshots/revision");
         std::fs::create_dir_all(&snapshot)?;
         std::fs::write(snapshot.join("config.json"), b"model")?;
 
         // When
-        let imported = import_models(&source_hub, &destination_hub)?;
+        let imported = import_models(&source_hub, &destination_hub, Os::MacOs)?;
 
         // Then
         assert_eq!(imported, 1);
         let copied = destination_hub
-            .join(MODEL_DIRECTORIES[0])
+            .join(asr_directory())
             .join("snapshots/revision/config.json");
         assert_eq!(std::fs::read(copied)?, b"model");
         std::fs::remove_dir_all(root)?;
@@ -169,13 +181,34 @@ mod tests {
     }
 
     #[test]
-    fn uses_offline_mode_only_for_complete_tokenless_cache() {
-        assert!(can_use_offline_cache(MODEL_DIRECTORIES.len(), None));
-        assert!(can_use_offline_cache(MODEL_DIRECTORIES.len(), Some("  ")));
-        assert!(!can_use_offline_cache(MODEL_DIRECTORIES.len() - 1, None));
-        assert!(!can_use_offline_cache(
-            MODEL_DIRECTORIES.len(),
-            Some("hf_token")
-        ));
+    fn uses_offline_mode_only_for_a_complete_cache() {
+        assert!(can_use_offline_cache(MODEL_COUNT));
+        assert!(!can_use_offline_cache(MODEL_COUNT - 1));
+    }
+
+    #[test]
+    fn each_os_imports_only_its_own_asr_cache() -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a standard cache holding the MLX ASR model and the shared ones
+        let root = std::env::temp_dir().join(format!("galpi-model-cache-{}", Uuid::now_v7()));
+        let source_hub = root.join("source");
+        for directory in model_directories(Os::MacOs) {
+            std::fs::create_dir_all(source_hub.join(directory))?;
+        }
+
+        // When / Then: macOS finds all three, Windows misses its faster-whisper one
+        assert_eq!(
+            import_models(&source_hub, &root.join("mac"), Os::MacOs)?,
+            MODEL_COUNT
+        );
+        assert_eq!(
+            import_models(&source_hub, &root.join("windows"), Os::Windows)?,
+            MODEL_COUNT - 1
+        );
+        assert_ne!(
+            model_directories(Os::MacOs)[0],
+            model_directories(Os::Windows)[0]
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
     }
 }

@@ -64,7 +64,7 @@ fn staged_uv_names_are_spelled_out_for_the_sidecar_script_drift_check() {
 fn the_first_preset_is_the_platform_default() {
     assert_eq!(
         Os::MacOs.presets(),
-        [EnginePreset::Qwen3, EnginePreset::WhisperX]
+        [EnginePreset::WhisperX, EnginePreset::Qwen3]
     );
     assert_eq!(Os::Windows.presets(), [EnginePreset::WhisperX]);
     assert_eq!(Os::MacOs.devices(), []);

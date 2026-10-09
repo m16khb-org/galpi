@@ -3,7 +3,9 @@
 import logging
 import sys
 import warnings
+from dataclasses import dataclass
 from importlib import import_module
+from importlib.util import find_spec
 from typing import Literal, Protocol, cast
 
 TorchDevice = Literal["cpu", "mps", "cuda"]
@@ -51,7 +53,24 @@ def needs_cpu_fallback(device: TorchDevice) -> bool:
     return device != "cpu"
 
 
-AsrDevice = Literal["cpu", "cuda"]
+AsrBackend = Literal["mlx", "ctranslate2"]
+
+
+@dataclass(frozen=True, slots=True)
+class AsrRuntime:
+    """Which library decodes speech, on which device, at which precision."""
+
+    backend: AsrBackend
+    device: str
+    compute_type: str
+
+    def label(self) -> str:
+        if self.backend == "mlx":
+            return "MLX float16"
+        return f"CTranslate2 {self.device.upper()} {self.compute_type}"
+
+
+CPU_ASR = AsrRuntime("ctranslate2", "cpu", "int8")
 
 
 class Ctranslate2(Protocol):
@@ -60,29 +79,36 @@ class Ctranslate2(Protocol):
 
 
 def select_asr_runtime(
-    torch_device: TorchDevice, *, ct2_cuda_devices: int
-) -> tuple[AsrDevice, str]:
-    """CTranslate2 device and compute type for ASR.
+    torch_device: TorchDevice, *, mlx_available: bool, ct2_cuda_devices: int
+) -> AsrRuntime:
+    """Pick the ASR runtime; the rest of the WhisperX pipeline is shared.
 
-    CUDA float16 when torch runs on CUDA (the Windows CUDA build, whose torch
-    wheels also carry the cuBLAS/cuDNN DLLs CTranslate2 loads) and CTranslate2
-    sees a GPU. CTranslate2 has no MPS backend, so every other case keeps CPU
-    int8.
+    MLX (Metal) wherever `mlx-whisper` is installed, which only the macOS lock
+    does: CTranslate2 has no Metal backend. CUDA float16 when torch runs on
+    CUDA (the CUDA build's torch wheels also carry the cuBLAS/cuDNN libraries
+    CTranslate2 loads) and CTranslate2 sees a GPU. CPU int8 otherwise.
     """
 
+    if mlx_available:
+        return AsrRuntime("mlx", "mlx", "float16")
     if torch_device == "cuda" and ct2_cuda_devices > 0:
-        return "cuda", "float16"
-    return "cpu", "int8"
+        return AsrRuntime("ctranslate2", "cuda", "float16")
+    return CPU_ASR
 
 
-def detect_asr_runtime(torch_device: TorchDevice) -> tuple[AsrDevice, str]:
-    """ASR runtime for this machine. ctranslate2 is imported lazily."""
+def detect_asr_runtime(torch_device: TorchDevice) -> AsrRuntime:
+    """ASR runtime for this machine. Heavy modules are imported lazily."""
 
-    if torch_device != "cuda":
-        return select_asr_runtime(torch_device, ct2_cuda_devices=0)
+    mlx_available = find_spec("mlx_whisper") is not None
+    if mlx_available or torch_device != "cuda":
+        return select_asr_runtime(
+            torch_device, mlx_available=mlx_available, ct2_cuda_devices=0
+        )
     ctranslate2 = cast(Ctranslate2, cast(object, import_module("ctranslate2")))
     return select_asr_runtime(
-        torch_device, ct2_cuda_devices=ctranslate2.get_cuda_device_count()
+        torch_device,
+        mlx_available=False,
+        ct2_cuda_devices=ctranslate2.get_cuda_device_count(),
     )
 
 

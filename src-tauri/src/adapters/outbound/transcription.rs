@@ -108,7 +108,7 @@ async fn run_worker(
             env: {
                 // Transcription only runs after the readiness gate, so the
                 // Qwen3 stack can load exclusively from the prepared cache.
-                let mut env = process_environment(runtime.paths, &root, None);
+                let mut env = process_environment(runtime.paths, &root);
                 if matches!(engine, EnginePreset::Qwen3) {
                     env.insert("HF_HUB_OFFLINE".into(), "1".into());
                     env.insert("TRANSFORMERS_OFFLINE".into(), "1".into());

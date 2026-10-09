@@ -35,7 +35,6 @@ const SERVICE: &str = "com.m16khb.galpi";
 /// One stored credential.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Secret {
-    HuggingFaceToken,
     AssistantApiKey,
     /// The serialized ChatGPT OAuth tokens.
     ChatGptTokens,
@@ -48,7 +47,6 @@ impl Secret {
     )]
     const fn account(self) -> &'static str {
         match self {
-            Self::HuggingFaceToken => "hugging-face-token",
             Self::AssistantApiKey => "assistant-api-key",
             Self::ChatGptTokens => "chatgpt-tokens",
         }
@@ -71,6 +69,13 @@ pub trait SecretStore: std::fmt::Debug + Send + Sync {
     fn keeps_plaintext_in_settings(&self) -> bool {
         false
     }
+
+    /// Delete the credential an earlier build kept for a Hugging Face token,
+    /// a feature since removed. Only the Windows store ever held one outside
+    /// the settings file, so nothing else has anything to delete.
+    fn forget_retired_token(&self) -> Result<(), AppError> {
+        Ok(())
+    }
 }
 
 /// An in-process store used by tests, so the suite never reads or writes the
@@ -83,6 +88,8 @@ pub struct InMemorySecrets {
     /// in for how many times a real keychain would have asked the user.
     writes: std::sync::atomic::AtomicUsize,
     reads: std::sync::atomic::AtomicUsize,
+    /// How many times the retired-token credential was deleted.
+    retired_purges: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -93,6 +100,11 @@ impl InMemorySecrets {
 
     pub fn reads(&self) -> usize {
         self.reads.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn retired_purges(&self) -> usize {
+        self.retired_purges
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -125,6 +137,13 @@ impl SecretStore for InMemorySecrets {
                 let _removed = values.remove(secret.account());
             }
         }
+        Ok(())
+    }
+
+    fn forget_retired_token(&self) -> Result<(), AppError> {
+        let _count = self
+            .retired_purges
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 }

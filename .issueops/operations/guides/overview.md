@@ -33,14 +33,15 @@ bun run sidecar:stage  # stage sidecars without running the app
 
 - No required env vars for the app itself (the worker receives
   `GALPI_ASSISTANT_*` variables from the host). User-level settings live in the
-  app settings UI, never in docs/logs: Hugging Face fine-grained read-only
-  token (only for first `pyannote/speaker-diarization-community-1` download),
-  OpenAI-compatible endpoint + key for meeting-minutes refinement.
-- Secret storage differs per OS: Windows keeps the Hugging Face token and
-  assistant API key in Credential Manager (`com.m16khb.galpi:hugging-face-token`,
-  `com.m16khb.galpi:assistant-api-key`); macOS keeps them in the `0600`
-  settings file.
-- Do not put raw tokens (`hf_...`, API keys) in docs, test fixtures, or logs.
+  app settings UI, never in docs/logs: OpenAI-compatible endpoint + key for
+  meeting-minutes refinement. Models download without an account or token (the
+  diarization model comes from the non-gated `pyannote-community` mirror).
+- Secret storage differs per OS: Windows keeps the assistant API key in
+  Credential Manager (`com.m16khb.galpi:assistant-api-key`); macOS keeps it in
+  the `0600` settings file. Settings written by builds that had a Hugging Face
+  token still load: the old keys are dropped on first read and the Windows
+  credential `com.m16khb.galpi:hugging-face-token` is deleted once.
+- Do not put raw secrets (API keys) in docs, test fixtures, or logs.
 
 ## ChatGPT sign-in (issue #4)
 

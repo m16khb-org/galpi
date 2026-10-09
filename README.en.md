@@ -21,13 +21,13 @@
 
 ## At a glance
 
-Galpi records audio inside the app or imports an existing meeting file, then runs Korean transcription and speaker diarization locally. The transcription engine is chosen in settings: `Qwen3` (Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B) is the default, and the previous `WhisperX` stack (faster-whisper large-v3-turbo) remains selectable. Both presets share pyannote community-1 for diarization. Results are stored in a folder you choose. Optionally, Galpi can send the transcript to an OpenAI-compatible API and generate structured Korean meeting minutes in Markdown.
+Galpi records audio inside the app or imports an existing meeting file, then runs Korean transcription and speaker diarization locally. The default engine on every platform is `WhisperX` (Whisper large-v3-turbo, Korean alignment, pyannote community-1 diarization). Speech recognition runs on MLX (Metal GPU) on a Mac, on CUDA on Windows with an NVIDIA GPU, and on the CPU otherwise; alignment and diarization use the same official WhisperX code everywhere. On Apple Silicon Macs, `Qwen3` (Qwen3-ASR-1.7B + Qwen3-ForcedAligner-0.6B) can be chosen under the `전사 엔진` (transcription engine) setting. Results are stored in a folder you choose. Optionally, Galpi can send the transcript to an OpenAI-compatible API and generate structured Korean meeting minutes in Markdown.
 
 | Capability | What it does |
 |---|---|
 | Direct recording | Records microphone input (CPAL: CoreAudio/WASAPI) to a 16-bit PCM WAV |
 | File import | `m4a`, `mp3`, `wav`, `mp4`, `mov`, `aac`, `flac`, `ogg` |
-| Local transcription | Korean ASR on the `Qwen3` (default) or `WhisperX` preset |
+| Local transcription | Korean ASR on the `WhisperX` (default) or Mac-only `Qwen3` preset |
 | Speaker diarization | pyannote diarization with automatic, exact, or min/max speaker-count hints |
 | Alignment | Korean sentence alignment and long-silence hallucination filtering |
 | Participant roster | Reusable names, teams, roles, aliases, and descriptions |
@@ -66,22 +66,10 @@ On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple
 ### 2. Prepare the local engine
 
 1. Open `설정` (Settings) from the top-right corner.
-2. On a new Mac, save a Hugging Face token if the diarization model requires access.
-3. Select `로컬 엔진 준비` (Prepare local engine).
-4. Wait until WhisperX, the transcription model, and ffmpeg all show `Ready`.
+2. Select `로컬 엔진 준비` (Prepare local engine). The diarization model comes from a public mirror (`pyannote-community/speaker-diarization-community-1`) that needs no Hugging Face account or token.
+3. Wait until WhisperX, the transcription model, and ffmpeg all show `Ready`.
 
 The first setup installs an app-specific Python 3.12 environment and may download several gigabytes of models. Later runs reuse the same app data directory and model cache.
-
-### 3. Hugging Face token
-
-The token is only required when the diarization model is downloaded for the first time.
-
-1. Accept the terms for [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1).
-2. Create a **Fine-grained** token in [Hugging Face Access Tokens](https://huggingface.co/settings/tokens).
-3. Grant **Read** access only to that repository.
-4. Save the `hf_...` value in Galpi Settings. To replace a saved token, paste the new one into the field.
-
-Write access and Inference Providers access are not required.
 
 ## Workflow
 
@@ -181,7 +169,7 @@ The completion screen can open each artifact or reveal its output folder in Find
 
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
-- The Hugging Face token, the AI augmentation API key, and the ChatGPT sign-in tokens are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, and `com.m16khb.galpi:chatgpt-tokens`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
+- The AI augmentation API key and the ChatGPT sign-in tokens are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:assistant-api-key` and `com.m16khb.galpi:chatgpt-tokens`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
 - On macOS credentials are not encrypted with the Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The macOS move to the Keychain lands together with Developer ID signing.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.
@@ -206,7 +194,7 @@ Rust application
 |---|---|
 | `src/` | Domain contracts (job, speaker, backend port) with validation, state machines, Zod boundaries, DOM UI |
 | `src-tauri/` | Tauri commands, Rust use cases and domain value objects, recording and process adapters |
-| `worker/` | Qwen3/WhisperX preset transcription, alignment, diarization, minutes refinement |
+| `worker/` | WhisperX (MLX/CUDA/CPU ASR) and Qwen3 preset transcription, alignment, diarization, minutes refinement |
 | `scripts/` | Architecture checks, sidecar staging, and DMG packaging |
 | `DESIGN.md` | Normative UI, accessibility, and component-state contract |
 | `docs/ARCHITECTURE.md` | Normative layering and port ownership |
@@ -284,7 +272,6 @@ The entitlements Hardened Runtime needs are declared in `src-tauri/Entitlements.
 | `cargo tauri` is not found | Run `cargo install tauri-cli --version 2.11.4 --locked` |
 | Local engine preparation fails midway | Press the same button again to retry (a partial install is cleared automatically); also check the network |
 | The Qwen3 preset download is large | The Qwen3 preset downloads about 6.6 GB of ASR and aligner models in total |
-| Model download returns 401/403 | Accept the model terms and verify the Fine-grained Read token |
 | Microphone recording does not start | Check Galpi microphone access in System Settings |
 | Other participants are not recorded | System-audio capture is not supported yet |
 | AI minutes fail | Check API Key, Base URL, model name, and provider quota |

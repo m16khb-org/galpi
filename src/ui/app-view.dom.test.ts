@@ -34,7 +34,7 @@ function environment(ready: boolean): EnvironmentStatus {
     defaultOutputDirectory: "/tmp/galpi/out",
     engineVersion: "Qwen3-ASR-1.7B · 1",
     computeDevice: "cpu" as const,
-    availablePresets: ["qwen3", "whisperx"] as const,
+    availablePresets: ["whisperx", "qwen3"] as const,
     availableDevices: [] as const,
     cudaDriverDetected: false,
   }
@@ -493,19 +493,21 @@ describe("AppView platform capabilities (real DOM)", () => {
     expect(display('[data-engine-option="whisperx"]')).not.toBe("none")
   })
 
-  test("badges the first available preset as the default", () => {
-    // When
+  test("badges WhisperX as the default and Qwen3 as an opt-in preset", () => {
+    // When: Windows offers WhisperX only
     view.setEnvironment(windowsEnvironment(true))
 
     // Then
     expect(text(root, "#engine-whisperx-state")).toBe("기본 · 준비됨")
 
-    // When: macOS offers qwen3 first
+    // When: macOS offers both
     view.setEnvironment(environment(true))
 
-    // Then
-    expect(text(root, "#engine-qwen3-state")).toContain("기본")
-    expect(text(root, "#engine-whisperx-state")).toContain("이전 엔진")
+    // Then: WhisperX stays the default, Qwen3 is chosen on purpose
+    expect(text(root, "#engine-whisperx-state")).toContain("기본")
+    expect(text(root, "#engine-qwen3-state")).toContain("선택 · Apple Silicon")
+    expect(root.querySelector("#engine-qwen3-state")?.textContent).not.toContain("기본")
+    expect(root.textContent).not.toContain("이전 엔진")
   })
 
   test("shows the device group only for whisperx with selectable devices", () => {

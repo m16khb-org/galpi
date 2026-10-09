@@ -4,6 +4,8 @@ from tempfile import TemporaryDirectory
 
 from ..galpi_worker.preparation import link_ffmpeg
 from ..galpi_worker.runtime import (
+    CPU_ASR,
+    TorchDevice,
     ffmpeg_link_name,
     needs_cpu_fallback,
     select_asr_runtime,
@@ -25,16 +27,29 @@ class DeviceSelectionTests(unittest.TestCase):
         self.assertTrue(needs_cpu_fallback("mps"))
         self.assertFalse(needs_cpu_fallback("cpu"))
 
-    def test_asr_runs_on_cuda_only_when_torch_and_ctranslate2_both_see_it(self) -> None:
-        # Given/When/Then: CTranslate2 has no MPS backend and needs its own GPU
+    def test_asr_prefers_mlx_then_cuda_then_cpu_int8(self) -> None:
+        # Given/When/Then: MLX wherever mlx-whisper is installed (the macOS
+        # lock); CTranslate2 CUDA only when torch and CTranslate2 both see a
+        # GPU; CPU int8 otherwise, including Apple MPS without MLX
+        mlx = select_asr_runtime("mps", mlx_available=True, ct2_cuda_devices=0)
+        self.assertEqual((mlx.backend, mlx.compute_type), ("mlx", "float16"))
+        cuda = select_asr_runtime("cuda", mlx_available=False, ct2_cuda_devices=1)
         self.assertEqual(
-            select_asr_runtime("cuda", ct2_cuda_devices=1), ("cuda", "float16")
+            (cuda.backend, cuda.device, cuda.compute_type),
+            ("ctranslate2", "cuda", "float16"),
         )
-        self.assertEqual(
-            select_asr_runtime("cuda", ct2_cuda_devices=0), ("cpu", "int8")
+        cases: tuple[tuple[TorchDevice, int], ...] = (
+            ("cuda", 0),
+            ("mps", 1),
+            ("cpu", 1),
         )
-        self.assertEqual(select_asr_runtime("mps", ct2_cuda_devices=1), ("cpu", "int8"))
-        self.assertEqual(select_asr_runtime("cpu", ct2_cuda_devices=1), ("cpu", "int8"))
+        for torch_device, gpus in cases:
+            self.assertEqual(
+                select_asr_runtime(
+                    torch_device, mlx_available=False, ct2_cuda_devices=gpus
+                ),
+                CPU_ASR,
+            )
 
     def test_ffmpeg_link_name_per_platform(self) -> None:
         self.assertEqual(ffmpeg_link_name(platform="win32"), "ffmpeg.exe")

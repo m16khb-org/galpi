@@ -32,23 +32,6 @@ pub async fn prepare_environment(
     application.prepare(request).await
 }
 
-/// Whether a token is saved. The value never leaves the host: the sheet shows a
-/// mask either way, and reading it would put a keychain prompt on every open.
-#[tauri::command]
-pub async fn hugging_face_token_stored(
-    application: State<'_, Application>,
-) -> Result<bool, AppError> {
-    application.hugging_face_token_stored().await
-}
-
-#[tauri::command]
-pub async fn save_hugging_face_token(
-    application: State<'_, Application>,
-    token: String,
-) -> Result<(), AppError> {
-    application.save_hugging_face_token(token).await
-}
-
 #[tauri::command]
 pub async fn load_assistant_settings(
     application: State<'_, Application>,

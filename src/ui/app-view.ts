@@ -15,14 +15,16 @@ import { GlossarySettingsView } from "./glossary-settings"
 import { ParticipantPickerView } from "./participant-picker"
 import { ParticipantSettingsView } from "./participant-settings"
 import { setActionButtonVariant } from "./seed"
-import { bindTokenGuide } from "./token-guide"
-import { TokenSettingsView } from "./token-settings"
+import { SettingsDialogView } from "./settings-dialog"
+
+/** How each engine preset is described next to its readiness in the settings sheet. */
+const ENGINE_ROLES = { whisperx: "기본", qwen3: "선택 · Apple Silicon" } as const
 
 export type BusyKind = "setup" | "transcription" | "refinement" | null
 
 export class AppView {
   readonly root: HTMLElement
-  readonly tokenSettings: TokenSettingsView
+  readonly settingsDialog: SettingsDialogView
   readonly assistantSettings: AssistantSettingsView
   readonly chatGptSettings: ChatGptSettingsView
   readonly participantSettings: ParticipantSettingsView
@@ -55,7 +57,7 @@ export class AppView {
   constructor(root: HTMLElement) {
     this.root = root
     this.root.innerHTML = appTemplate
-    this.tokenSettings = new TokenSettingsView(root)
+    this.settingsDialog = new SettingsDialogView(root)
     this.assistantSettings = new AssistantSettingsView(root)
     this.chatGptSettings = new ChatGptSettingsView(root)
     this.participantSettings = new ParticipantSettingsView(root, () => {
@@ -64,7 +66,6 @@ export class AppView {
     })
     this.glossarySettings = new GlossarySettingsView(root, () => this.settingsChangeHandler?.())
     this.attendees = new ParticipantPickerView(root, (count) => this.applyAttendeeCount(count))
-    bindTokenGuide(this.root)
   }
 
   /** Selecting attendees fills the speaker count; a later manual change is left alone. */
@@ -94,7 +95,6 @@ export class AppView {
   onSettingsChange(handler: () => void): void {
     this.settingsChangeHandler = handler
     for (const selector of [
-      "#settings-hf-token",
       "#settings-assistant-key",
       "#settings-assistant-model",
       "#settings-assistant-effort",
@@ -159,13 +159,12 @@ export class AppView {
     )) {
       input.checked = input.value === status.enginePreset
     }
-    const defaultPreset = status.availablePresets[0]
-    for (const preset of ["qwen3", "whisperx"] as const) {
+    for (const preset of ["whisperx", "qwen3"] as const) {
       this.element(`[data-engine-option="${preset}"]`).hidden =
         !status.availablePresets.includes(preset)
       this.setEngineBadge(
         `#engine-${preset}-state`,
-        preset === defaultPreset ? "기본" : "이전 엔진",
+        ENGINE_ROLES[preset],
         preset === "qwen3" ? status.qwen3Ready : status.whisperxReady,
       )
     }

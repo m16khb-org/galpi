@@ -11,19 +11,15 @@ use tauri::AppHandle;
 
 pub const ENGINE_VERSION: &str = "3.8.6";
 /// What an installed engine's readiness marker must contain to count as
-/// current: the display version plus the fingerprint of the requirements file
-/// it was installed from. Editing a pin invalidates the existing virtualenv.
+/// current: the display version plus the fingerprint of the lock it was
+/// installed from. Any change to the resolved set invalidates the virtualenv.
 ///
-/// macOS keeps its historical `<version>+<hash>` form byte for byte so an
-/// update never forces a reinstall. Windows names the lock and the Python
-/// request too, so switching between the CPU and CUDA builds, or moving off a
-/// venv built on uv's minor-version junction, invalidates the environment.
+/// Windows also names the lock and the Python request, so switching between
+/// the CPU and CUDA builds, or moving off a venv built on uv's minor-version
+/// junction, invalidates the environment.
 pub fn whisperx_marker(os: Os, device: ComputeDevice) -> String {
     match os {
-        Os::MacOs => format!(
-            "{ENGINE_VERSION}+{}",
-            env!("GALPI_WHISPERX_REQUIREMENTS_HASH")
-        ),
+        Os::MacOs => format!("{ENGINE_VERSION}+{}", env!("GALPI_WHISPERX_MAC_LOCK_HASH")),
         Os::Windows => {
             let hash = match device {
                 ComputeDevice::Cpu => env!("GALPI_WHISPERX_WIN_CPU_LOCK_HASH"),
@@ -39,14 +35,15 @@ pub fn whisperx_marker(os: Os, device: ComputeDevice) -> String {
 }
 
 pub fn qwen3_marker() -> String {
-    format!(
-        "{QWEN3_ENGINE_VERSION}+{}",
-        env!("GALPI_QWEN3_REQUIREMENTS_HASH")
-    )
+    format!("{QWEN3_ENGINE_VERSION}+{}", env!("GALPI_QWEN3_LOCK_HASH"))
 }
 pub const QWEN3_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
 pub const QWEN3_ALIGNER_ID: &str = "Qwen/Qwen3-ForcedAligner-0.6B";
-const PYANNOTE_MODEL_DIR: &str = "models--pyannote--speaker-diarization-community-1";
+/// The non-gated CC-BY-4.0 mirror of `pyannote/speaker-diarization-community-1`.
+pub(super) const PYANNOTE_MODEL_DIR: &str =
+    "models--pyannote-community--speaker-diarization-community-1";
+/// Korean wav2vec2 alignment model.
+pub(super) const ALIGN_MODEL_DIR: &str = "models--kresnik--wav2vec2-large-xlsr-korean";
 const QWEN3_MLX_WEIGHTS: &str = "mlx/qwen3-asr-1.7b-8bit/weights.safetensors";
 
 pub fn diagnose(
@@ -70,7 +67,7 @@ pub fn status_for(
 ) -> EnvironmentStatus {
     let ffmpeg = os.ffmpeg_file_name();
     let whisperx_engine = whisperx_engine_ready(os, paths, selection.device);
-    let whisperx_models = whisperx_models_ready(paths);
+    let whisperx_models = whisperx_models_ready(os, paths);
     let qwen3_engine = qwen3_engine_ready(paths);
     let qwen3_models = qwen3_models_ready(paths);
     let qwen3_ffmpeg = paths.qwen3_engine_bin.join(ffmpeg).is_file();
@@ -118,21 +115,13 @@ fn qwen3_engine_ready(paths: &AppPaths) -> bool {
             .is_ok_and(|marker| marker == qwen3_marker())
 }
 
-pub fn process_environment(
-    paths: &AppPaths,
-    worker_root: &Path,
-    token: Option<&str>,
-) -> HashMap<OsString, OsString> {
-    let mut env = worker_environment(
+pub fn process_environment(paths: &AppPaths, worker_root: &Path) -> HashMap<OsString, OsString> {
+    worker_environment(
         Os::current(),
         &|key| std::env::var_os(key),
         paths,
         worker_root,
-    );
-    if let Some(token) = token.map(str::trim).filter(|token| !token.is_empty()) {
-        env.insert("HF_TOKEN".into(), token.into());
-    }
-    env
+    )
 }
 
 /// Worker environment for assistant calls, carrying the assistant credential.
@@ -146,7 +135,7 @@ pub fn assistant_environment(
     reasoning_effort: Option<&str>,
     transport: AssistantTransport,
 ) -> HashMap<OsString, OsString> {
-    let mut env = process_environment(paths, worker_root, None);
+    let mut env = process_environment(paths, worker_root);
     env.insert("GALPI_ASSISTANT_API_KEY".into(), api_key.into());
     match transport {
         AssistantTransport::Responses => {
@@ -167,7 +156,17 @@ pub fn assistant_environment(
     env
 }
 
-fn whisperx_models_ready(paths: &AppPaths) -> bool {
+/// Hugging Face cache directory of the ASR model the `WhisperX` worker loads on
+/// this OS: MLX weights on macOS, `CTranslate2` weights for faster-whisper on
+/// Windows.
+pub(super) const fn whisperx_asr_model_dir(os: Os) -> &'static str {
+    match os {
+        Os::MacOs => "models--mlx-community--whisper-large-v3-turbo",
+        Os::Windows => "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo",
+    }
+}
+
+fn whisperx_models_ready(os: Os, paths: &AppPaths) -> bool {
     let manifest = std::fs::read_to_string(&paths.models_manifest)
         .ok()
         .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok());
@@ -178,8 +177,8 @@ fn whisperx_models_ready(paths: &AppPaths) -> bool {
     let hub = paths.cache.join("huggingface/hub");
     manifest_valid
         && [
-            "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo",
-            "models--kresnik--wav2vec2-large-xlsr-korean",
+            whisperx_asr_model_dir(os),
+            ALIGN_MODEL_DIR,
             PYANNOTE_MODEL_DIR,
         ]
         .iter()
@@ -215,7 +214,7 @@ fn cache_dir_name(repo_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ENGINE_VERSION, status_for, whisperx_marker};
+    use super::{ENGINE_VERSION, status_for, whisperx_asr_model_dir, whisperx_marker};
     use crate::adapters::outbound::paths::AppPaths;
     use crate::adapters::outbound::platform::Os;
     use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
@@ -227,14 +226,13 @@ mod tests {
     }
 
     #[test]
-    fn the_macos_marker_is_the_historical_version_plus_requirements_hash() {
-        // Given / When / Then: existing installs must not be asked to reinstall
-        let expected = format!(
-            "{ENGINE_VERSION}+{}",
-            env!("GALPI_WHISPERX_REQUIREMENTS_HASH")
+    fn the_macos_marker_ignores_the_compute_device() {
+        // Given / When / Then: macOS has one lock, so no device choice can
+        // invalidate its environment
+        assert_eq!(
+            whisperx_marker(Os::MacOs, ComputeDevice::Cpu),
+            whisperx_marker(Os::MacOs, ComputeDevice::Cuda)
         );
-        assert_eq!(whisperx_marker(Os::MacOs, ComputeDevice::Cpu), expected);
-        assert_eq!(whisperx_marker(Os::MacOs, ComputeDevice::Cuda), expected);
     }
 
     #[test]
@@ -299,10 +297,87 @@ mod tests {
         );
         assert_eq!(
             status.available_presets,
-            [EnginePreset::Qwen3, EnginePreset::WhisperX]
+            [EnginePreset::WhisperX, EnginePreset::Qwen3]
         );
         assert_eq!(status.available_devices, []);
         assert!(!status.cuda_driver_detected);
+    }
+
+    /// A cache holding every `WhisperX` model but the ASR one, plus a valid
+    /// models manifest, so a test chooses which ASR directory exists.
+    fn whisperx_cache_without_asr(os: Os) -> Result<AppPaths, Box<dyn std::error::Error>> {
+        let root = std::env::temp_dir().join(format!("galpi-models-{}", uuid::Uuid::now_v7()));
+        let paths = AppPaths::from_roots(os, root, Path::new("/documents"));
+        let hub = paths.cache.join("huggingface/hub");
+        for model in [
+            "models--kresnik--wav2vec2-large-xlsr-korean",
+            "models--pyannote-community--speaker-diarization-community-1",
+        ] {
+            std::fs::create_dir_all(hub.join(model))?;
+        }
+        if let Some(parent) = paths.models_manifest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            &paths.models_manifest,
+            format!(r#"{{"protocol":1,"whisperx":"{ENGINE_VERSION}"}}"#),
+        )?;
+        Ok(paths)
+    }
+
+    fn whisperx_models_ready_on(os: Os, paths: &AppPaths) -> bool {
+        status_for(
+            os,
+            None,
+            paths,
+            selection(EnginePreset::WhisperX, ComputeDevice::Cpu),
+        )
+        .models_ready
+    }
+
+    #[test]
+    fn whisperx_models_on_macos_need_the_mlx_asr_cache() -> Result<(), Box<dyn std::error::Error>> {
+        // Given: every other model and the manifest, but no ASR directory
+        let paths = whisperx_cache_without_asr(Os::MacOs)?;
+        let hub = paths.cache.join("huggingface/hub");
+        assert!(!whisperx_models_ready_on(Os::MacOs, &paths));
+
+        // When: only the Windows ASR directory exists
+        std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::Windows)))?;
+
+        // Then: macOS still waits for the MLX weights
+        assert!(!whisperx_models_ready_on(Os::MacOs, &paths));
+
+        // When: the MLX directory arrives
+        std::fs::create_dir_all(hub.join("models--mlx-community--whisper-large-v3-turbo"))?;
+
+        // Then
+        assert!(whisperx_models_ready_on(Os::MacOs, &paths));
+        std::fs::remove_dir_all(paths.root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn whisperx_models_on_windows_need_the_faster_whisper_asr_cache()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: every other model and the manifest, but no ASR directory
+        let paths = whisperx_cache_without_asr(Os::Windows)?;
+        let hub = paths.cache.join("huggingface/hub");
+        assert!(!whisperx_models_ready_on(Os::Windows, &paths));
+
+        // When: only the MLX directory exists
+        std::fs::create_dir_all(hub.join(whisperx_asr_model_dir(Os::MacOs)))?;
+
+        // Then: Windows still waits for the faster-whisper weights
+        assert!(!whisperx_models_ready_on(Os::Windows, &paths));
+
+        // When: the faster-whisper directory arrives
+        std::fs::create_dir_all(hub.join("models--mobiuslabsgmbh--faster-whisper-large-v3-turbo"))?;
+
+        // Then
+        assert!(whisperx_models_ready_on(Os::Windows, &paths));
+        std::fs::remove_dir_all(paths.root)?;
+        Ok(())
     }
 }
 

@@ -22,6 +22,7 @@ class Transcription(TypedDict):
     # Names the engine that produced the checkpoint. Absent on files written
     # before the tag existed, which the WhisperX path still accepts.
     engine: NotRequired[str]
+    language: NotRequired[str]
 
 
 def filter_segments(

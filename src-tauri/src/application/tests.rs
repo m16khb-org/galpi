@@ -60,8 +60,6 @@ fn glossary_entry(id: &str, term: &str) -> GlossaryEntry {
 struct FakePort {
     prepare_calls: AtomicUsize,
     opened_paths: Mutex<Vec<PathBuf>>,
-    prepared_token: Mutex<Option<String>>,
-    settings_token: Mutex<Option<String>>,
     assistant_key: Mutex<Option<String>>,
     assistant: Mutex<AssistantSettings>,
     refinements: Mutex<Vec<SeenRefinement>>,
@@ -81,8 +79,6 @@ impl FakePort {
         Self {
             prepare_calls: AtomicUsize::new(0),
             opened_paths: Mutex::new(Vec::new()),
-            prepared_token: Mutex::new(None),
-            settings_token: Mutex::new(None),
             assistant_key: Mutex::new(None),
             assistant: Mutex::new(AssistantSettings::default()),
             refinements: Mutex::new(Vec::new()),
@@ -191,16 +187,10 @@ impl EnginePort for FakePort {
         &self,
         job_id: Uuid,
         _cancel: &mut oneshot::Receiver<()>,
-        request: &SetupRequest,
         selection: EngineSelection,
     ) -> Result<EnvironmentStatus, AppError> {
         let _ = job_id;
         let preset = selection.preset;
-        *self
-            .prepared_token
-            .lock()
-            .map_err(|_| AppError::new("TEST_ERROR", "prepared token lock poisoned"))? =
-            request.hugging_face_token.clone();
         *self
             .seen_prepare_engines
             .lock()
@@ -212,10 +202,6 @@ impl EnginePort for FakePort {
 
 #[async_trait]
 impl SettingsPort for FakePort {
-    async fn hugging_face_token_stored(&self) -> Result<bool, AppError> {
-        Ok(self.load_hugging_face_token().await?.is_some())
-    }
-
     async fn load_assistant_api_key(&self) -> Result<Option<String>, AppError> {
         self.assistant_key
             .lock()
@@ -228,21 +214,6 @@ impl SettingsPort for FakePort {
             .assistant_key
             .lock()
             .map_err(|_| AppError::new("TEST_ERROR", "assistant key lock poisoned"))? = key;
-        Ok(())
-    }
-
-    async fn load_hugging_face_token(&self) -> Result<Option<String>, AppError> {
-        self.settings_token
-            .lock()
-            .map(|token| token.clone())
-            .map_err(|_| AppError::new("TEST_ERROR", "settings token lock poisoned"))
-    }
-
-    async fn save_hugging_face_token(&self, token: Option<String>) -> Result<(), AppError> {
-        *self
-            .settings_token
-            .lock()
-            .map_err(|_| AppError::new("TEST_ERROR", "settings token lock poisoned"))? = token;
         Ok(())
     }
 
@@ -379,47 +350,6 @@ impl TranscriptImportPort for FakePort {
             source_audio: None,
         })
     }
-}
-
-#[tokio::test]
-async fn saved_hugging_face_token_is_trimmed_and_can_be_cleared() -> Result<(), AppError> {
-    let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
-    let app = port.application();
-
-    app.save_hugging_face_token("  hf_saved  ".to_owned())
-        .await?;
-    assert!(app.hugging_face_token_stored().await?);
-    assert_eq!(
-        port.settings_token
-            .lock()
-            .map_err(|_| AppError::new("TEST_ERROR", "settings token lock poisoned"))?
-            .clone(),
-        Some("hf_saved".to_owned())
-    );
-
-    app.save_hugging_face_token("   ".to_owned()).await?;
-    assert!(!app.hugging_face_token_stored().await?);
-    Ok(())
-}
-
-#[tokio::test]
-async fn prepare_uses_saved_hugging_face_token() -> Result<(), AppError> {
-    let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
-    let app = port.application();
-    app.save_hugging_face_token("hf_saved".to_owned()).await?;
-
-    app.prepare(SetupRequest {
-        job_id: Uuid::now_v7(),
-        hugging_face_token: None,
-    })
-    .await?;
-
-    let token = port
-        .prepared_token
-        .lock()
-        .map_err(|_| AppError::new("TEST_ERROR", "prepared token lock poisoned"))?;
-    assert_eq!(token.as_deref(), Some("hf_saved"));
-    Ok(())
 }
 
 #[tokio::test]
@@ -751,7 +681,7 @@ async fn imported_transcript_has_no_srt_or_checkpoint() -> Result<(), AppError> 
 }
 
 #[tokio::test]
-async fn transcription_defaults_to_qwen3_and_follows_the_saved_preset() -> Result<(), AppError> {
+async fn transcription_defaults_to_whisperx_and_follows_the_saved_preset() -> Result<(), AppError> {
     // Given: a fresh store with no saved preset
     let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
     let app = port.application();
@@ -759,25 +689,25 @@ async fn transcription_defaults_to_qwen3_and_follows_the_saved_preset() -> Resul
     // When: transcribing without touching the preset
     app.transcribe(request(SpeakerHint::Auto)).await?;
 
-    // Then: the default candidate set was used
+    // Then: the default engine was used
     {
         let seen = port
             .seen_engines
             .lock()
             .map_err(|_| AppError::new("TEST_ERROR", "engines lock poisoned"))?;
-        assert_eq!(*seen, [EnginePreset::Qwen3]);
+        assert_eq!(*seen, [EnginePreset::WhisperX]);
     }
 
-    // When: the user switches to the legacy set
-    app.save_engine_preset(EnginePreset::WhisperX).await?;
+    // When: the user opts in to Qwen3
+    app.save_engine_preset(EnginePreset::Qwen3).await?;
     app.transcribe(request(SpeakerHint::Auto)).await?;
 
-    // Then: the next transcription runs on WhisperX
+    // Then: the next transcription runs on Qwen3
     let seen = port
         .seen_engines
         .lock()
         .map_err(|_| AppError::new("TEST_ERROR", "engines lock poisoned"))?;
-    assert_eq!(*seen, [EnginePreset::Qwen3, EnginePreset::WhisperX]);
+    assert_eq!(*seen, [EnginePreset::WhisperX, EnginePreset::Qwen3]);
     Ok(())
 }
 
@@ -786,12 +716,11 @@ async fn prepare_prepares_the_selected_preset() -> Result<(), AppError> {
     // Given
     let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
     let app = port.application();
-    app.save_engine_preset(EnginePreset::WhisperX).await?;
+    app.save_engine_preset(EnginePreset::Qwen3).await?;
 
     // When
     app.prepare(SetupRequest {
         job_id: Uuid::now_v7(),
-        hugging_face_token: None,
     })
     .await?;
 
@@ -800,7 +729,7 @@ async fn prepare_prepares_the_selected_preset() -> Result<(), AppError> {
         .seen_prepare_engines
         .lock()
         .map_err(|_| AppError::new("TEST_ERROR", "prepare engines lock poisoned"))?;
-    assert_eq!(*seen, [EnginePreset::WhisperX]);
+    assert_eq!(*seen, [EnginePreset::Qwen3]);
     Ok(())
 }
 
@@ -821,7 +750,6 @@ async fn the_saved_compute_device_reaches_diagnose_prepare_and_the_readiness_gat
     let status = app.diagnose().await?;
     app.prepare(SetupRequest {
         job_id: Uuid::now_v7(),
-        hugging_face_token: None,
     })
     .await?;
     app.transcribe(request(SpeakerHint::Auto)).await?;

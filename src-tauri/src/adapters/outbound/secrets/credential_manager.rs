@@ -7,8 +7,9 @@
 
 use super::credential::{
     assemble, credential_target, credential_target_in, layout, orphans, piece_filter, piece_target,
+    retired_token_target,
 };
-use super::{Secret, SecretStore};
+use super::{SERVICE, Secret, SecretStore};
 use crate::adapters::outbound::platform::to_wide_nul;
 use crate::application::error::AppError;
 use std::ffi::c_void;
@@ -240,6 +241,15 @@ impl SecretStore for CredentialManager {
         let _ = swept;
         Ok(())
     }
+
+    /// Remove the retired Hugging Face token entry and any pieces it spanned.
+    /// Absent entries are fine, so running this on an install that never held
+    /// one, or twice, is harmless.
+    fn forget_retired_token(&self) -> Result<(), AppError> {
+        let target = retired_token_target(self.service.as_deref().unwrap_or(SERVICE));
+        delete_entry(&target)?;
+        Self::sweep(&target, None)
+    }
 }
 
 #[cfg(test)]
@@ -248,7 +258,7 @@ mod tests {
         CredentialManager, Secret, SecretStore, enumerate_pieces, read_entry, write_entry,
     };
     use crate::adapters::outbound::secrets::credential::{
-        MAX_BLOB_BYTES, encode_blob, layout, live_pieces,
+        MAX_BLOB_BYTES, encode_blob, layout, live_pieces, piece_target, retired_token_target,
     };
     use crate::application::error::AppError;
 
@@ -373,6 +383,39 @@ mod tests {
 
         // Then
         let cleanup = store.write(secret, None);
+        outcome.and(cleanup)
+    }
+
+    #[test]
+    fn credential_manager_forgets_a_retired_token_and_leaves_other_secrets() -> Result<(), AppError>
+    {
+        // Given: a retired token entry with a stray piece, beside a live secret
+        let service = format!("galpi-test-{}", uuid::Uuid::now_v7());
+        let store = CredentialManager::with_service(service.clone());
+        let retired = retired_token_target(&service);
+        let outcome = (|| {
+            write_entry(&retired, &encode_blob("galpi-test-retired"))?;
+            write_entry(&piece_target(&retired, "gen1", 0), b"piece")?;
+            store.write(Secret::AssistantApiKey, Some("galpi-test-live"))?;
+
+            // When
+            store.forget_retired_token()?;
+
+            // Then: nothing of the retired token remains, the live secret stays
+            assert_eq!(read_entry(&retired)?, None);
+            assert_eq!(enumerate_pieces(&retired)?.len(), 0);
+            assert_eq!(
+                store.read(Secret::AssistantApiKey)?.as_deref(),
+                Some("galpi-test-live")
+            );
+            // And forgetting again is not an error
+            store.forget_retired_token()
+        })();
+
+        // Whatever happened, the test entries are removed
+        let cleanup = store
+            .forget_retired_token()
+            .and(store.write(Secret::AssistantApiKey, None));
         outcome.and(cleanup)
     }
 }

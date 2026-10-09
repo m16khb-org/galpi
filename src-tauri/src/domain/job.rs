@@ -16,7 +16,6 @@ pub struct SetupRequest {
     /// Chosen by the window before the job starts, so every event this job
     /// emits can be told apart from a previous job's trailing events.
     pub job_id: Uuid,
-    pub hugging_face_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

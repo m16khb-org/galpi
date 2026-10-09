@@ -57,7 +57,7 @@ outbound/
 - Record to `.wav.part`; finalize, drain failure state, validate duration, then
   atomically rename. Every failure path removes the partial.
 - First failure wins: store and emit one `RecordingFailure`, ignore later ones.
-- Offline mode requires all expected model directories and no token.
+- Offline mode requires every expected model directory for the OS, including its OS-specific ASR cache.
 - Canonicalize worker paths, output roots, artifacts, and cache sources before
   prefix/containment checks.
 - Use `spawn_blocking` for synchronous CPAL and filesystem work.

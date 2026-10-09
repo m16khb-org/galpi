@@ -20,8 +20,11 @@ from .core import (
     parse_asr_context,
     validate_speaker_hint,
 )
+from .preparation import PYANNOTE_MODEL_ID
 from .protocol import EventWriter
 from .runtime import (
+    CPU_ASR,
+    AsrRuntime,
     configure_warnings,
     detect_asr_runtime,
     detect_torch_device,
@@ -32,6 +35,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from whisperx.diarize import DiarizationPipeline, DiarizationSegments
+
+    from .mlx_asr import AudioSamples
 
 
 WHISPERX_ENGINE_TAG = "whisperx"
@@ -114,23 +119,35 @@ def transcribe_whisperx(
             "no_speech_threshold": 0.75,
             "condition_on_previous_text": False,
         }
+        hotwords: str | None = None
         if asr_context_path is not None and asr_context_path.is_file():
             terms, names, aliases = parse_asr_context(
                 json.loads(asr_context_path.read_text(encoding="utf-8"))
             )
-            hotwords = build_asr_hotwords(terms, names, aliases)
+            hotwords = build_asr_hotwords(terms, names, aliases) or None
             if hotwords:
                 # Bias recognition toward glossary terms and attendee names;
                 # the fixed-prompt batched path applies it to every chunk.
                 asr_options["hotwords"] = hotwords
 
-        def run_asr(asr_device: str, compute_type: str) -> Transcription:
-            message = f"한국어 음성을 전사합니다. (CTranslate2 {asr_device.upper()} {compute_type})"
+        def run_asr(runtime: AsrRuntime) -> Transcription:
+            message = f"한국어 음성을 전사합니다. ({runtime.label()})"
             events.emit("phase", phase="transcribing", percent=5.0, message=message)
+            progress = _phase_progress(events, "transcribing", message, 5.0)
+            if runtime.backend == "mlx":
+                from .mlx_asr import transcribe_mlx
+
+                # MLX Whisper has no hotword option; the initial prompt is
+                # the same bias, applied to every chunk.
+                return transcribe_mlx(
+                    cast("AudioSamples", audio),
+                    initial_prompt=hotwords,
+                    progress=progress,
+                )
             model = whisperx.load_model(
                 "large-v3-turbo",
-                asr_device,
-                compute_type=compute_type,
+                runtime.device,
+                compute_type=runtime.compute_type,
                 language="ko",
                 asr_options=asr_options,
                 vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
@@ -138,26 +155,19 @@ def transcribe_whisperx(
             return cast(
                 Transcription,
                 model.transcribe(
-                    audio,
-                    batch_size=8,
-                    language="ko",
-                    progress_callback=_phase_progress(
-                        events, "transcribing", message, 5.0
-                    ),
+                    audio, batch_size=8, language="ko", progress_callback=progress
                 ),
             )
 
-        asr_device, compute_type = detect_asr_runtime(device)
+        runtime = detect_asr_runtime(device)
         try:
-            result = run_asr(asr_device, compute_type)
+            result = run_asr(runtime)
         except Exception:
-            if asr_device == "cpu":
+            if runtime == CPU_ASR:
                 raise
-            events.log(
-                f"{asr_device.upper()} 전사에 실패해 CPU int8로 다시 시도합니다."
-            )
+            events.log(f"{runtime.label()} 전사에 실패해 CPU int8로 다시 시도합니다.")
             gc.collect()
-            result = run_asr("cpu", "int8")
+            result = run_asr(CPU_ASR)
         gc.collect()
         events.emit(
             "phase",
@@ -220,7 +230,7 @@ def transcribe_whisperx(
     events.emit("phase", phase="diarizing", percent=10.0, message=diarize_message)
     try:
         diarization = DiarizationPipeline(
-            model_name="pyannote/speaker-diarization-community-1",
+            model_name=PYANNOTE_MODEL_ID,
             device=device,
         )
         diarization_segments = _diarize(
@@ -234,7 +244,7 @@ def transcribe_whisperx(
             raise
         events.log(f"{device.upper()} 화자분리에 실패해 CPU로 다시 시도합니다.")
         diarization = DiarizationPipeline(
-            model_name="pyannote/speaker-diarization-community-1",
+            model_name=PYANNOTE_MODEL_ID,
             device="cpu",
         )
         diarization_segments = _diarize(

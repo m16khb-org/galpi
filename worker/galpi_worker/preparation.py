@@ -12,16 +12,21 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import cast
 
+from .mlx_asr import MLX_WHISPER_MODEL_ID
 from .protocol import EventWriter
 from .runtime import (
     configure_warnings,
+    detect_asr_runtime,
     detect_torch_device,
     ffmpeg_executable,
     ffmpeg_link_name,
     needs_cpu_fallback,
 )
 
-PYANNOTE_MODEL_ID = "pyannote/speaker-diarization-community-1"
+# A byte-identical, non-gated CC-BY-4.0 mirror of
+# `pyannote/speaker-diarization-community-1`, so no Hugging Face token is
+# needed to prepare or run diarization.
+PYANNOTE_MODEL_ID = "pyannote-community/speaker-diarization-community-1"
 QWEN3_ASR_MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
 QWEN3_ALIGNER_MODEL_ID = "Qwen/Qwen3-ForcedAligner-0.6B"
 QWEN3_MLX_MODEL_DIR_NAME = "qwen3-asr-1.7b-8bit"
@@ -142,23 +147,30 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
     from whisperx.diarize import DiarizationPipeline
 
     device = detect_torch_device()
+    runtime = detect_asr_runtime(device)
 
     events.emit(
         "phase", phase="models", percent=10.0, message="전사 모델을 준비합니다."
     )
-    model = whisperx.load_model(
-        "large-v3-turbo",
-        "cpu",
-        compute_type="int8",
-        language="ko",
-        asr_options={
-            "no_speech_threshold": 0.75,
-            "condition_on_previous_text": False,
-        },
-        vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
-    )
-    del model
-    gc.collect()
+    if runtime.backend == "mlx":
+        asr_model = prepare_mlx_whisper(events)
+    else:
+        # Loading once on CPU downloads the CTranslate2 weights every device
+        # shares; transcription picks the device itself.
+        model = whisperx.load_model(
+            "large-v3-turbo",
+            "cpu",
+            compute_type="int8",
+            language="ko",
+            asr_options={
+                "no_speech_threshold": 0.75,
+                "condition_on_previous_text": False,
+            },
+            vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
+        )
+        del model
+        gc.collect()
+        asr_model = "large-v3-turbo"
 
     events.emit(
         "phase",
@@ -190,14 +202,10 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
         percent=78.0,
         message=f"{device.upper()}용 화자분리 모델을 준비합니다.",
     )
-    # The community diarizer is gated, and the worker runs with implicit
-    # tokens disabled, so the settings token must be handed over explicitly.
-    token = os.environ.get("HF_TOKEN") or None
     diarization_device = device
     try:
         diarization = DiarizationPipeline(
-            model_name="pyannote/speaker-diarization-community-1",
-            token=token,
+            model_name=PYANNOTE_MODEL_ID,
             device=diarization_device,
         )
     except Exception:
@@ -208,8 +216,7 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
         )
         diarization_device = "cpu"
         diarization = DiarizationPipeline(
-            model_name="pyannote/speaker-diarization-community-1",
-            token=token,
+            model_name=PYANNOTE_MODEL_ID,
             device=diarization_device,
         )
     del diarization
@@ -221,17 +228,40 @@ def prepare_whisperx_models(manifest: Path, events: EventWriter) -> None:
         "whisperx": version("whisperx"),
         "torch": version("torch"),
         "pyannote_audio": version("pyannote.audio"),
-        "asr_model": "large-v3-turbo",
-        "diarization_model": "pyannote/speaker-diarization-community-1",
+        "asr_model": asr_model,
+        "diarization_model": PYANNOTE_MODEL_ID,
         "device": diarization_device,
         "alignment_device": alignment_device,
-        "asr_device": "cpu",
+        "asr_device": runtime.device,
     }
     write_manifest(manifest, payload)
     events.emit(
         "phase", phase="models", percent=100.0, message="모델 준비가 완료되었습니다."
     )
     events.emit("prepared", engine_version=version("whisperx"))
+
+
+def prepare_mlx_whisper(events: EventWriter) -> str:
+    """Download the MLX Whisper weights and decode one second of silence.
+
+    The silent pass loads the weights onto Metal the way transcription will,
+    so a broken MLX install fails here instead of in the first meeting.
+    """
+
+    import mlx_whisper
+    import numpy as np
+    from huggingface_hub import snapshot_download
+
+    reporter = DownloadReporter(events, DOWNLOAD_PERCENT_START, 50.0)
+    snapshot_download(MLX_WHISPER_MODEL_ID, tqdm_class=reporter.tqdm_class())
+    mlx_whisper.transcribe(
+        np.zeros(16_000, dtype=np.float32),
+        path_or_hf_repo=MLX_WHISPER_MODEL_ID,
+        language="ko",
+        verbose=None,
+    )
+    events.log("MLX 전사 모델 확인을 마쳤습니다.")
+    return MLX_WHISPER_MODEL_ID
 
 
 def prepare_qwen3_models(manifest: Path, events: EventWriter) -> None:
@@ -241,7 +271,6 @@ def prepare_qwen3_models(manifest: Path, events: EventWriter) -> None:
     from huggingface_hub import snapshot_download
 
     device = detect_torch_device()
-    token = os.environ.get("HF_TOKEN") or None
 
     events.emit(
         "phase",
@@ -261,7 +290,6 @@ def prepare_qwen3_models(manifest: Path, events: EventWriter) -> None:
             model_id: pool.submit(
                 snapshot_download,
                 model_id,
-                token=token,
                 tqdm_class=reporter.tqdm_class(),
             )
             for model_id in (QWEN3_ASR_MODEL_ID, QWEN3_ALIGNER_MODEL_ID)
@@ -296,12 +324,11 @@ def prepare_qwen3_models(manifest: Path, events: EventWriter) -> None:
         percent=70.0,
         message="화자분리 모델을 내려받습니다.",
     )
-    # pyannote's community model is gated: the token from settings travels
-    # through the prepare environment, and the diarization pipeline is warmed
-    # once so the first real transcription does not pay the download cost.
+    # The diarization pipeline is warmed once so the first real
+    # transcription does not pay the download cost.
     from pyannote.audio import Pipeline
 
-    pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL_ID, token=token)
+    pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL_ID)
     if device != "cpu":
         pipeline.to(torch.device(device))
     del pipeline

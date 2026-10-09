@@ -66,8 +66,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             crate::adapters::inbound::tauri::diagnose_environment,
             crate::adapters::inbound::tauri::prepare_environment,
-            crate::adapters::inbound::tauri::hugging_face_token_stored,
-            crate::adapters::inbound::tauri::save_hugging_face_token,
             crate::adapters::inbound::tauri::load_assistant_settings,
             crate::adapters::inbound::tauri::save_assistant_api_key,
             crate::adapters::inbound::tauri::save_assistant_settings,
