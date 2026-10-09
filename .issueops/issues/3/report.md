@@ -1,6 +1,6 @@
-# 구현 보고서 초안 — io-21fd3b1e1f06 (이슈 #3 Windows x64 지원)
+# 구현 보고서 — io-21fd3b1e1f06 (이슈 #3 Windows x64 지원)
 
-상태: 구현 단계 초안. 정리·문서·검증 단계에서 갱신한다.
+상태: 완료 기록 시점의 최종본. Windows 실기 2차 확인은 머지 뒤 Windows에서 이어서 한다(아래 `## 완료 기록 결정` 참고).
 
 ## 기준선 (변경 전, main@456b500, macOS arm64, 2026-10-08)
 
@@ -180,3 +180,17 @@
   - Windows 타깃 `cargo clippy --all-targets -D warnings`(가짜 RC)가 통과했다.
   - `git diff --check`가 통과했다.
   - 병합으로 워크플로와 락 파일은 바뀌지 않았다.
+
+## 완료 기록 결정 (2026-10-09)
+
+- **사용자 지시**: 2026-10-09 "일단 머지할 수 있게 만들어줘. 구체적인 작업은 윈도우에서 할거야", 이어서 "done까지 처리해야 머지하지".
+- **계획과 다른 점**: 계획(이슈 본문과 다른 사실 11, 구현 순서 16(c))은 Windows 실기 결과가 있어야 execution complete를 하도록 정했다. 최신 사용자 지시가 이보다 우선하므로, 실기 2차 확인을 머지 뒤 Windows 작업으로 넘기고 완료를 기록한다.
+- **완료 시점에 실행된 증거**
+  - mac: 게이트 원장 15/15, `bun run check:all` 통과.
+  - CI: 9개 job이 모두 통과했다. NSIS 빌드, 무인 설치와 엔진 구성 스모크, Windows Rust 테스트 200개(Job Object, Credential Manager 조각 저장, Power Request 포함)가 여기에 들어간다.
+  - Windows 실기 1차 PASS 항목: 설치, 엔진 UI, 녹음과 버리기, HF 토큰 Credential Manager 저장과 재시작 뒤 유지.
+- **실행되지 않은 확인**(머지 뒤 Windows에서 진행)
+  - G6: 모델 준비와 WhisperX 전사로 결과 3파일 생성. 1차 실패 원인(토큰 미전달)은 1cee5f7에서 고쳤다.
+  - G8 수동: 전사를 취소했을 때 워커 프로세스가 0개가 되는지 확인.
+  - G9c 일부: assistant API 키와 ChatGPT 토큰을 Credential Manager에 저장하는지 확인.
+  - SmartScreen 경로.
