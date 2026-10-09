@@ -9,7 +9,10 @@
     "dialog:allow-open",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://huggingface.co/*" }]
+      "allow": [
+        { "url": "https://huggingface.co/*" },
+        { "url": "https://chatgpt.com/settings/usage" }
+      ]
     }
   ]
 }

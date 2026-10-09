@@ -145,3 +145,38 @@
   - assistant API 키: 키가 없어 확인하지 않았다.
   - SmartScreen 경로: gh로 받은 파일에는 Mark of the Web가 없어 확인할 수 없었다.
 - **검증 프롬프트의 결함:** G9c의 `Select-String` 명령은 값이 `null`인 키 이름에도 반응하도록 잘못 작성됐다. 판정은 값이 있는지를 기준으로 했다.
+
+## origin/main 병합 (da46360: #5 SEED 디자인, #8 ChatGPT 로그인)
+
+- **병합한 이유:** PR #7이 main과 24개 파일에서 충돌해 GitHub가 CI를 실행하지 않았고, 토큰 수정이 반영된 새 Windows 설치본이 만들어지지 않았다. 사용자 선택(2026-10-09)에 따라 main을 merge commit으로 합쳤다. 백업 ref는 `backup/3-windows-x64-support-pre-merge-20261009`(1cee5f7)다.
+- **충돌 해결 원칙:** 양쪽 기능을 모두 유지했다.
+  - IPC 커맨드는 24개다(main 23개 + `save_compute_device`).
+  - `LocalSettingsStore::new(app, secrets)` 하나를 `SettingsPort`와 `ChatGptStore`가 함께 쓴다.
+  - main의 assistant 환경 변수는 `platform::worker_environment`로 만든다. main의 프로세스 오류 처리는 guard 구조 위에 합쳤다.
+  - UI는 main의 SEED 스타일을 기준으로 삼고, 그 위에 장치 선택·숨김 규칙·Windows 글꼴을 SEED 토큰으로 다시 적용했다.
+- **main 코드의 Windows 보정:**
+  - `settings/chatgpt.rs` 테스트의 `PermissionsExt` import와 0600 단언을 `#[cfg(unix)]`로 한정했다.
+  - main의 `/bin/sh` 기반 프로세스 오류 코드 테스트도 `#[cfg(unix)]`로 한정했다.
+- **긴 비밀의 Credential Manager 저장(ADR 2026-10-09-windows-credential-manager):**
+  - 문제: ChatGPT 토큰 레코드가 한 항목의 한도인 2,560바이트를 넘는다.
+  - 해결: 한도를 넘는 비밀은 새 세대의 조각(`<target>#<generation>.<i>`)을 모두 쓴 뒤, 원래 target의 manifest를 커밋한다. manifest에는 조각 수·세대·길이·SHA-256이 들어간다. 커밋 뒤와 삭제 때는 `CredEnumerateW`로 쓰이지 않는 조각을 모두 지운다. 2,560바이트 이하는 기존 단일 항목 형식을 그대로 쓴다.
+  - 이 결정은 계획 §3.2의 "1,280 코드 유닛 초과 시 `CREDENTIAL_WRITE_FAILED`" 규칙을 대체한다.
+  - 구현 리뷰 5차에서 두 가지를 지적받아 고쳤다.
+    - Windows 테스트의 조각 수 기대값이 틀렸다(UTF-16 바이트가 아니라 문자 수로 셌다).
+    - 조각을 제자리에 덮어써서, 쓰기가 끊기면 두 세대가 섞이고 고아 조각이 남을 수 있었다. 이를 세대별 조각과 열거 정리로 바꿨다.
+  - mac에서 순수 로직 테스트 16개가 통과했다. Windows 왕복 테스트 두 개(한도 초과, 기존 단일 항목에서 전환)는 타입 검사만 했고, 실행은 Windows CI에서 한다.
+- **병합 후 재검증**(macOS arm64):
+  - `bun run check:all`이 종료 코드 0으로 끝났다.
+    - cargo test: 200 passed / 1 ignored.
+    - bun test: 187 pass.
+    - worker unittest: 109 OK.
+  - 원장 필터 결과:
+    - G7a: 1 passed.
+    - `credential`: 16 passed.
+    - `settings::`: 26 passed.
+    - `os_windows_`: 4 passed.
+    - G2·G10a 대상 bun test: 74 pass.
+  - 검사 스크립트: `PLATFORM_DOCS_OK`, `PLATFORM_FENCE_OK`.
+  - Windows 타깃 `cargo clippy --all-targets -D warnings`(가짜 RC)가 통과했다.
+  - `git diff --check`가 통과했다.
+  - 병합으로 워크플로와 락 파일은 바뀌지 않았다.

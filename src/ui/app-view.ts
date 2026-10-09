@@ -10,9 +10,11 @@ import type {
 import type { SpeakerForm, SpeakerMode } from "../domain/speaker"
 import { appTemplate } from "./app-template"
 import { AssistantSettingsView } from "./assistant-settings"
+import { ChatGptSettingsView } from "./chatgpt-settings"
 import { GlossarySettingsView } from "./glossary-settings"
 import { ParticipantPickerView } from "./participant-picker"
 import { ParticipantSettingsView } from "./participant-settings"
+import { setActionButtonVariant } from "./seed"
 import { bindTokenGuide } from "./token-guide"
 import { TokenSettingsView } from "./token-settings"
 
@@ -22,6 +24,7 @@ export class AppView {
   readonly root: HTMLElement
   readonly tokenSettings: TokenSettingsView
   readonly assistantSettings: AssistantSettingsView
+  readonly chatGptSettings: ChatGptSettingsView
   readonly participantSettings: ParticipantSettingsView
   readonly glossarySettings: GlossarySettingsView
   readonly attendees: ParticipantPickerView
@@ -54,6 +57,7 @@ export class AppView {
     this.root.innerHTML = appTemplate
     this.tokenSettings = new TokenSettingsView(root)
     this.assistantSettings = new AssistantSettingsView(root)
+    this.chatGptSettings = new ChatGptSettingsView(root)
     this.participantSettings = new ParticipantSettingsView(root, () => {
       this.attendees.setRoster(this.participantSettings.roster())
       this.settingsChangeHandler?.()
@@ -96,8 +100,14 @@ export class AppView {
       "#settings-assistant-effort",
       "#settings-assistant-base-url",
       "#settings-assistant-background",
+      "#settings-chatgpt-model",
     ]) {
       this.element(selector).addEventListener("change", handler)
+    }
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="assistant-auth-mode"]',
+    )) {
+      input.addEventListener("change", handler)
     }
   }
 
@@ -597,6 +607,7 @@ const refinementTitles: JobTitles = {
 function setPrimary(button: HTMLElement, primary: boolean): void {
   button.classList.toggle("primary-button", primary)
   button.classList.toggle("secondary-button", !primary)
+  setActionButtonVariant(button, primary ? "brandSolid" : "neutralOutline")
 }
 
 /** "/in/2026-10-03 주간 회의.m4a" → "2026-10-03 주간 회의" */

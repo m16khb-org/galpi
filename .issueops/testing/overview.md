@@ -60,6 +60,12 @@ Manual Windows gates (not automated):
   the ML stack (every module under `worker/tests`).
 - Behavioral tests use Given/When/Then comments where setup is nontrivial.
 - Worker stdout is machine-readable JSONL only; never emit diagnostics there.
+- Style contract: `src/styles.test.ts` reads `src/styles.css` as text and fails on
+  hex/`rgb()`/`hsl()` literals, non-`--seed-` custom properties, px padding/margin/
+  gap/font-size/radius, and any drift between the `--seed-*` names in the
+  stylesheet and root `DESIGN.md`. `src/ui/seed.test.ts` checks that every
+  action-button class the helper can emit exists in the installed
+  `@seed-design/css` recipe.
 
 ## Well-structured tests
 
@@ -80,6 +86,12 @@ Manual Windows gates (not automated):
 - DOM text checks are not pixel visibility: the error banner once passed
   textContent/hidden assertions while a grid-row collapse hid it — see
   [cautions/](../cautions/overview.md) before trusting view-level assertions.
+- happy-dom ignores `@import`, so DOM tests never see SEED token values. Check
+  computed values (AA overrides, button sizes, reduced motion) in a real browser
+  via `bun run vite:dev` and record them; IPC-dependent flows stay Not Run there.
+- `bun run build` fails on macOS 27 with deployment target 14.0 proc-macro
+  dylibs — see [cautions/](../cautions/overview.md) before treating it as a
+  regression.
 
 ## Rule
 

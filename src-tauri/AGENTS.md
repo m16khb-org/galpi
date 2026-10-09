@@ -8,7 +8,7 @@ covers the crate only.
 Crate `galpi` (lib `galpi_lib`, edition 2024, MSRV 1.85). Entry chain is
 `main.rs` -> `lib.rs::run()` -> `composition.rs`, the only file that builds
 concrete adapters and registers Tauri state and handlers. `Application`
-(`src/application/use_cases.rs`) is the facade behind all eighteen IPC commands.
+(`src/application/use_cases.rs`) is the facade behind all 24 IPC commands.
 It drives ports declared in `src/application/ports.rs`: `DesktopAdapter`
 implements engine, transcription, transcript import, refinement, and artifacts
 ports; `NativeRecorder` covers CPAL capture. Architecture principles (DDD value

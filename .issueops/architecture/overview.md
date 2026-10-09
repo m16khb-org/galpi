@@ -18,7 +18,7 @@ rule, with DDD tactical patterns — applied consistently across three runtimes:
 ```text
 TypeScript (WebView)   Rust (Tauri host)              Python (WhisperX sidecar)
 ui/          outer     adapters/inbound/tauri.rs      __main__.py  outer
-application/           application/ (8 ports)         engine/refine use cases
+application/           application/ (13 ports)        engine/refine use cases
 domain/      inner     domain/ (inner)                protocol.py (port: stdout)
 adapters/tauri-backend composition.rs (root)          domain pure modules
 ```
@@ -32,7 +32,7 @@ adapters/tauri-backend composition.rs (root)          domain pure modules
 - DDD tactical: value objects (`SpeakerHint`, `Participant`, `GlossaryEntry`,
   `AssistantSettings`), aggregate root `Artifacts::path_for(kind)`, domain
   services as pure functions, conceptual in-memory `JobRegistry`.
-- Inbound adapters: `tauri.rs` (18 `#[tauri::command]`s incl. `save_compute_device`, + event bridge),
+- Inbound adapters: `tauri.rs` (24 `#[tauri::command]`s incl. `save_compute_device`, + event bridge),
   `tauri-backend.ts` (Zod boundary), worker `__main__.py`.
 - Outbound adapters: `process.rs` (worker supervision), `NativeRecorder`
   (CPAL), settings/paths adapters, worker `EventWriter` (stdout JSONL v1).

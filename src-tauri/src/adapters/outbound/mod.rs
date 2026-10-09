@@ -1,3 +1,4 @@
+pub mod chatgpt;
 pub mod desktop;
 mod environment;
 pub mod import;

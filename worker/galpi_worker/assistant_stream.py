@@ -13,6 +13,7 @@ from .minutes_pipeline import ChatMessage
 from .protocol import EventWriter
 
 BASE_URL_VARIABLE = "GALPI_ASSISTANT_BASE_URL"
+TRANSPORT_VARIABLE = "GALPI_ASSISTANT_TRANSPORT"
 EFFORT_VARIABLE = "GALPI_ASSISTANT_REASONING_EFFORT"
 DEFAULT_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 DEFAULT_MODEL = "glm-5.3-flash"
@@ -232,6 +233,20 @@ def request_minutes(
 ) -> str:
     """Stream the chat completion and report writing progress as it arrives."""
 
+    if os.environ.get(TRANSPORT_VARIABLE) == "responses":
+        # Deferred: responses_stream imports this module's helpers at load time.
+        from .responses_stream import request_via_responses
+
+        return request_via_responses(
+            messages,
+            model,
+            api_key,
+            events,
+            expected_chars,
+            progress_start=progress_start,
+            progress_ceiling=progress_ceiling,
+            activity=activity,
+        )
     base_url = os.environ.get(BASE_URL_VARIABLE, DEFAULT_BASE_URL).rstrip("/")
     effort = os.environ.get(EFFORT_VARIABLE, "").strip().lower()
     if effort not in REASONING_EFFORTS:

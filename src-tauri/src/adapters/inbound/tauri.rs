@@ -3,9 +3,12 @@ use crate::application::model::{
     EnvironmentStatus, RecordingFailure, RecordingResult, RecordingStatus, RefinementResult,
     SetupResult, TranscriptImportResult, TranscriptionResult,
 };
-use crate::application::ports::{JobEvents, RecordingEvents};
+use crate::application::ports::{ChatGptEvents, JobEvents, RecordingEvents};
 use crate::application::use_cases::Application;
 use crate::domain::artifact::ArtifactKind;
+use crate::domain::chatgpt::{
+    ChatGptModel, ChatGptPreferences, ChatGptSettings, ChatGptSignInEvent, SignOutResult,
+};
 use crate::domain::engine::{ComputeDevice, EnginePreset};
 use crate::domain::job::{SetupRequest, TranscriptImportRequest, TranscriptionRequest};
 use crate::domain::roster::AssistantSettings;
@@ -161,6 +164,52 @@ pub async fn cancel_recording(
     application.cancel_recording(recording_id).await
 }
 
+/// The sheet's ChatGPT view: mode, model, and who is signed in. It holds no
+/// token, client id, or host id, so none of them can reach the window.
+#[tauri::command]
+pub async fn load_chatgpt_settings(
+    application: State<'_, Application>,
+) -> Result<ChatGptSettings, AppError> {
+    application.load_chatgpt_settings().await
+}
+
+/// Autosave target for the window-owned choices. Never touches a secret.
+#[tauri::command]
+pub async fn save_chatgpt_preferences(
+    application: State<'_, Application>,
+    preferences: ChatGptPreferences,
+) -> Result<(), AppError> {
+    application.save_chatgpt_preferences(preferences).await
+}
+
+/// Opens the system browser and resolves once the sign-in completes, fails,
+/// is cancelled, or times out.
+#[tauri::command]
+pub async fn sign_in_with_chatgpt(
+    application: State<'_, Application>,
+) -> Result<ChatGptSettings, AppError> {
+    application.sign_in_with_chatgpt().await
+}
+
+#[tauri::command]
+pub async fn cancel_chatgpt_sign_in(application: State<'_, Application>) -> Result<(), AppError> {
+    application.cancel_chatgpt_sign_in()
+}
+
+#[tauri::command]
+pub async fn list_chatgpt_models(
+    application: State<'_, Application>,
+) -> Result<Vec<ChatGptModel>, AppError> {
+    application.list_chatgpt_models().await
+}
+
+#[tauri::command]
+pub async fn sign_out_of_chatgpt(
+    application: State<'_, Application>,
+) -> Result<SignOutResult, AppError> {
+    application.sign_out_of_chatgpt().await
+}
+
 #[derive(Debug, Clone)]
 pub struct TauriEvents {
     app: AppHandle,
@@ -192,6 +241,14 @@ impl RecordingEvents for TauriEvents {
     fn emit_failure(&self, failure: RecordingFailure) -> Result<(), AppError> {
         self.app
             .emit("recording-event", failure)
+            .map_err(|error| AppError::new("EVENT_ERROR", error.to_string()))
+    }
+}
+
+impl ChatGptEvents for TauriEvents {
+    fn emit(&self, event: ChatGptSignInEvent) -> Result<(), AppError> {
+        self.app
+            .emit("chatgpt-event", event)
             .map_err(|error| AppError::new("EVENT_ERROR", error.to_string()))
     }
 }

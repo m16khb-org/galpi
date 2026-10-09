@@ -1,6 +1,6 @@
 use crate::application::error::AppError;
 use crate::application::ports::JobEvents;
-use crate::domain::worker::{WorkerEvent, parse_worker_event};
+use crate::domain::worker::{WorkerEvent, is_assistant_error_code, parse_worker_event};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -30,6 +30,9 @@ pub struct ProcessSpec {
 #[derive(Debug, Default)]
 pub struct ProcessResult {
     pub completed: Option<WorkerEvent>,
+    /// The worker's last reported `(code, message)`, kept so a non-zero exit
+    /// can surface a stable assistant code instead of a generic failure.
+    worker_error: Option<(String, String)>,
 }
 
 /// End a cancelled run: ask politely, then insist, and reap either way.
@@ -172,6 +175,11 @@ pub async fn run_process(
     };
     process_guard.disarm();
     if !status.success() {
+        if let Some((code, message)) = result.worker_error.take()
+            && is_assistant_error_code(&code)
+        {
+            return Err(AppError::new(&code, message));
+        }
         let detail = error_tail
             .back()
             .cloned()
@@ -195,6 +203,9 @@ fn handle_stdout(
     if worker_protocol {
         let envelope = parse_worker_event(line)
             .map_err(|error| AppError::new("WORKER_PROTOCOL_ERROR", error.to_string()))?;
+        if let WorkerEvent::Error { code, message } = &envelope.event {
+            result.worker_error = Some((code.clone(), message.clone()));
+        }
         if matches!(
             envelope.event,
             WorkerEvent::Completed { .. } | WorkerEvent::Refined { .. }

@@ -1,5 +1,6 @@
 import { type GlossaryEntry, usableGlossary } from "../domain/glossary"
 import { required } from "./dom"
+import { actionButtonClass } from "./seed"
 
 const ROWS_SELECTOR = "#glossary-rows"
 
@@ -65,7 +66,7 @@ export class GlossarySettingsView {
     description.setAttribute("aria-label", `${entry.term || "용어"} 설명`)
     const remove = document.createElement("button")
     remove.type = "button"
-    remove.className = "glossary-remove"
+    remove.className = `glossary-remove ${actionButtonClass("ghost", "medium", "iconOnly")}`
     remove.setAttribute("aria-label", `${entry.term || "용어"} 삭제`)
     remove.innerHTML = '<i class="ph ph-x"></i>'
     remove.addEventListener("click", () => {

@@ -5,6 +5,7 @@ import {
   usableParticipants,
 } from "../domain/participant"
 import { required } from "./dom"
+import { actionButtonClass } from "./seed"
 
 const ROWS_SELECTOR = "#participant-rows"
 
@@ -83,7 +84,7 @@ export class ParticipantSettingsView {
     )
     const remove = document.createElement("button")
     remove.type = "button"
-    remove.className = "participant-remove"
+    remove.className = `participant-remove ${actionButtonClass("ghost", "medium", "iconOnly")}`
     remove.setAttribute("aria-label", `${participant.name || "참석자"} 삭제`)
     remove.innerHTML = '<i class="ph ph-x"></i>'
     remove.addEventListener("click", () => {

@@ -37,6 +37,8 @@ const SERVICE: &str = "com.m16khb.galpi";
 pub enum Secret {
     HuggingFaceToken,
     AssistantApiKey,
+    /// The serialized ChatGPT OAuth tokens.
+    ChatGptTokens,
 }
 
 impl Secret {
@@ -48,6 +50,7 @@ impl Secret {
         match self {
             Self::HuggingFaceToken => "hugging-face-token",
             Self::AssistantApiKey => "assistant-api-key",
+            Self::ChatGptTokens => "chatgpt-tokens",
         }
     }
 }
@@ -108,6 +111,9 @@ impl SecretStore for InMemorySecrets {
     }
 
     fn write(&self, secret: Secret, value: Option<&str>) -> Result<(), AppError> {
+        let _count = self
+            .writes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut values = self.values.lock().map_err(|_| {
             AppError::new("KEYCHAIN_LOCKED", "테스트 저장소 잠금이 손상되었습니다.")
         })?;

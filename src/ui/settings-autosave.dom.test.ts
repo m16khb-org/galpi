@@ -3,6 +3,7 @@ import { Window } from "happy-dom"
 
 import type { BackendPort } from "../domain/backend"
 import type { AssistantSettings } from "../domain/job"
+import type { ChatGptPreferences, ChatGptSettings } from "../domain/chatgpt"
 import { AppView } from "./app-view"
 import { AppController } from "./controller"
 
@@ -25,9 +26,18 @@ const initialAssistant: AssistantSettings = {
   glossary: [{ id: "term-1", term: "갈피", description: null }],
 }
 
+const signedOutChatGpt: ChatGptSettings = {
+  authMode: "apiKey",
+  model: null,
+  welcomeAcknowledged: false,
+  account: { state: "signedOut", email: null },
+}
+
 function createBackend(
   onSave: (settings: AssistantSettings) => void | Promise<void>,
   onSaveKey: (key: string) => void = () => undefined,
+  onSavePreferences: (preferences: ChatGptPreferences) => void = () => undefined,
+  chatGpt: ChatGptSettings = signedOutChatGpt,
 ): BackendPort {
   return {
     diagnose: async () => ({
@@ -84,6 +94,23 @@ function createBackend(
     chooseOutputDirectory: async () => null,
     openModelAccessPage: async () => undefined,
     listenToJobs: async () => () => undefined,
+    loadChatGptSettings: async () => chatGpt,
+    saveChatGptPreferences: async (preferences) => {
+      onSavePreferences(preferences)
+    },
+    signInWithChatGpt: async () => {
+      throw new Error("unused sign-in")
+    },
+    cancelChatGptSignIn: async () => undefined,
+    listChatGptModels: async () => [
+      { slug: "gpt-5.5", displayName: "GPT-5.5" },
+      { slug: "gpt-5.4-mini", displayName: "GPT-5.4 mini" },
+    ],
+    signOutOfChatGpt: async () => {
+      throw new Error("unused sign-out")
+    },
+    openChatGptUsagePage: async () => undefined,
+    listenToChatGptEvents: async () => () => undefined,
   }
 }
 
@@ -120,6 +147,8 @@ function dispatchChange(window: Window, element: HTMLElement): void {
 async function createHarness(
   onSave: (settings: AssistantSettings) => void | Promise<void>,
   onSaveKey: (key: string) => void = () => undefined,
+  onSavePreferences: (preferences: ChatGptPreferences) => void = () => undefined,
+  chatGpt: ChatGptSettings = signedOutChatGpt,
 ): Promise<{
   readonly window: Window
   readonly root: HTMLElement
@@ -130,7 +159,10 @@ async function createHarness(
   const root = window.document.createElement("div") as unknown as HTMLElement
   window.document.body.appendChild(root as unknown as never)
   const view = new AppView(root)
-  const controller = new AppController(createBackend(onSave, onSaveKey), view)
+  const controller = new AppController(
+    createBackend(onSave, onSaveKey, onSavePreferences, chatGpt),
+    view,
+  )
   await controller.start()
   view.assistantSettings.setSettings(initialAssistant)
   return { window, root, view, controller }
@@ -287,6 +319,101 @@ describe("settings autosave (real DOM)", () => {
     expect(root.querySelector("#settings-message")?.textContent).toContain(
       "수정 내용은 유지되며 다음 변경 때 다시 저장합니다.",
     )
+    controller.stop()
+  })
+})
+
+// The controller continues in microtasks after a backend promise settles;
+// draining a few of them lets the view catch up without a wall-clock wait.
+async function settle(): Promise<void> {
+  for (let tick = 0; tick < 25; tick += 1) await Promise.resolve()
+}
+
+describe("ChatGPT preferences autosave (real DOM)", () => {
+  const signedIn: ChatGptSettings = {
+    authMode: "chatGpt",
+    model: "gpt-5.5",
+    welcomeAcknowledged: true,
+    account: { state: "signedIn", email: "dev@example.com" },
+  }
+
+  test("choosing ChatGPT saves only the preferences and leaves the assistant payload alone", async () => {
+    // Given: a signed-out window in API key mode
+    const assistantSaves: AssistantSettings[] = []
+    const keySaves: string[] = []
+    const preferenceSaves: ChatGptPreferences[] = []
+    const preferencesSaved = deferred<void>()
+    const { root, controller, view } = await createHarness(
+      (settings) => void assistantSaves.push(settings),
+      (key) => void keySaves.push(key),
+      (preferences) => {
+        preferenceSaves.push(preferences)
+        preferencesSaved.resolve(undefined)
+      },
+    )
+
+    // When: the user switches the augmentation mode to ChatGPT
+    const radio = root.querySelector<HTMLInputElement>(
+      'input[name="assistant-auth-mode"][value="chatGpt"]',
+    )
+    if (radio === null) throw new Error("ChatGPT mode radio is missing")
+    radio.click()
+    await withTimeout(preferencesSaved.promise)
+    await settle()
+
+    // Then: the choice went to its own command with no account data
+    expect(preferenceSaves).toEqual([
+      { authMode: "chatGpt", model: null, welcomeAcknowledged: false },
+    ])
+    // And the assistant document and key travel exactly as before
+    expect(keySaves).toEqual([])
+    expect(assistantSaves).toHaveLength(1)
+    expect(assistantSaves[0]).toEqual({
+      apiKeyStored: true,
+      model: "glm-5.3-flash",
+      baseUrl: null,
+      reasoningEffort: "max",
+      background: null,
+      participants: initialAssistant.participants,
+      glossary: initialAssistant.glossary,
+    })
+    // And ChatGPT mode without an account keeps the augment stage locked
+    expect(root.querySelector<HTMLElement>("#augment-key-hint")?.hidden).toBe(false)
+    expect(view.chatGptSettings.authMode()).toBe("chatGpt")
+    controller.stop()
+  })
+
+  test("picking another model saves it as a preference and nothing else", async () => {
+    // Given: a signed-in account whose list carries two models
+    const assistantSaves: AssistantSettings[] = []
+    const preferenceSaves: ChatGptPreferences[] = []
+    const preferencesSaved = deferred<void>()
+    const { window, root, controller } = await createHarness(
+      (settings) => void assistantSaves.push(settings),
+      () => undefined,
+      (preferences) => {
+        preferenceSaves.push(preferences)
+        preferencesSaved.resolve(undefined)
+      },
+      signedIn,
+    )
+    ;(root.querySelector('[data-action="open-settings"]') as HTMLElement).click()
+    await settle()
+    const select = root.querySelector<HTMLSelectElement>("#settings-chatgpt-model")
+    if (select === null) throw new Error("ChatGPT model select is missing")
+    expect(select.value).toBe("gpt-5.5")
+    expect(preferenceSaves).toEqual([])
+
+    // When
+    select.value = "gpt-5.4-mini"
+    dispatchChange(window, select)
+    await withTimeout(preferencesSaved.promise)
+
+    // Then
+    expect(preferenceSaves).toEqual([
+      { authMode: "chatGpt", model: "gpt-5.4-mini", welcomeAcknowledged: true },
+    ])
+    expect(assistantSaves.at(-1)?.model).toBe("glm-5.3-flash")
     controller.stop()
   })
 })

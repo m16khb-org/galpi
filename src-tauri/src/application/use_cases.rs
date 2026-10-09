@@ -1,3 +1,4 @@
+use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::error::AppError;
 use crate::application::jobs::JobRegistry;
 use crate::application::model::{
@@ -9,6 +10,10 @@ use crate::application::ports::{
     TranscriptImportPort, TranscriptionPort,
 };
 use crate::domain::artifact::{ArtifactKind, minutes_path};
+use crate::domain::chatgpt::{
+    AssistantAuthMode, AssistantTransport, ChatGptModel, ChatGptPreferences, ChatGptSettings,
+    SignOutResult,
+};
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::job::{
     SetupRequest, TranscriptImportRequest, TranscriptionRequest, validate_speaker_hint,
@@ -19,6 +24,15 @@ use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// The credential and endpoint settings one refinement runs with.
+struct RefinementCredential {
+    api_key: String,
+    model: Option<String>,
+    base_url: Option<String>,
+    reasoning_effort: Option<String>,
+    transport: AssistantTransport,
+}
+
 pub struct Application {
     engine: Arc<dyn EnginePort>,
     transcription: Arc<dyn TranscriptionPort>,
@@ -27,11 +41,14 @@ pub struct Application {
     recording: Arc<dyn RecordingPort>,
     settings: Arc<dyn SettingsPort>,
     refinement: Arc<dyn RefinementPort>,
+    chatgpt: ChatGptAccounts,
     jobs: JobRegistry,
     active_recording: tokio::sync::Mutex<Option<Uuid>>,
 }
 
 impl Application {
+    // One port per outbound capability, so the list grows with the app.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         engine: Arc<dyn EnginePort>,
         transcription: Arc<dyn TranscriptionPort>,
@@ -40,6 +57,7 @@ impl Application {
         recording: Arc<dyn RecordingPort>,
         settings: Arc<dyn SettingsPort>,
         refinement: Arc<dyn RefinementPort>,
+        chatgpt: ChatGptAccounts,
     ) -> Self {
         Self {
             engine,
@@ -49,6 +67,7 @@ impl Application {
             recording,
             settings,
             refinement,
+            chatgpt,
             jobs: JobRegistry::default(),
             active_recording: tokio::sync::Mutex::new(None),
         }
@@ -142,19 +161,9 @@ impl Application {
             .cloned()
             .collect();
         let glossary: Vec<GlossaryEntry> = assistant.glossary.clone();
-        // Read here rather than with the rest of the settings: this is the one
-        // moment the key is actually needed, so it is the only moment worth
-        // asking the keychain — and the user — about it.
-        let api_key = self
-            .settings
-            .load_assistant_api_key()
-            .await?
-            .ok_or_else(|| {
-                AppError::new(
-                    "ASSISTANT_KEY_MISSING",
-                    "설정에서 z.ai 코딩 플랜 토큰을 먼저 저장해 주세요.",
-                )
-            })?;
+        // Resolved before the job slot is claimed, so a missing credential or
+        // a failed token refresh never leaves the slot held.
+        let credential = self.refinement_credential(&assistant).await?;
         let output = minutes_path(&artifacts.txt);
         let (job, mut cancel) = self.jobs.claim_with_id(job_id)?;
         let job_id = job.id();
@@ -170,10 +179,11 @@ impl Application {
                     background: assistant.background.as_deref(),
                     participants: &participants,
                     glossary: &glossary,
-                    model: assistant.model.as_deref(),
-                    base_url: assistant.base_url.as_deref(),
-                    reasoning_effort: assistant.reasoning_effort.as_deref(),
-                    api_key: &api_key,
+                    model: credential.model.as_deref(),
+                    base_url: credential.base_url.as_deref(),
+                    reasoning_effort: credential.reasoning_effort.as_deref(),
+                    api_key: &credential.api_key,
+                    transport: credential.transport,
                 },
             )
             .await;
@@ -183,6 +193,75 @@ impl Application {
             job_id,
             minutes: minutes.to_string_lossy().into_owned(),
         })
+    }
+
+    /// Pick the credential and endpoint settings for the saved auth mode.
+    async fn refinement_credential(
+        &self,
+        assistant: &AssistantSettings,
+    ) -> Result<RefinementCredential, AppError> {
+        match self.chatgpt.settings().await?.auth_mode {
+            AssistantAuthMode::ApiKey => {
+                // Read here rather than with the rest of the settings: this is the one
+                // moment the key is actually needed, so it is the only moment worth
+                // asking the keychain — and the user — about it.
+                let api_key = self
+                    .settings
+                    .load_assistant_api_key()
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::new(
+                            "ASSISTANT_KEY_MISSING",
+                            "설정에서 z.ai 코딩 플랜 토큰을 먼저 저장해 주세요.",
+                        )
+                    })?;
+                Ok(RefinementCredential {
+                    api_key,
+                    model: assistant.model.clone(),
+                    base_url: assistant.base_url.clone(),
+                    reasoning_effort: assistant.reasoning_effort.clone(),
+                    transport: AssistantTransport::ChatCompletions,
+                })
+            }
+            AssistantAuthMode::ChatGpt => {
+                let access = self.chatgpt.access_for_refinement().await?;
+                Ok(RefinementCredential {
+                    api_key: access.token,
+                    model: Some(access.model),
+                    base_url: None,
+                    reasoning_effort: None,
+                    transport: AssistantTransport::Responses,
+                })
+            }
+        }
+    }
+
+    pub async fn load_chatgpt_settings(&self) -> Result<ChatGptSettings, AppError> {
+        self.chatgpt.settings().await
+    }
+
+    pub async fn save_chatgpt_preferences(
+        &self,
+        preferences: ChatGptPreferences,
+    ) -> Result<(), AppError> {
+        self.chatgpt.save_preferences(preferences).await
+    }
+
+    /// Resolves when the browser sign-in finishes, is cancelled, or times out.
+    pub async fn sign_in_with_chatgpt(&self) -> Result<ChatGptSettings, AppError> {
+        self.chatgpt.sign_in().await
+    }
+
+    pub fn cancel_chatgpt_sign_in(&self) -> Result<(), AppError> {
+        self.chatgpt.cancel_sign_in()
+    }
+
+    pub async fn list_chatgpt_models(&self) -> Result<Vec<ChatGptModel>, AppError> {
+        self.chatgpt.models().await
+    }
+
+    pub async fn sign_out_of_chatgpt(&self) -> Result<SignOutResult, AppError> {
+        self.chatgpt.sign_out().await
     }
 
     pub async fn transcribe(

@@ -31,7 +31,8 @@ bun run sidecar:stage  # stage sidecars without running the app
 
 ## Environment and secrets
 
-- No required env vars for the app itself. User-level settings live in the
+- No required env vars for the app itself (the worker receives
+  `GALPI_ASSISTANT_*` variables from the host). User-level settings live in the
   app settings UI, never in docs/logs: Hugging Face fine-grained read-only
   token (only for first `pyannote/speaker-diarization-community-1` download),
   OpenAI-compatible endpoint + key for meeting-minutes refinement.
@@ -40,6 +41,34 @@ bun run sidecar:stage  # stage sidecars without running the app
   `com.m16khb.galpi:assistant-api-key`); macOS keeps them in the `0600`
   settings file.
 - Do not put raw tokens (`hf_...`, API keys) in docs, test fixtures, or logs.
+
+## ChatGPT sign-in (issue #4)
+
+- Sign in: 설정 → AI 증강 → "ChatGPT" → "ChatGPT로 계속하기". The host opens the
+  system browser at `https://auth.openai.com/api/accounts/authorize` and waits up to
+  5 minutes on `http://127.0.0.1:1455/auth/callback` (an OS-assigned port when 1455
+  is taken). Cancel from the sheet; consent denial shows a Korean message and the
+  app does not retry.
+- Storage: the issued client id, account email/subject, and the non-secret
+  `chatgpt*` flags live in `~/Library/Application Support/com.m16khb.galpi/settings.json`;
+  the token record (`chatgpt-tokens`) goes through the current `SecretStore`, which
+  is the same 0600 settings file until Developer ID signing re-enables Keychain.
+  `chatgptHostId` survives sign-out.
+- Sign out: "ChatGPT 로그아웃" tries server-side revocation, then always deletes the
+  tokens, client id, email, subject, and model, and returns to API-key mode. Check
+  without printing values:
+  `python3 -c 'import json,os; d=json.load(open(os.path.expanduser("~/Library/Application Support/com.m16khb.galpi/settings.json"))); print(sum(1 for k in ("chatgptClientId","chatgptTokens","chatgptEmail","chatgptSubject") if d.get(k)), bool(d.get("chatgptHostId")))'`
+  → `0 True`.
+- Worker contract: the host sets `GALPI_ASSISTANT_TRANSPORT=responses` and passes the
+  short-lived access token as `GALPI_ASSISTANT_API_KEY` (in `assistant_environment`
+  only). The refresh token never leaves the host. Unset transport keeps the Chat
+  Completions path.
+- Manual refresh check: sign in, quit, move the system clock forward more than one
+  hour (automatic time off), relaunch and refine, then restore the clock. Compare
+  `shasum` of `settings.json` before and after instead of reading token values.
+- Usage limit: ChatGPT plan limits are shared with other apps; the worker reports
+  `CHATGPT_USAGE_LIMIT_EXCEEDED` and the sheet links to
+  `https://chatgpt.com/settings/usage`.
 
 ## Build and release
 

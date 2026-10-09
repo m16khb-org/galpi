@@ -8,6 +8,13 @@ import type {
   RefinementResult,
   TranscriptionResult,
 } from "./job"
+import type {
+  ChatGptModel,
+  ChatGptPreferences,
+  ChatGptSettings,
+  ChatGptSignInPhase,
+  ChatGptSignOutResult,
+} from "./chatgpt"
 import type { SpeakerHint } from "./speaker"
 
 /**
@@ -45,6 +52,16 @@ export interface BackendPort {
   chooseOutputDirectory(): Promise<string | null>
   openModelAccessPage(): Promise<void>
   listenToJobs(handler: (event: JobEvent) => void): Promise<() => void>
+  loadChatGptSettings(): Promise<ChatGptSettings>
+  /** Saves only what the window owns; the account and its tokens stay with the host. */
+  saveChatGptPreferences(preferences: ChatGptPreferences): Promise<void>
+  /** Resolves once the browser sign-in finished; progress arrives on `listenToChatGptEvents`. */
+  signInWithChatGpt(): Promise<ChatGptSettings>
+  cancelChatGptSignIn(): Promise<void>
+  listChatGptModels(): Promise<readonly ChatGptModel[]>
+  signOutOfChatGpt(): Promise<ChatGptSignOutResult>
+  openChatGptUsagePage(): Promise<void>
+  listenToChatGptEvents(handler: (phase: ChatGptSignInPhase) => void): Promise<() => void>
 }
 
 export interface SetupResult {
@@ -115,4 +132,9 @@ export function errorDetail(error: unknown): string {
     }
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+/** The stable ASCII code of a native AppError, or null for any other failure. */
+export function errorCode(error: unknown): string | null {
+  return typeof error === "object" && error !== null && isAppError(error) ? error.code : null
 }

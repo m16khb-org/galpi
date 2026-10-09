@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -92,15 +93,24 @@ def extract_chunk_notes(
         message=f"{model} 모델로 긴 회의 핵심 사실 추출 중입니다. 0/{len(chunks)} 구간",
     )
 
-    def extract(chunk: TranscriptChunk, quiet: EventWriter) -> str:
+    failed = threading.Event()
+
+    def extract(chunk: TranscriptChunk, quiet: EventWriter) -> str | None:
         # Each worker streams into a quiet writer; the caller owns the reporting.
-        return request_minutes(
-            build_map_messages(chunk, context),
-            model,
-            api_key,
-            quiet,
-            max(1000, int(len(chunk.text) * 0.25)),
-        )
+        # After the first failure no new request goes out; None marks a skip.
+        if failed.is_set():
+            return None
+        try:
+            return request_minutes(
+                build_map_messages(chunk, context),
+                model,
+                api_key,
+                quiet,
+                max(1000, int(len(chunk.text) * 0.25)),
+            )
+        except BaseException:
+            failed.set()
+            raise
 
     notes_by_number: dict[int, str] = {}
     with (
@@ -110,7 +120,14 @@ def extract_chunk_notes(
         quiet = EventWriter(stream=sink)
         futures = {pool.submit(extract, chunk, quiet): chunk for chunk in chunks}
         for future in as_completed(futures):
-            notes_by_number[futures[future].number] = future.result()
+            try:
+                note = future.result()
+            except BaseException:
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise
+            if note is None or failed.is_set():
+                continue
+            notes_by_number[futures[future].number] = note
             completed += 1
             events.emit(
                 "phase",

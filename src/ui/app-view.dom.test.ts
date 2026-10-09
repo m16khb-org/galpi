@@ -583,3 +583,65 @@ describe("AppView platform capabilities (real DOM)", () => {
     expect(html).toContain("이 컴퓨터")
   })
 })
+
+describe("AppView SEED action-button recipe (real DOM)", () => {
+  let view: AppView
+  let root: HTMLElement
+
+  beforeEach(() => {
+    ;({ view, root } = createView())
+  })
+
+  function variantOf(selector: string): string[] {
+    return [...(root.querySelector(selector)?.classList ?? [])].filter((name) =>
+      name.startsWith("seed-action-button--variant_"),
+    )
+  }
+
+  test("the start button's recipe variant follows its primary emphasis", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    view.setAudio("/tmp/in/2026-10-03 주간 회의.m4a")
+    expect(variantOf("#start-button")).toEqual(["seed-action-button--variant_brandSolid"])
+
+    // When: a finished result steps the start button down
+    view.renderResult(result)
+
+    // Then
+    expect(isPrimary(root, "#start-button")).toBe(false)
+    expect(variantOf("#start-button")).toEqual(["seed-action-button--variant_neutralOutline"])
+
+    // When
+    view.setAudio("/tmp/in/다음 회의.m4a")
+
+    // Then
+    expect(variantOf("#start-button")).toEqual(["seed-action-button--variant_brandSolid"])
+  })
+
+  test("finished minutes step the refine button down to the outline variant", () => {
+    // Given
+    view.setEnvironment(environment(true))
+    view.setAssistantKeyReady(true)
+    view.renderResult(result)
+    expect(variantOf("#refine-button")).toEqual(["seed-action-button--variant_brandSolid"])
+
+    // When
+    view.renderMinutes("/tmp/out/meeting_회의록.md")
+
+    // Then
+    expect(variantOf("#refine-button")).toEqual(["seed-action-button--variant_neutralOutline"])
+  })
+
+  test("roster and glossary rows build icon-only ghost remove buttons", () => {
+    // When
+    view.participantSettings.addRow()
+    view.glossarySettings.addRow()
+
+    // Then
+    for (const selector of [".participant-remove", ".glossary-remove"]) {
+      const classes = root.querySelector(selector)?.classList
+      expect(classes?.contains("seed-action-button--variant_ghost")).toBe(true)
+      expect(classes?.contains("seed-action-button--size_medium-layout_iconOnly")).toBe(true)
+    }
+  })
+})
