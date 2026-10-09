@@ -10,8 +10,11 @@ cleanup, and stable error codes are the contract here.
 
 ```text
 outbound/
-├── chatgpt/          # ChatGptAuthPort: OAuth/PKCE, loopback callback, ID-token, /v1/models, system browser; SystemClock
+├── browser_sign_in/  # Shared system-browser sign-in: TauriBrowser, loopback callback, PKCE; callers pass SignInCodes
+├── chatgpt/          # ChatGptAuthPort: OAuth authorize/callback, ID-token, /v1/models; SystemClock
+├── gateway/          # GatewayAuthPort: auth-gateway /auth/native Google sign-in, refresh, logout
 ├── settings/chatgpt.rs # ChatGptStore on LocalSettingsStore (tokens in 0600 settings.json)
+├── settings/gateway.rs # GatewaySessionStore on LocalSettingsStore (Secret::GatewaySession)
 ├── desktop.rs        # EnginePort, TranscriptionPort, TranscriptImportPort, ArtifactPort facade
 ├── environment.rs    # Readiness probe and worker environment
 ├── import.rs         # Transcript import into a per-meeting folder

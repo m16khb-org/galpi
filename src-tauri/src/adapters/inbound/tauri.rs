@@ -10,6 +10,7 @@ use crate::domain::chatgpt::{
     ChatGptModel, ChatGptPreferences, ChatGptSettings, ChatGptSignInEvent, SignOutResult,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset};
+use crate::domain::gateway::AppAccess;
 use crate::domain::job::{SetupRequest, TranscriptImportRequest, TranscriptionRequest};
 use crate::domain::roster::AssistantSettings;
 use crate::domain::worker::WorkerEvent;
@@ -208,6 +209,31 @@ pub async fn sign_out_of_chatgpt(
     application: State<'_, Application>,
 ) -> Result<SignOutResult, AppError> {
     application.sign_out_of_chatgpt().await
+}
+
+/// Whether the stored sign-in opens the app. Renews it once with the gateway.
+#[tauri::command]
+pub async fn load_app_access(application: State<'_, Application>) -> Result<AppAccess, AppError> {
+    application.load_app_access().await
+}
+
+/// Opens the system browser and resolves once the sign-in completes, fails,
+/// is cancelled, or times out.
+#[tauri::command]
+pub async fn sign_in_to_gateway(
+    application: State<'_, Application>,
+) -> Result<AppAccess, AppError> {
+    application.sign_in_to_gateway().await
+}
+
+#[tauri::command]
+pub async fn cancel_gateway_sign_in(application: State<'_, Application>) -> Result<(), AppError> {
+    application.cancel_gateway_sign_in()
+}
+
+#[tauri::command]
+pub async fn sign_out_of_gateway(application: State<'_, Application>) -> Result<(), AppError> {
+    application.sign_out_of_gateway().await
 }
 
 #[derive(Debug, Clone)]

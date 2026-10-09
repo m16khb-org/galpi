@@ -1,5 +1,5 @@
 use super::support::{Harness, approve};
-use crate::adapters::outbound::chatgpt::testing::server::FakeServer;
+use crate::adapters::outbound::browser_sign_in::fake_server::FakeServer;
 use crate::application::ports::ChatGptAuthPort;
 use serde_json::json;
 use std::sync::{Arc, Mutex};

@@ -303,6 +303,78 @@ summary:focus-visible {
   font-size: var(--seed-font-size-t1);
 }
 
+/* The offline mode is spelled out in the chip's second line. */
+.account-chip span[data-state="pending"] {
+  color: var(--seed-color-fg-warning-contrast);
+}
+
+.sign-out-button {
+  flex: 0 0 auto;
+  word-break: keep-all;
+}
+
+/* In front of the inert shell until someone signs in. */
+.access-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--seed-dimension-x5);
+  background: var(--seed-color-bg-neutral-muted);
+}
+
+.access-card {
+  display: grid;
+  justify-items: start;
+  gap: var(--seed-dimension-x3);
+  width: min(480px, calc(100vw - 40px));
+  padding: var(--seed-dimension-x8);
+  background: var(--seed-color-bg-layer-default);
+  border: 1px solid var(--seed-color-stroke-neutral-weak);
+  border-radius: var(--seed-radius-r4);
+  box-shadow: var(--seed-shadow-s3);
+}
+
+.access-card h1 {
+  margin: 0;
+  font-size: var(--seed-font-size-t9);
+  font-weight: var(--seed-font-weight-medium);
+  letter-spacing: -0.03em;
+}
+
+.access-card p {
+  margin: 0;
+  color: var(--seed-color-fg-neutral-muted);
+  font-size: var(--seed-font-size-t3);
+}
+
+/* Status pairs its color with text, so state never rides on color alone. */
+.access-card .access-status {
+  color: var(--seed-color-fg-warning-contrast);
+  font-size: var(--seed-font-size-t2);
+  font-weight: var(--seed-font-weight-bold);
+}
+
+.access-card .access-status[data-state="ready"] {
+  color: var(--seed-color-fg-positive-contrast);
+}
+
+.access-card .access-status[data-state="error"] {
+  color: var(--seed-color-fg-critical-contrast);
+}
+
+.access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--seed-dimension-x3);
+  margin-top: var(--seed-dimension-x2);
+}
+
+.access-actions button {
+  word-break: keep-all;
+}
+
 .workspace-body {
   min-height: 0;
   padding: var(--seed-dimension-x7) var(--seed-dimension-x10) var(--seed-dimension-x14);

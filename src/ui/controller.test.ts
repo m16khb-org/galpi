@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Window } from "happy-dom"
 
-import type { BackendPort } from "../domain/backend"
+import type { AppAccess, BackendPort } from "../domain/backend"
 import type { ChatGptModel, ChatGptSettings } from "../domain/chatgpt"
 import { AppView } from "./app-view"
 import { AppController } from "./controller"
@@ -14,6 +14,8 @@ const signedOutChatGpt: ChatGptSettings = {
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
+
+const openAccess: AppAccess = { state: "signedIn", email: "dev@example.com", offline: false }
 
 function unavailableBackend(): BackendPort {
   const unavailable = () => Promise.reject(new Error("no native runtime"))
@@ -50,70 +52,49 @@ function unavailableBackend(): BackendPort {
     signOutOfChatGpt: unavailable,
     openChatGptUsagePage: unavailable,
     listenToChatGptEvents: unavailable,
+    loadAppAccess: unavailable,
+    signInToGateway: unavailable,
+    cancelGatewaySignIn: unavailable,
+    signOutOfGateway: unavailable,
   }
 }
 
-function createHarness(): { controller: AppController; root: HTMLElement; window: Window } {
+function createHarness(backend: BackendPort): { controller: AppController; root: HTMLElement } {
   const window = new Window()
   const sheet = window.document.createElement("style")
   sheet.textContent = styles
   window.document.head.appendChild(sheet)
   const root = window.document.createElement("div") as unknown as HTMLElement
   window.document.body.appendChild(root as unknown as never)
-  const controller = new AppController(unavailableBackend(), new AppView(root))
-  return { controller, root, window }
+  return { controller: new AppController(backend, new AppView(root)), root }
 }
 
 describe("AppController startup without a native runtime", () => {
-  test("surfaces a visible error instead of a silent dead shell", async () => {
-    // Given / When: every backend call, starting with the event subscription, rejects
-    const { controller, root } = createHarness()
+  test("the login screen asks for a restart and never starts a sign-in", async () => {
+    // Given: every backend call, starting with the event subscription, rejects
+    let signIns = 0
+    const { controller, root } = createHarness({
+      ...unavailableBackend(),
+      signInToGateway: () => {
+        signIns += 1
+        return Promise.reject(new Error("no native runtime"))
+      },
+    })
+
+    // When: the window starts and the login action fires anyway
     await controller.start()
+    ;(root.querySelector('[data-action="sign-in-gateway"]') as HTMLElement).click()
+    for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
 
-    // Then: the persistent banner carries the failure in Korean user copy
-    const banner = root.querySelector("#app-error") as HTMLElement
-    expect(banner.hidden).toBe(false)
-    expect(banner.textContent).toContain("네이티브 런타임")
-    controller.stop()
-  })
-
-  test("keeps controls bound so the settings sheet still opens", async () => {
-    // Given: the native runtime never attached
-    const { controller, root } = createHarness()
-    await controller.start()
-
-    // When: the user opens settings anyway
-    ;(root.querySelector('[data-action="open-settings"]') as HTMLElement).click()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    // Then: the dialog opened and reports the load failure inside the sheet
-    expect((root.querySelector("#settings-dialog") as HTMLElement).hidden).toBe(false)
-    const message = root.querySelector("#settings-message") as HTMLElement
-    expect(message.dataset["state"]).toBe("error")
-    controller.stop()
-  })
-
-  test("surfaces direct IPC actions that fail instead of dying silently", async () => {
-    // Given: the native runtime never attached, so every direct IPC call rejects
-    const { controller, root } = createHarness()
-    await controller.start()
-    const banner = root.querySelector("#app-error") as HTMLElement
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-    // When: the user triggers the three unguarded direct actions. Transcript
-    // import is absent here: without a runtime the output folder is unknown and
-    // the import action reports that guard error instead of reaching IPC.
-    for (const action of ["choose-audio", "choose-output", "model-access"]) {
-      banner.textContent = ""
-      ;(root.querySelector(`[data-action="${action}"]`) as HTMLElement).click()
-      await flush()
-      await flush()
-
-      // Then: each failure lands in the visible banner with user-facing copy
-      expect(banner.hidden).toBe(false)
-      expect(banner.textContent).toBe("예기치 못한 오류가 발생했습니다.")
-    }
+    // Then: the failure is on the login screen, which offers nothing but a restart
+    expect((root.querySelector("#access-screen") as HTMLElement).hidden).toBe(false)
+    const status = root.querySelector("#access-status") as HTMLElement
+    expect(status.textContent).toContain("네이티브 런타임")
+    expect(status.dataset["state"]).toBe("error")
+    expect((root.querySelector("#access-sign-in-button") as HTMLElement).hidden).toBe(true)
+    expect((root.querySelector("#access-retry-button") as HTMLElement).hidden).toBe(true)
+    expect((root.querySelector(".app-shell") as HTMLElement).hasAttribute("inert")).toBe(true)
+    expect(signIns).toBe(0)
     controller.stop()
   })
 })
@@ -192,6 +173,7 @@ describe("AppController engine preset", () => {
       signOutOfChatGpt: unavailable,
       openChatGptUsagePage: unavailable,
       listenToChatGptEvents: async () => () => undefined,
+      loadAppAccess: async () => openAccess,
     }
     const controller = new AppController(backend as unknown as BackendPort, new AppView(root))
     await controller.start()
@@ -299,6 +281,7 @@ describe("AppController transcript import", () => {
       signOutOfChatGpt: unavailable,
       openChatGptUsagePage: unavailable,
       listenToChatGptEvents: async () => () => undefined,
+      loadAppAccess: async () => openAccess,
     }
     const controller = new AppController(backend as unknown as BackendPort, new AppView(root))
     await controller.start()
@@ -382,6 +365,7 @@ describe("AppController ChatGPT sign-in", () => {
       listChatGptModels: record("listChatGptModels", [
         { slug: "gpt-5.5", displayName: "GPT-5.5" },
       ]),
+      loadAppAccess: async () => openAccess,
       ...overrides,
     }
   }
@@ -665,6 +649,7 @@ describe("AppController compute device", () => {
       listenToJobs: async () => () => undefined,
       listenToRecordingFailures: async () => () => undefined,
       listenToChatGptEvents: async () => () => undefined,
+      loadAppAccess: async () => openAccess,
     }
     const controller = new AppController(backend, new AppView(root))
     await controller.start()

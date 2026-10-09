@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { z } from "zod"
 
 import type {
+  AppAccess,
   ArtifactKind,
   BackendPort,
   RecordingFailure,
@@ -118,6 +119,16 @@ export const chatGptSignOutSchema = z.strictObject({
 })
 
 const chatGptEventSchema = z.object({ phase: z.enum(["awaitingBrowser", "exchanging"]) })
+
+// Strict for the same reason: no session token may ever reach the window.
+export const appAccessSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("signedOut") }),
+  z.strictObject({
+    state: z.literal("signedIn"),
+    email: z.string().nullable(),
+    offline: z.boolean(),
+  }),
+])
 
 const transcriptImportSchema = z.object({
   jobId: z.string(),
@@ -349,6 +360,22 @@ export class TauriBackend implements BackendPort {
       const phase = parseChatGptEvent(payload)
       if (phase !== null) handler(phase)
     })
+  }
+
+  async loadAppAccess(): Promise<AppAccess> {
+    return appAccessSchema.parse(await invoke<unknown>("load_app_access"))
+  }
+
+  async signInToGateway(): Promise<AppAccess> {
+    return appAccessSchema.parse(await invoke<unknown>("sign_in_to_gateway"))
+  }
+
+  async cancelGatewaySignIn(): Promise<void> {
+    await invoke("cancel_gateway_sign_in")
+  }
+
+  async signOutOfGateway(): Promise<void> {
+    await invoke("sign_out_of_gateway")
   }
 }
 

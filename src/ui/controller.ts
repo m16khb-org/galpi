@@ -15,6 +15,7 @@ import {
 } from "../domain/backend"
 import type { ComputeDevice, EnginePreset, ImportedTranscript, TranscriptionResult } from "../domain/job"
 import { buildSpeakerHint, type SpeakerHint } from "../domain/speaker"
+import { AccessController } from "./access-controller"
 import type { AppView } from "./app-view"
 import { ChatGptController } from "./chatgpt-controller"
 import { RecordingController } from "./recording-controller"
@@ -28,6 +29,7 @@ export class AppController {
   private lastResult: TranscriptionResult | ImportedTranscript | null = null
   private readonly recording: RecordingController
   private readonly chatgpt: ChatGptController
+  private readonly access: AccessController
   private unlisten: (() => void) | null = null
   private unlistenRecording: (() => void) | null = null
   private settingsSavePending = false
@@ -41,11 +43,17 @@ export class AppController {
       this.view.setAudio(path)
     })
     this.chatgpt = new ChatGptController(backend, view, () => this.requestSettingsSave())
+    this.access = new AccessController(
+      backend,
+      view.access,
+      () => this.loadWorkspace(),
+      () => this.view.tokenSettings.close(),
+    )
   }
 
   async start(): Promise<void> {
     // Bind controls before any await: a failed native subscription must not
-    // leave the shell inert and silent.
+    // leave the window inert and silent.
     this.bind()
     this.recording.render()
     try {
@@ -59,11 +67,18 @@ export class AppController {
       // Before any sign-in call: a phase event with no listener is lost for good.
       await this.chatgpt.subscribe()
     } catch {
-      // Without the event channel no other IPC call can succeed either; stop
-      // here with a visible message instead of piling up raw IPC errors.
-      this.view.showError("네이티브 런타임에 연결할 수 없습니다. 앱을 다시 실행해 주세요.")
+      // Without the event channel no other IPC call can succeed either, and a
+      // later retry would miss job events; the login screen asks for a restart.
+      this.access.runtimeUnavailable(
+        "네이티브 런타임에 연결할 수 없습니다. 앱을 다시 실행해 주세요.",
+      )
       return
     }
+    await this.access.check()
+  }
+
+  /** Runs each time someone signs in, including a stored sign-in at startup. */
+  private async loadWorkspace(): Promise<void> {
     try {
       const environment = await this.backend.diagnose()
       this.outputRoot = environment.defaultOutputDirectory
@@ -118,6 +133,10 @@ export class AppController {
     this.view.on("stop-recording", () => void this.recording.stop())
     this.view.on("cancel-recording", () => void this.recording.cancel())
     this.view.on("sign-in-chatgpt", () => void this.chatgpt.signIn())
+    this.view.on("sign-in-gateway", () => void this.access.signIn())
+    this.view.on("retry-app-access", () => void this.access.check())
+    this.view.on("cancel-gateway-sign-in", () => void this.access.cancelSignIn())
+    this.view.on("sign-out-gateway", () => void this.access.signOut())
     this.view.on("cancel-chatgpt-sign-in", () => void this.chatgpt.cancelSignIn())
     this.view.on("sign-out-chatgpt", () => void this.chatgpt.signOut())
     this.view.on("open-chatgpt-usage", () => void this.chatgpt.openUsagePage())

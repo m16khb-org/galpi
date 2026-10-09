@@ -59,11 +59,25 @@ bun run dev
 
 1. [Microsoft Visual C++ 2015–2022 x64 재배포 패키지](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)를 설치합니다. 앱에 포함되어 있지 않습니다.
 2. 서명되지 않은 NSIS 설치 프로그램(`.exe`)을 실행합니다. SmartScreen 경고가 나오면 **추가 정보 → 실행**을 누릅니다.
-3. 아래 '최초 엔진 준비'를 진행합니다.
+3. 아래 'Google 계정으로 로그인'과 '최초 엔진 준비'를 진행합니다.
 
 Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. ASR 자체는 CTranslate2 CPU int8로 동작하며 CUDA는 정렬·화자분리만 가속합니다.
 
-### 2. 최초 엔진 준비
+### 2. Google 계정으로 로그인
+
+Galpi를 사용하려면 auth-gateway를 거쳐 Google 계정으로 로그인해야 합니다. 로그인하기 전에는 로그인 화면만 보이고, 녹음·전사·전사문 가져오기·AI 증강·엔진 준비를 실행할 수 없습니다.
+
+1. 앱을 실행하면 나타나는 로그인 화면에서 **Google로 로그인**을 누릅니다.
+2. 시스템 기본 브라우저에서 Google 로그인을 마칩니다. 브라우저가 `127.0.0.1`의 로그인 응답 주소로 돌아오면 앱이 열립니다. Galpi는 Google 비밀번호를 보지 않습니다.
+3. 로그인 화면이 계속 보이면 **취소**를 누르고 다시 시도합니다.
+
+- 로그인한 Google 계정이라면 모두 사용할 수 있습니다.
+- 다음 실행 때는 저장된 로그인으로 바로 열립니다. 이때 앱은 auth-gateway에 로그인 갱신을 한 번 요청합니다.
+- auth-gateway에 연결할 수 없으면 저장된 로그인으로 계속 사용하며, 우측 상단 계정 표시에 `오프라인 · 저장된 로그인 사용`이 나타납니다. 저장된 로그인이 없는 첫 실행에서는 인터넷에 연결해야 로그인할 수 있습니다.
+- auth-gateway가 로그인을 거부하면(웹 서비스에서 로그아웃했거나 세션이 더 이상 유효하지 않은 경우) 저장된 로그인을 지우고 다시 로그인 화면을 보여 줍니다.
+- 우측 상단 **로그아웃**은 auth-gateway에 이 기기의 세션 종료를 요청한 뒤, 응답과 관계없이 이 컴퓨터에 저장된 로그인을 지웁니다. 녹음·전사·AI 증강·엔진 준비가 진행 중일 때는 로그아웃할 수 없습니다.
+
+### 3. 최초 엔진 준비
 
 1. 앱 우측 상단의 **설정**을 엽니다.
 2. 새 컴퓨터에서 화자분리 모델을 처음 받는다면 Hugging Face 토큰을 저장합니다.
@@ -72,7 +86,7 @@ Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qw
 
 최초 준비에서는 앱 전용 Python 3.12 환경과 수 GB의 모델을 내려받을 수 있습니다. 이후에는 같은 앱 데이터 폴더와 모델 캐시를 재사용합니다. 두 프리셋은 서로 다른 가상환경(`engine/`, `engine/qwen3/`)에 설치되므로 한쪽을 준비해도 다른쪽에 영향을 주지 않습니다.
 
-### 3. Hugging Face 토큰
+### 4. Hugging Face 토큰
 
 화자분리 모델을 처음 내려받을 때만 필요합니다.
 
@@ -202,7 +216,7 @@ API Key 대신 ChatGPT 계정으로 로그인해 회의록 정제 모델을 사�
 
 - 음성과 전사 산출물은 사용자가 선택한 로컬 폴더에 저장됩니다.
 - 전사·정렬·화자분리 모델(Qwen3, WhisperX, pyannote)은 Galpi의 앱 전용 Hugging Face 캐시에 저장됩니다.
-- Hugging Face 토큰, AI 증강 API 키, ChatGPT 로그인 토큰은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이 노출될 수 있습니다.
+- Hugging Face 토큰, AI 증강 API 키, ChatGPT 로그인 토큰, Google 로그인 세션(auth-gateway)은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens`, `com.m16khb.galpi:gateway-session` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)과 Google 로그인 세션도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이나 Galpi 로그인이 노출될 수 있습니다. 로그인한 Google 계정의 이메일은 두 플랫폼 모두 `settings.json`에 저장됩니다.
 - macOS에서는 자격 증명을 아직 Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. macOS의 Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다.
 - AI 회의록을 실행하지 않으면 전사문은 외부 LLM API로 전송되지 않습니다.
 - worker는 고정된 프로그램과 argv로 실행되며 셸 문자열을 실행하지 않습니다.

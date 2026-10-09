@@ -4,19 +4,16 @@
 //! Nothing here logs a token, `code`, `state`, or authorization URL.
 
 mod authorize;
-mod browser;
 mod id_token;
-mod loopback;
 mod models;
 mod oauth;
-mod pkce;
 #[cfg(test)]
 mod testing;
 #[cfg(test)]
 mod tests;
 
-pub use browser::{BrowserOpener, TauriBrowser};
-
+use super::browser_sign_in::loopback::{Loopback, PREFERRED_PORT, SIGN_IN_TIMEOUT};
+use super::browser_sign_in::{BrowserOpener, SignInCodes};
 use crate::application::error::AppError;
 use crate::application::ports::{ChatGptAuthPort, ChatGptEvents, ClockPort};
 use crate::domain::chatgpt::{
@@ -25,12 +22,17 @@ use crate::domain::chatgpt::{
 };
 use async_trait::async_trait;
 use authorize::{Session, accept_callback, authorization_url};
-use loopback::{Loopback, PREFERRED_PORT, SIGN_IN_TIMEOUT};
 use oauth::RevocationPolicy;
 use reqwest::{Client, redirect::Policy};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
+
+/// The ChatGPT codes for failures in the shared browser sign-in.
+const CODES: SignInCodes = SignInCodes {
+    failed: "CHATGPT_SIGN_IN_FAILED",
+    timed_out: "CHATGPT_SIGN_IN_TIMEOUT",
+};
 
 /// The wall clock.
 pub struct SystemClock;
@@ -147,10 +149,12 @@ impl ChatGptAuthPort for ChatGptOAuthAdapter {
         let loopback = Loopback::bind_preferring(self.tuning.preferred_port).await?;
         let redirect_uri = loopback.redirect_uri();
         let url = authorization_url(&endpoints.authorize, request, &session, &redirect_uri)?;
-        self.browser.open(&url)?;
+        self.browser.open(&url, CODES)?;
         self.announce(ChatGptSignInPhase::AwaitingBrowser);
 
-        let callback = loopback.wait(cancel, self.tuning.sign_in_timeout).await?;
+        let callback = loopback
+            .wait(cancel, self.tuning.sign_in_timeout, CODES)
+            .await?;
         let accepted = accept_callback(&callback, request, &session)?;
         self.announce(ChatGptSignInPhase::Exchanging);
         let exchanged = oauth::exchange_code(

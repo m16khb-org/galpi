@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 mod chatgpt;
+mod gateway;
 
 #[derive(Debug)]
 pub struct LocalSettingsStore {
@@ -105,6 +106,7 @@ impl LocalSettingsStore {
                 Secret::HuggingFaceToken => settings.hugging_face_token.clone(),
                 Secret::AssistantApiKey => settings.assistant_api_key.clone(),
                 Secret::ChatGptTokens => settings.chatgpt_tokens.clone(),
+                Secret::GatewaySession => settings.gateway_session.clone(),
             })
         };
         let Some(value) = legacy else {
@@ -165,6 +167,14 @@ impl LocalSettingsStore {
                 }
                 settings.chatgpt_tokens_stored = present;
             }
+            Secret::GatewaySession => {
+                if let Some(value) = retained {
+                    settings.gateway_session = value;
+                } else {
+                    settings.gateway_session = None;
+                }
+                settings.gateway_session_stored = present;
+            }
         })
         .await
     }
@@ -177,6 +187,7 @@ impl LocalSettingsStore {
                 Secret::HuggingFaceToken => settings.hugging_face_token_stored == present,
                 Secret::AssistantApiKey => settings.assistant_api_key_stored == present,
                 Secret::ChatGptTokens => settings.chatgpt_tokens_stored == present,
+                Secret::GatewaySession => settings.gateway_session_stored == present,
             })
         };
         if already {
@@ -186,6 +197,7 @@ impl LocalSettingsStore {
             Secret::HuggingFaceToken => settings.hugging_face_token_stored = present,
             Secret::AssistantApiKey => settings.assistant_api_key_stored = present,
             Secret::ChatGptTokens => settings.chatgpt_tokens_stored = present,
+            Secret::GatewaySession => settings.gateway_session_stored = present,
         })
         .await
     }
@@ -214,6 +226,10 @@ impl LocalSettingsStore {
                 Secret::ChatGptTokens => (
                     settings.chatgpt_tokens_stored,
                     settings.chatgpt_tokens.is_some(),
+                ),
+                Secret::GatewaySession => (
+                    settings.gateway_session_stored,
+                    settings.gateway_session.is_some(),
                 ),
             })
         };
@@ -279,6 +295,9 @@ struct LocalSettings {
     chatgpt_auth_mode: AssistantAuthMode,
     chatgpt_model: Option<String>,
     chatgpt_welcome_acknowledged: bool,
+    gateway_email: Option<String>,
+    gateway_session: Option<String>,
+    gateway_session_stored: bool,
 }
 
 impl LocalSettings {
@@ -305,6 +324,9 @@ impl LocalSettings {
             && self.chatgpt_auth_mode == AssistantAuthMode::default()
             && self.chatgpt_model.is_none()
             && !self.chatgpt_welcome_acknowledged
+            && self.gateway_email.is_none()
+            && self.gateway_session.is_none()
+            && !self.gateway_session_stored
     }
 }
 

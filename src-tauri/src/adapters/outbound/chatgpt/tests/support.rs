@@ -1,11 +1,10 @@
 //! A fake OpenAI server, fake browser, and recording events around the adapter.
 
+use crate::adapters::outbound::browser_sign_in::fake_server::{FakeServer, Recorded};
+use crate::adapters::outbound::browser_sign_in::{BrowserOpener, SignInCodes};
 use crate::adapters::outbound::chatgpt::oauth::RevocationPolicy;
-use crate::adapters::outbound::chatgpt::testing::server::{FakeServer, Recorded};
 use crate::adapters::outbound::chatgpt::testing::{KEY_ID, claims, jwks_json, sign};
-use crate::adapters::outbound::chatgpt::{
-    BrowserOpener, ChatGptOAuthAdapter, OpenAiEndpoints, Tuning,
-};
+use crate::adapters::outbound::chatgpt::{ChatGptOAuthAdapter, OpenAiEndpoints, Tuning};
 use crate::application::error::AppError;
 use crate::application::ports::{ChatGptEvents, ClockPort};
 use crate::domain::chatgpt::{AgentHostId, ChatGptRegistration, ChatGptSignInEvent, SignInRequest};
@@ -43,7 +42,7 @@ pub struct FakeBrowser {
 }
 
 impl BrowserOpener for FakeBrowser {
-    fn open(&self, url: &str) -> Result<(), AppError> {
+    fn open(&self, url: &str, _codes: SignInCodes) -> Result<(), AppError> {
         let parsed = Url::parse(url).map_err(|_| AppError::new("TEST", "bad url"))?;
         let param = |name: &str| {
             parsed

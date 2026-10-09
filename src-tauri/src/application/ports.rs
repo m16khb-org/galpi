@@ -9,6 +9,7 @@ use crate::domain::chatgpt::{
     SignInGrant, SignInRequest,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
+use crate::domain::gateway::{GatewayGrant, GatewayRefreshFailure, GatewayTokens};
 use crate::domain::job::{SetupRequest, SpeakerHint};
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use crate::domain::worker::WorkerEvent;
@@ -185,6 +186,33 @@ pub trait ChatGptStore: Send + Sync {
 
 pub trait ChatGptEvents: Send + Sync {
     fn emit(&self, event: ChatGptSignInEvent) -> Result<(), AppError>;
+}
+
+/// The auth-gateway's desktop sign-in: browser sign-in, renewal, revocation.
+#[async_trait]
+pub trait GatewayAuthPort: Send + Sync {
+    /// Run the browser sign-in until the callback is exchanged, the user
+    /// cancels, or it times out.
+    async fn sign_in(&self, cancel: &mut oneshot::Receiver<()>) -> Result<GatewayGrant, AppError>;
+    /// Exchange the refresh token; the result carries the rotated refresh token.
+    async fn refresh(&self, refresh_token: &str) -> Result<GatewayTokens, GatewayRefreshFailure>;
+    /// Best-effort server-side sign-out; never fails the caller.
+    async fn revoke(&self, refresh_token: &str);
+}
+
+/// The stored gateway session. Only the token methods touch the secret store.
+#[async_trait]
+pub trait GatewaySessionStore: Send + Sync {
+    async fn load_email(&self) -> Result<Option<String>, AppError>;
+    async fn load_tokens(&self) -> Result<Option<GatewayTokens>, AppError>;
+    async fn save_session(
+        &self,
+        tokens: GatewayTokens,
+        email: Option<String>,
+    ) -> Result<(), AppError>;
+    async fn replace_tokens(&self, tokens: GatewayTokens) -> Result<(), AppError>;
+    /// Forget the tokens and the email.
+    async fn clear(&self) -> Result<(), AppError>;
 }
 
 pub trait ClockPort: Send + Sync {

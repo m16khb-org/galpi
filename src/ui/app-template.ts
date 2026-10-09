@@ -10,6 +10,20 @@ const recordAction = actionButtonClass("neutralOutline", "xsmall")
 const dismiss = actionButtonClass("ghost", "xsmall", "iconOnly")
 
 export const appTemplate = `
+  <section id="access-screen" class="access-screen" aria-labelledby="access-title">
+    <div class="access-card">
+      <span class="brand-mark" aria-hidden="true"><img src="${appIconUrl}" alt="" /></span>
+      <span class="eyebrow">GALPI ACCOUNT</span>
+      <h1 id="access-title">Google 계정으로 로그인</h1>
+      <p>갈피를 사용하려면 Google 계정으로 로그인해야 합니다. 로그인은 시스템 브라우저에서 진행되며, 갈피는 비밀번호를 보지 않습니다.</p>
+      <p id="access-status" class="access-status" role="status" aria-live="polite" data-state="pending">로그인 상태를 확인하는 중입니다.</p>
+      <div class="access-actions">
+        <button id="access-sign-in-button" class="primary-button ${primary}" type="button" data-action="sign-in-gateway" hidden>Google로 로그인</button>
+        <button id="access-retry-button" class="secondary-button ${secondary}" type="button" data-action="retry-app-access" hidden>다시 확인</button>
+        <button id="access-cancel-button" class="secondary-button ${secondary}" type="button" data-action="cancel-gateway-sign-in" hidden>취소</button>
+      </div>
+    </div>
+  </section>
   <div class="app-shell">
     <aside class="setup-rail" aria-label="진행 단계">
       <div class="brand-lockup">
@@ -28,6 +42,8 @@ export const appTemplate = `
       <header class="topbar">
         <div><span class="eyebrow">LOCAL AUDIO WORKSPACE</span><h1 id="task-title">새 회의 전사</h1><p id="task-status" class="task-status">로컬 환경을 확인하는 중입니다.</p></div>
         <div class="topbar-actions">
+          <div id="account-chip" class="engine-chip account-chip" hidden><span id="account-email" data-state="ready">Google 계정</span><small id="account-mode">온라인</small></div>
+          <button id="sign-out-button" class="sign-out-button ${secondary}" type="button" data-action="sign-out-gateway" hidden>로그아웃</button>
           <div class="engine-chip"><span id="setup-state" data-state="pending">확인 중</span><small id="engine-version">확인 중</small></div>
           <button class="settings-button ${iconOutline}" type="button" data-action="open-settings" aria-label="설정 열기"><i class="ph ph-gear" aria-hidden="true"></i></button>
         </div>

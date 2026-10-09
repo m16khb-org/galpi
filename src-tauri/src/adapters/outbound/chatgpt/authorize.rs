@@ -1,7 +1,10 @@
 //! The authorization request and the judgement of its callback.
 
-use super::loopback::Callback;
-use super::pkce::{NONCE_BYTES, VERIFIER_BYTES, code_challenge, random_urlsafe};
+use super::CODES;
+use crate::adapters::outbound::browser_sign_in::loopback::Callback;
+use crate::adapters::outbound::browser_sign_in::pkce::{
+    NONCE_BYTES, VERIFIER_BYTES, code_challenge, random_urlsafe,
+};
 use crate::application::error::AppError;
 use crate::domain::chatgpt::{DYNAMIC_CLIENT_ID, SignInRequest};
 use reqwest::Url;
@@ -21,9 +24,9 @@ pub struct Session {
 impl Session {
     pub fn new() -> Result<Self, AppError> {
         Ok(Self {
-            state: random_urlsafe(NONCE_BYTES)?,
-            nonce: random_urlsafe(NONCE_BYTES)?,
-            verifier: random_urlsafe(VERIFIER_BYTES)?,
+            state: random_urlsafe(NONCE_BYTES, CODES)?,
+            nonce: random_urlsafe(NONCE_BYTES, CODES)?,
+            verifier: random_urlsafe(VERIFIER_BYTES, CODES)?,
         })
     }
 }

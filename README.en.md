@@ -59,11 +59,25 @@ bun run dev
 
 1. Install the [Microsoft Visual C++ 2015–2022 x64 redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist). The app does not bundle it.
 2. Run the unsigned NSIS installer (`.exe`). If SmartScreen warns, choose **More info → Run anyway**.
-3. Follow "2. Prepare the local engine" below.
+3. Follow "2. Sign in with Google" and "3. Prepare the local engine" below.
 
 On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. ASR itself stays on CTranslate2 CPU int8; CUDA accelerates only alignment and diarization.
 
-### 2. Prepare the local engine
+### 2. Sign in with Google
+
+Galpi requires a Google sign-in through auth-gateway. Until you sign in, only the login screen is shown, and recording, transcription, transcript import, AI augmentation, and engine preparation cannot run.
+
+1. On the login screen that opens with the app, select `Google로 로그인` (Sign in with Google).
+2. Finish the Google sign-in in your default browser. The app opens once the browser returns to the sign-in callback on `127.0.0.1`. Galpi never sees your Google password.
+3. If the login screen stays up, select `취소` (Cancel) and try again.
+
+- Any signed-in Google account may use the app.
+- Later launches open with the stored sign-in. The app asks auth-gateway to renew it once at startup.
+- If auth-gateway cannot be reached, the stored sign-in keeps the app usable and the account chip in the top-right corner reads `오프라인 · 저장된 로그인 사용` (Offline · using the stored sign-in). A first launch without a stored sign-in needs an internet connection to sign in.
+- If auth-gateway refuses the sign-in (you signed out of the web service, or the session is no longer valid), the stored sign-in is deleted and the login screen returns.
+- `로그아웃` (Sign out) in the top-right corner asks auth-gateway to end this device's session, then deletes the sign-in stored on this computer whatever the answer. Signing out is unavailable while recording, transcription, AI augmentation, or engine preparation is running.
+
+### 3. Prepare the local engine
 
 1. Open `설정` (Settings) from the top-right corner.
 2. On a new computer, save a Hugging Face token if the diarization model requires access.
@@ -72,7 +86,7 @@ On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple
 
 The first setup installs an app-specific Python 3.12 environment and may download several gigabytes of models. Later runs reuse the same app data directory and model cache. The two presets install into separate virtual environments (`engine/`, `engine/qwen3/`), so preparing one does not affect the other.
 
-### 3. Hugging Face token
+### 4. Hugging Face token
 
 The token is only required when the diarization model is downloaded for the first time.
 
@@ -202,7 +216,7 @@ The completion screen can open each artifact or reveal its output folder in Find
 
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
-- The Hugging Face token, the AI augmentation API key, and the ChatGPT sign-in tokens are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, and `com.m16khb.galpi:chatgpt-tokens`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
+- The Hugging Face token, the AI augmentation API key, the ChatGPT sign-in tokens, and the Google sign-in session (auth-gateway) are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens`, and `com.m16khb.galpi:gateway-session`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens and the Google sign-in session are kept in that file in plain text, so a leaked file can expose API access for the account or the Galpi sign-in. The signed-in Google account's email is kept in `settings.json` on both platforms.
 - On macOS credentials are not encrypted with the Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The macOS move to the Keychain lands together with Developer ID signing.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.

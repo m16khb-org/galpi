@@ -2,7 +2,7 @@ use super::support::{
     Behavior, GRANTED, Harness, NOW, approve, deny, issuing_tokens, new_request, registration,
     wrong_state,
 };
-use crate::adapters::outbound::chatgpt::pkce::code_challenge;
+use crate::adapters::outbound::browser_sign_in::pkce::code_challenge;
 use crate::application::error::AppError;
 use crate::application::ports::ChatGptAuthPort;
 use crate::domain::chatgpt::{ChatGptSignInEvent, ChatGptSignInPhase, SignInGrant, SignInRequest};
