@@ -78,21 +78,28 @@ def should_filter_segment(text: str) -> bool:
     if _HALLUCINATION_PATTERN.search(text) is not None:
         return True
     tokens = [token for token in _REPETITION_TOKEN_SPLIT.split(text) if token]
-    return _is_repetition_loop(tokens) or _is_phrase_loop(tokens)
+    if len(tokens) < min(_REPETITION_MIN_TOKENS, _PHRASE_MIN_TOKENS):
+        return False
+    dominant = max(Counter(tokens).values())
+    return _is_repetition_loop(tokens, dominant) or _is_phrase_loop(tokens, dominant)
 
 
-def _is_repetition_loop(tokens: list[str]) -> bool:
+def _is_repetition_loop(tokens: list[str], dominant: int) -> bool:
     if len(tokens) < _REPETITION_MIN_TOKENS:
         return False
-    dominant_count = max(Counter(tokens).values())
-    return dominant_count / len(tokens) >= _REPETITION_DOMINANCE
+    return dominant / len(tokens) >= _REPETITION_DOMINANCE
 
 
-def _is_phrase_loop(tokens: list[str]) -> bool:
+def _is_phrase_loop(tokens: list[str], dominant: int) -> bool:
     if len(tokens) < _PHRASE_MIN_TOKENS:
         return False
     for length in _PHRASE_LENGTHS:
-        if len(tokens) < length * 2:
+        # A phrase repeats at most as often as its first token, so a length
+        # the most frequent token cannot reach the coverage with is skipped.
+        if (
+            len(tokens) < length * 2
+            or dominant * length / len(tokens) < _PHRASE_COVERAGE
+        ):
             continue
         phrases = zip(*(tokens[offset:] for offset in range(length)), strict=False)
         repeats = max(Counter(phrases).values())
