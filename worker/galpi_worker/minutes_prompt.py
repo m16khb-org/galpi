@@ -154,7 +154,7 @@ def build_messages(
         raise InvalidInput("transcript is empty")
     context = background.strip() or NO_BACKGROUND
     date_line = (
-        f"회의 추정일: {meeting_date} (녹음 파일 기준). 전사본에 이와 다른 명시적 날짜 근거가 없으면 이 값을 그대로 사용하세요.\n\n"
+        f"회의일: {meeting_date}. 전사본에 다른 날짜가 명시되지 않았다면 이 날짜를 회의일로 확정해 쓰고, 날짜의 출처를 리스크나 후속 확인 항목으로 만들지 마세요.\n\n"
         if meeting_date is not None
         else ""
     )

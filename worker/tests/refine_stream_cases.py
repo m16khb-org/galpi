@@ -251,7 +251,7 @@ class RefinementTests(unittest.TestCase):
         # Then: the message pair is unchanged when no date is supplied
         self.assertEqual(len(messages), 2)
         self.assertEqual(messages[1]["role"], "user")
-        self.assertNotIn("회의 추정일", messages[1]["content"])
+        self.assertNotIn("회의일:", messages[1]["content"])
 
     def testtranscript_date_reads_the_file_mtime(self) -> None:
         # Given: a transcript file stamped at a known instant
