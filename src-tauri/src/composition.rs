@@ -1,10 +1,13 @@
 use crate::adapters::inbound::tauri::TauriEvents;
+use crate::adapters::outbound::chatgpt::{ChatGptOAuthAdapter, SystemClock, TauriBrowser};
 use crate::adapters::outbound::desktop::DesktopAdapter;
 use crate::adapters::outbound::recording::NativeRecorder;
 use crate::adapters::outbound::settings::LocalSettingsStore;
+use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::ports::{
-    ArtifactPort, EnginePort, JobEvents, RecordingEvents, RecordingPort, RefinementPort,
-    SettingsPort, TranscriptImportPort, TranscriptionPort,
+    ArtifactPort, ChatGptAuthPort, ChatGptEvents, ChatGptStore, ClockPort, EnginePort, JobEvents,
+    RecordingEvents, RecordingPort, RefinementPort, SettingsPort, TranscriptImportPort,
+    TranscriptionPort,
 };
 use crate::application::use_cases::Application;
 use std::sync::Arc;
@@ -17,6 +20,7 @@ pub fn run() {
         .setup(|app| {
             let events = Arc::new(TauriEvents::new(app.handle().clone()));
             let job_events: Arc<dyn JobEvents> = events.clone();
+            let chatgpt_events: Arc<dyn ChatGptEvents> = events.clone();
             let recording_events: Arc<dyn RecordingEvents> = events;
             let desktop = Arc::new(DesktopAdapter::new(app.handle().clone(), job_events));
             let engine: Arc<dyn EnginePort> = desktop.clone();
@@ -25,7 +29,17 @@ pub fn run() {
             let refinement: Arc<dyn RefinementPort> = desktop.clone();
             let artifacts: Arc<dyn ArtifactPort> = desktop;
             let recording: Arc<dyn RecordingPort> = Arc::new(NativeRecorder::new(recording_events));
-            let settings: Arc<dyn SettingsPort> = Arc::new(LocalSettingsStore::new(app.handle())?);
+            // One store behind both ports: two objects over the same
+            // settings.json would race each other's read-modify-write.
+            let local_settings = Arc::new(LocalSettingsStore::new(app.handle())?);
+            let settings: Arc<dyn SettingsPort> = local_settings.clone();
+            let chatgpt_store: Arc<dyn ChatGptStore> = local_settings;
+            let clock: Arc<dyn ClockPort> = Arc::new(SystemClock);
+            let chatgpt_auth: Arc<dyn ChatGptAuthPort> = Arc::new(ChatGptOAuthAdapter::new(
+                Arc::new(TauriBrowser::new(app.handle().clone())),
+                chatgpt_events,
+                clock.clone(),
+            )?);
             app.manage(Application::new(
                 engine,
                 transcription,
@@ -34,6 +48,7 @@ pub fn run() {
                 recording,
                 settings,
                 refinement,
+                ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock),
             ));
             Ok(())
         })
@@ -55,6 +70,12 @@ pub fn run() {
             crate::adapters::inbound::tauri::start_recording,
             crate::adapters::inbound::tauri::stop_recording,
             crate::adapters::inbound::tauri::cancel_recording,
+            crate::adapters::inbound::tauri::load_chatgpt_settings,
+            crate::adapters::inbound::tauri::save_chatgpt_preferences,
+            crate::adapters::inbound::tauri::sign_in_with_chatgpt,
+            crate::adapters::inbound::tauri::cancel_chatgpt_sign_in,
+            crate::adapters::inbound::tauri::list_chatgpt_models,
+            crate::adapters::inbound::tauri::sign_out_of_chatgpt,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| {

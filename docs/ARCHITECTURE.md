@@ -21,7 +21,7 @@ TypeScript (WebView)          Rust (Tauri 호스트)              Python (Whispe
 │ └─ settings/…       │        │                          │     │ protocol.py (포트: stdout)│
 ├────────────────────┤        │ application/  (유스케이스) │     ├────────────────────────┤
 │ application/        │        │ ├─ use_cases.rs (facade)  │     │ domain 순수 모듈         │
-│ ├─ job-machine      │        │ ├─ ports.rs (8개 포트)     │     │ ├─ core.py            │
+│ ├─ job-machine      │        │ ├─ ports.rs (13개 포트)    │     │ ├─ core.py            │
 │ └─ recording-machine│        │ └─ jobs.rs (registry)      │     │ ├─ artifacts.py       │
 ├────────────────────┤        ├──────────────────────────┤     │ ├─ minutes_*.py       │
 │ domain/            │        │ domain/        (내부)      │     │ └─ assistant_stream.py │
@@ -50,11 +50,11 @@ TypeScript (WebView)          Rust (Tauri 호스트)              Python (Whispe
 
 | 방향 | Rust | TypeScript | Python |
 |------|------|-----------|--------|
-| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 14개 `#[tauri::command]` + `TauriEvents` 이벤트 브리지 | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
-| **-driven (outbound)** | `DesktopAdapter`(엔진·전사·산출물), `NativeRecorder`(CPAL), `LocalSettingsStore`, `process.rs`(워커 감독) | (없음 — 프론트엔드는 driven 포트가 없다; 브라우저 API는 어댑터 내부 처리) | `protocol.py` `EventWriter`(stdout), `assistant_stream.py`(HTTP) |
+| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 23개 `#[tauri::command]`(`composition.rs`의 `generate_handler!`와 일치) + `TauriEvents` 이벤트 브리지(`job-event`·`recording-event`·`chatgpt-event`) | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
+| **-driven (outbound)** | `DesktopAdapter`(엔진·전사·산출물), `NativeRecorder`(CPAL), `LocalSettingsStore`(`ChatGptStore` 포함), `ChatGptOAuthAdapter`(`ChatGptAuthPort`: OAuth/PKCE·토큰 갱신·폐기·모델 목록), `SystemClock`(`ClockPort`), `process.rs`(워커 감독) | (없음 — 프론트엔드는 driven 포트가 없다; 브라우저 API는 어댑터 내부 처리) | `protocol.py` `EventWriter`(stdout), `assistant_stream.py`·`responses_stream.py`(HTTP) |
 
 **포트 소유 규칙 (DIP)**: 포트 인터페이스는 사용하는 쪽(내부 계층)이 소유하고,
-어댑터가 그것을 구현한다. Rust는 `application/ports.rs`에 8개 trait이 있어 정확히 지켜진다.
+어댑터가 그것을 구현한다. Rust는 `application/ports.rs`에 13개 trait이 있어 정확히 지켜진다.
 TypeScript는 `BackendPort`가 **어댑터 모듈에** 정의되어 있어 위반이었다 — 리팩토링으로
 `domain/backend.ts`로 옮겼다(§6). 프론트엔드의 `ui → adapters` 의존은 이제 타입 재수출
 경로(`domain/backend`)로만 존재한다.
@@ -88,7 +88,7 @@ CPAL은 도메인에 금지다.
 | **S**RP | 유스케이스 메서드는 하나의 사용자 의도만; `process.rs`는 감독만, `writer.rs`는 WAV 직렬화만; TS 설정 위젯은 화면 하나씩 | 250 LOC 순수 코드 상향선 초과 시 모듈 분리 |
 | **O**CP | 이벤트/요청은 tagged union + `switch`/`match`로 확장 — 새 이벤트 추가는 새 variant 추가와 전 매치 컴파일 오류로 유도 (Rust `match`는 exhaustive) | `default:` 분기로 확장을 흡수하지 않는다 |
 | **L**SP | 포트 구현체(`FakePort`, `TauriBackend`, `DesktopAdapter`)는 계약(오류 코드, 이벤트 순서)을 지킨다 | 테스트 페이크가 프로덕션 계약과 어긋나면 페이크를 고친다 |
-| **I**SP | Rust 포트 8개는 소비자별 분리(`EnginePort` ≠ `ArtifactPort` ≠ `SettingsPort`…); TS `BackendPort`는 단일 소비자(controller)를 위한 하나의 응집된 계약 | 컨트롤러가 사용하지 않는 메서드를 포트에 추가하지 않는다 |
+| **I**SP | Rust 포트 13개는 소비자별 분리(`EnginePort` ≠ `ArtifactPort` ≠ `SettingsPort` ≠ `ChatGptAuthPort`…); TS `BackendPort`는 단일 소비자(controller)를 위한 하나의 응집된 계약 | 컨트롤러가 사용하지 않는 메서드를 포트에 추가하지 않는다 |
 | **D**IP | 내부 계층은 포트만 안다: Rust `Arc<dyn Trait>`, TS `BackendPort` 타입 주입, 워커는 `EventWriter` 주입 | `ui/`가 `@tauri-apps/*` 또는 `adapters/` 구현체를 import하면 `check-architecture.ts`가 실패한다 |
 
 ## 5. OOP 구조 관례
@@ -131,8 +131,11 @@ Rust는 전통적 상속이 없으므로 OOP 원칙은 **trait + 조합**으로 
    ↔ `src/domain/job.ts`(및 `tauri-backend.ts` Zod 스키마) ↔ `application/job-machine.ts`
    리듀서 — 한 커밋 세트.
 2. **IPC 커맨드 추가**: `adapters/inbound/tauri.rs` + `composition.rs` 등록 +
-   `BackendPort`/Zod 스키마 + 필요 시 `docs/ARCHITECTURE.md` §2 표 갱신.
+   `BackendPort`/Zod 스키마 + 필요 시 `docs/ARCHITECTURE.md` §2 표 갱신(커맨드 수는
+   `composition.rs`의 `generate_handler!` 항목 수와 맞춘다). 백엔드 이벤트를 추가하면
+   `TauriEvents`에 해당 `*Events` 포트 구현과 `tauri-backend.ts`의 `listen` 파싱을 함께 갱신한다.
 3. **새 외부 능력**: `application/ports.rs`에 trait → outbound 구현 → `composition.rs` wiring
+   (ChatGPT 로그인 계열은 `ChatGptAuthPort`/`ChatGptStore`/`ChatGptEvents`/`ClockPort`)
    → `application/tests.rs`의 `FakePort` 확장.
 4. **새 UI 상태**: `application/*-machine.ts`에 리듀서 + 동반 테스트; 뷰는 렌더만.
 

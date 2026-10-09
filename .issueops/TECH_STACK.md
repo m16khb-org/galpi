@@ -29,6 +29,18 @@ high unless noted.
   start (`cargo install tauri-cli --version 2.11.4 --locked`).
 - cargo is the package manager; fmt/clippy/test gates run with
   `--manifest-path src-tauri/Cargo.toml`.
+- Sign in with ChatGPT (issue #4) direct dependencies:
+  - `reqwest` 0.13 with `default-features = false`, `native-tls` + `form` — HTTPS to
+    `auth.openai.com`/`api.openai.com` through macOS Security.framework. The default
+    rustls + aws-lc-rs backend was rejected because it pulls a C toolchain build.
+  - `jsonwebtoken` 11 with `default-features = false`, `rust_crypto` — RS256 ID-token
+    verification from JWKS `n`/`e` (`DecodingKey::from_rsa_components`); the
+    `aws_lc_rs` backend was rejected for the same reason.
+  - `getrandom` 0.4, `base64` 0.22, `sha2` 0.10 — PKCE S256 verifier/challenge,
+    `state`, `nonce`; `uuid` `v4` — `ext_agent_host_id` (`urn:uuid:<v4>`).
+  - `tokio` `net` + `rt` — the `127.0.0.1` loopback callback listener; no HTTP server crate.
+  - dev-only: `rsa` 0.9 + `rand` 0.8 (test RS256 key generated once per test run, never
+    written to disk) and `jsonwebtoken` `use_pem` for signing test tokens.
 
 ## Python worker (transcription sidecar)
 
@@ -42,6 +54,8 @@ high unless noted.
   the Qwen3 lock pins versions only because mlx ships a wheel per macOS release.
 - strict Pyright (`pyrightconfig.json`: `typeCheckingMode: strict`,
   `stubPath: worker/stubs`); local WhisperX stubs, lazy heavy imports.
+- The ChatGPT Responses transport (`worker/galpi_worker/responses_stream.py`) uses
+  only the standard library `urllib`; no HTTP package is added to the worker venvs.
 - Tooling via `uv`/`uvx`: ruff (lint + format), basedpyright, unittest
   (every module under `worker/tests`). App-managed Python 3.12 environment; no global
   Python/ffmpeg/WhisperX install required (README quick start).

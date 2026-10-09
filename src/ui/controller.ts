@@ -7,10 +7,16 @@ import {
   type JobViewState,
   reduceJobEvent,
 } from "../application/job-machine"
-import { type ArtifactKind, type BackendPort, errorDetail, errorMessage } from "../domain/backend"
+import {
+  type ArtifactKind,
+  type BackendPort,
+  errorDetail,
+  errorMessage,
+} from "../domain/backend"
 import type { EnginePreset, ImportedTranscript, TranscriptionResult } from "../domain/job"
 import { buildSpeakerHint, type SpeakerHint } from "../domain/speaker"
 import type { AppView } from "./app-view"
+import { ChatGptController } from "./chatgpt-controller"
 import { RecordingController } from "./recording-controller"
 
 export class AppController {
@@ -21,6 +27,7 @@ export class AppController {
   private job: JobViewState = initialJobState
   private lastResult: TranscriptionResult | ImportedTranscript | null = null
   private readonly recording: RecordingController
+  private readonly chatgpt: ChatGptController
   private unlisten: (() => void) | null = null
   private unlistenRecording: (() => void) | null = null
   private settingsSavePending = false
@@ -33,6 +40,7 @@ export class AppController {
       this.audioPath = path
       this.view.setAudio(path)
     })
+    this.chatgpt = new ChatGptController(backend, view, () => this.requestSettingsSave())
   }
 
   async start(): Promise<void> {
@@ -48,6 +56,8 @@ export class AppController {
       this.unlistenRecording = await this.backend.listenToRecordingFailures((event) => {
         void this.recording.handleFailure(event)
       })
+      // Before any sign-in call: a phase event with no listener is lost for good.
+      await this.chatgpt.subscribe()
     } catch {
       // Without the event channel no other IPC call can succeed either; stop
       // here with a visible message instead of piling up raw IPC errors.
@@ -62,10 +72,11 @@ export class AppController {
       this.view.tokenSettings.setStored(await this.backend.huggingFaceTokenStored())
       const assistant = await this.backend.loadAssistantSettings()
       this.view.assistantSettings.setStored(assistant.apiKeyStored)
-      this.view.setAssistantKeyReady(assistant.apiKeyStored)
+      this.view.setAssistantKeyReady(this.chatgpt.ready(assistant.apiKeyStored))
       this.view.participantSettings.setRoster(assistant.participants)
       this.view.glossarySettings.setEntries(assistant.glossary)
       this.view.attendees.setRoster(assistant.participants)
+      await this.chatgpt.load()
     } catch (error) {
       this.view.showError(errorMessage(error))
     }
@@ -73,6 +84,7 @@ export class AppController {
 
   stop(): void {
     this.recording.dispose()
+    this.chatgpt.dispose()
     this.unlisten?.()
     this.unlisten = null
     this.unlistenRecording?.()
@@ -104,6 +116,11 @@ export class AppController {
     this.view.on("record", () => void this.recording.start(this.outputRoot))
     this.view.on("stop-recording", () => void this.recording.stop())
     this.view.on("cancel-recording", () => void this.recording.cancel())
+    this.view.on("sign-in-chatgpt", () => void this.chatgpt.signIn())
+    this.view.on("cancel-chatgpt-sign-in", () => void this.chatgpt.cancelSignIn())
+    this.view.on("sign-out-chatgpt", () => void this.chatgpt.signOut())
+    this.view.on("open-chatgpt-usage", () => void this.chatgpt.openUsagePage())
+    this.view.on("acknowledge-chatgpt-welcome", () => this.chatgpt.acknowledgeWelcome())
     this.view.on("cancel", () => void this.cancel())
     this.view.on("open-srt", () => void this.openArtifact("srt"))
     this.view.on("open-txt", () => void this.openArtifact("speaker_text"))
@@ -159,16 +176,19 @@ export class AppController {
       settings.setStored(await this.backend.huggingFaceTokenStored())
       const loaded = await this.backend.loadAssistantSettings()
       assistant.setSettings(loaded)
-      this.view.setAssistantKeyReady(loaded.apiKeyStored)
+      this.view.setAssistantKeyReady(this.chatgpt.ready(loaded.apiKeyStored))
       this.view.participantSettings.setRoster(loaded.participants)
       this.view.glossarySettings.setEntries(loaded.glossary)
+      await this.chatgpt.open()
       settings.showMessage("변경사항은 자동으로 저장됩니다.")
     } catch (error) {
       settings.showMessage(errorMessage(error), "error")
+      return
     } finally {
       settings.setBusy(false)
       assistant.setBusy(false)
     }
+    await this.chatgpt.showModels()
   }
 
   private async persistSettings(): Promise<void> {
@@ -198,7 +218,8 @@ export class AppController {
         glossary: this.view.glossarySettings.entries(),
       }
       await this.backend.saveAssistantSettings(saved)
-      this.view.setAssistantKeyReady(saved.apiKeyStored)
+      await this.chatgpt.persist()
+      this.view.setAssistantKeyReady(this.chatgpt.ready(saved.apiKeyStored))
       this.view.attendees.setRoster(saved.participants)
       settings.showMessage("변경사항을 자동 저장했습니다.")
     } catch (error) {
@@ -249,7 +270,7 @@ export class AppController {
     try {
       await this.backend.saveAssistantApiKey("")
       assistant.clearKey()
-      this.view.setAssistantKeyReady(false)
+      this.view.setAssistantKeyReady(this.chatgpt.ready(false))
       settings.showMessage("저장된 API 키를 지웠습니다.")
     } catch (error) {
       settings.showMessage(errorMessage(error), "error")
@@ -427,6 +448,7 @@ export class AppController {
     jobId: string | null = null,
   ): void {
     this.view.clearError()
+    this.chatgpt.clearLimitHint()
     this.job = beginJob(message, jobId)
     this.view.renderJob(this.job)
     this.view.setBusy(kind)
@@ -434,6 +456,7 @@ export class AppController {
 
   private handleFailure(error: unknown): void {
     const message = errorMessage(error)
+    this.chatgpt.noteFailure(error)
     const detail = errorDetail(error)
     // Raw non-AppError diagnostics stay inspectable in the log disclosure.
     const logs = detail === message ? this.job.logs : [...this.job.logs, `[frontend] ${detail}`]

@@ -132,6 +132,7 @@ async fn run_worker(
                 job.api_key,
                 job.base_url,
                 job.reasoning_effort,
+                job.transport,
             ),
             worker_protocol: true,
         },

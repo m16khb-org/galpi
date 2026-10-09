@@ -9,6 +9,7 @@ import type {
 import type { SpeakerForm, SpeakerMode } from "../domain/speaker"
 import { appTemplate } from "./app-template"
 import { AssistantSettingsView } from "./assistant-settings"
+import { ChatGptSettingsView } from "./chatgpt-settings"
 import { GlossarySettingsView } from "./glossary-settings"
 import { ParticipantPickerView } from "./participant-picker"
 import { ParticipantSettingsView } from "./participant-settings"
@@ -22,6 +23,7 @@ export class AppView {
   readonly root: HTMLElement
   readonly tokenSettings: TokenSettingsView
   readonly assistantSettings: AssistantSettingsView
+  readonly chatGptSettings: ChatGptSettingsView
   readonly participantSettings: ParticipantSettingsView
   readonly glossarySettings: GlossarySettingsView
   readonly attendees: ParticipantPickerView
@@ -54,6 +56,7 @@ export class AppView {
     this.root.innerHTML = appTemplate
     this.tokenSettings = new TokenSettingsView(root)
     this.assistantSettings = new AssistantSettingsView(root)
+    this.chatGptSettings = new ChatGptSettingsView(root)
     this.participantSettings = new ParticipantSettingsView(root, () => {
       this.attendees.setRoster(this.participantSettings.roster())
       this.settingsChangeHandler?.()
@@ -96,8 +99,14 @@ export class AppView {
       "#settings-assistant-effort",
       "#settings-assistant-base-url",
       "#settings-assistant-background",
+      "#settings-chatgpt-model",
     ]) {
       this.element(selector).addEventListener("change", handler)
+    }
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="assistant-auth-mode"]',
+    )) {
+      input.addEventListener("change", handler)
     }
   }
 

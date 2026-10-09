@@ -26,6 +26,7 @@ worker/
 │   ├── minutes_prompt.py  # Typed context parsing and single-pass prompt
 │   ├── minutes_pipeline.py # Long-meeting routing, chunking, map/reduce prompts
 │   ├── assistant_stream.py # OpenAI-compatible SSE transport and progress
+│   ├── responses_stream.py # ChatGPT Responses SSE transport and stable error codes
 │   └── refine.py          # Short/long refinement orchestration and publication
 ├── stubs/whisperx/        # Local types for the untyped dependency
 └── tests/                 # Pure contract tests; no ML stack required

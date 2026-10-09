@@ -97,3 +97,68 @@ async fn a_failing_child_reports_its_last_stderr_line() {
         Some(("PROCESS_FAILED".to_owned(), "last".to_owned()))
     );
 }
+
+fn worker_spec(script: &str) -> ProcessSpec {
+    ProcessSpec {
+        program: std::path::PathBuf::from("/bin/sh"),
+        current_dir: std::env::temp_dir(),
+        args: vec!["-c".into(), script.into()],
+        env: std::collections::HashMap::new(),
+        worker_protocol: true,
+    }
+}
+
+#[tokio::test]
+async fn a_listed_worker_error_code_becomes_the_failure() {
+    // Given: a worker that reports a stable assistant code, then exits non-zero
+    let (_sender, mut cancel) = tokio::sync::oneshot::channel();
+    let spec = worker_spec(
+        r#"printf '%s\n' '{"v":1,"seq":1,"type":"error","code":"CHATGPT_USAGE_LIMIT_EXCEEDED","message":"사용량 한도에 도달했습니다."}'; exit 1"#,
+    );
+
+    // When
+    let result = run_process(&IgnoredEvents, Uuid::now_v7(), spec, &mut cancel).await;
+
+    // Then: the caller sees that code and message, not a generic failure
+    let reported = result.err().map(|error| (error.code, error.message));
+    assert_eq!(
+        reported,
+        Some((
+            "CHATGPT_USAGE_LIMIT_EXCEEDED".to_owned(),
+            "사용량 한도에 도달했습니다.".to_owned()
+        ))
+    );
+}
+
+#[tokio::test]
+async fn an_unlisted_worker_error_code_stays_a_generic_process_failure() {
+    // Given: a worker error whose code is not one of the stable assistant codes
+    let (_sender, mut cancel) = tokio::sync::oneshot::channel();
+    let spec = worker_spec(
+        r#"printf '%s\n' '{"v":1,"seq":1,"type":"error","code":"SOMETHING_ELSE","message":"boom"}'; echo last >&2; exit 1"#,
+    );
+
+    // When
+    let result = run_process(&IgnoredEvents, Uuid::now_v7(), spec, &mut cancel).await;
+
+    // Then
+    let reported = result.err().map(|error| (error.code, error.message));
+    assert_eq!(
+        reported,
+        Some(("PROCESS_FAILED".to_owned(), "last".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn a_listed_code_does_not_fail_a_worker_that_exits_cleanly() -> Result<(), AppError> {
+    // Given: an error line followed by a clean exit
+    let (_sender, mut cancel) = tokio::sync::oneshot::channel();
+    let spec = worker_spec(
+        r#"printf '%s\n' '{"v":1,"seq":1,"type":"error","code":"CHATGPT_USAGE_LIMIT_EXCEEDED","message":"x"}'; exit 0"#,
+    );
+
+    // When / Then: only a non-zero exit turns the remembered error into a failure
+    run_process(&IgnoredEvents, Uuid::now_v7(), spec, &mut cancel)
+        .await
+        .map(|_| ())
+}

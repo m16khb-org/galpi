@@ -2,6 +2,7 @@ use super::paths::AppPaths;
 use super::secrets::{Secret, SecretStore, SettingsFile};
 use crate::application::error::AppError;
 use crate::application::ports::SettingsPort;
+use crate::domain::chatgpt::AssistantAuthMode;
 use crate::domain::engine::EnginePreset;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use async_trait::async_trait;
@@ -11,6 +12,8 @@ use std::io::ErrorKind;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
+
+mod chatgpt;
 
 #[derive(Debug)]
 pub struct LocalSettingsStore {
@@ -86,6 +89,7 @@ impl LocalSettingsStore {
             state.as_ref().and_then(|settings| match secret {
                 Secret::HuggingFaceToken => settings.hugging_face_token.clone(),
                 Secret::AssistantApiKey => settings.assistant_api_key.clone(),
+                Secret::ChatGptTokens => settings.chatgpt_tokens.clone(),
             })
         };
         let Some(value) = legacy else {
@@ -138,6 +142,14 @@ impl LocalSettingsStore {
                 }
                 settings.assistant_api_key_stored = present;
             }
+            Secret::ChatGptTokens => {
+                if let Some(value) = retained {
+                    settings.chatgpt_tokens = value;
+                } else {
+                    settings.chatgpt_tokens = None;
+                }
+                settings.chatgpt_tokens_stored = present;
+            }
         })
         .await
     }
@@ -149,6 +161,7 @@ impl LocalSettingsStore {
             state.as_ref().is_some_and(|settings| match secret {
                 Secret::HuggingFaceToken => settings.hugging_face_token_stored == present,
                 Secret::AssistantApiKey => settings.assistant_api_key_stored == present,
+                Secret::ChatGptTokens => settings.chatgpt_tokens_stored == present,
             })
         };
         if already {
@@ -157,6 +170,7 @@ impl LocalSettingsStore {
         self.update(|settings| match secret {
             Secret::HuggingFaceToken => settings.hugging_face_token_stored = present,
             Secret::AssistantApiKey => settings.assistant_api_key_stored = present,
+            Secret::ChatGptTokens => settings.chatgpt_tokens_stored = present,
         })
         .await
     }
@@ -181,6 +195,10 @@ impl LocalSettingsStore {
                 Secret::AssistantApiKey => (
                     settings.assistant_api_key_stored,
                     settings.assistant_api_key.is_some(),
+                ),
+                Secret::ChatGptTokens => (
+                    settings.chatgpt_tokens_stored,
+                    settings.chatgpt_tokens.is_some(),
                 ),
             })
         };
@@ -215,6 +233,8 @@ impl LocalSettingsStore {
     }
 }
 
+// Mirrors the persisted JSON document, where each flag is its own key.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 struct LocalSettings {
@@ -229,6 +249,16 @@ struct LocalSettings {
     assistant_background: Option<String>,
     participants: Vec<Participant>,
     glossary: Vec<GlossaryEntry>,
+    chatgpt_host_id: Option<String>,
+    chatgpt_client_id: Option<String>,
+    chatgpt_email: Option<String>,
+    chatgpt_subject: Option<String>,
+    chatgpt_needs_consent: bool,
+    chatgpt_tokens: Option<String>,
+    chatgpt_tokens_stored: bool,
+    chatgpt_auth_mode: AssistantAuthMode,
+    chatgpt_model: Option<String>,
+    chatgpt_welcome_acknowledged: bool,
 }
 
 impl LocalSettings {
@@ -246,6 +276,16 @@ impl LocalSettings {
             && self.assistant_background.is_none()
             && self.participants.is_empty()
             && self.glossary.is_empty()
+            && self.chatgpt_host_id.is_none()
+            && self.chatgpt_client_id.is_none()
+            && self.chatgpt_email.is_none()
+            && self.chatgpt_subject.is_none()
+            && !self.chatgpt_needs_consent
+            && self.chatgpt_tokens.is_none()
+            && !self.chatgpt_tokens_stored
+            && self.chatgpt_auth_mode == AssistantAuthMode::default()
+            && self.chatgpt_model.is_none()
+            && !self.chatgpt_welcome_acknowledged
     }
 }
 

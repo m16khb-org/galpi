@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { errorDetail, errorMessage } from "./backend"
+import { errorCode, errorDetail, errorMessage } from "./backend"
 
 describe("errorMessage", () => {
   test("passes through AppError copy from the native boundary", () => {
@@ -36,5 +36,24 @@ describe("errorDetail", () => {
     expect(errorDetail(fault)).toBe("Cannot read properties of undefined (reading 'invoke')")
     expect(errorDetail({ code: "IO_ERROR", message: "io" })).toBe("io")
     expect(errorDetail(42)).toBe("42")
+  })
+})
+
+describe("errorCode", () => {
+  test("reads the stable code of a native AppError", () => {
+    // Given: the host rejects with {code, message}
+    const appError = { code: "CHATGPT_CONSENT_DENIED", message: "동의가 거부되었습니다." }
+
+    // Then
+    expect(errorCode(appError)).toBe("CHATGPT_CONSENT_DENIED")
+  })
+
+  test("is null for anything that is not an AppError", () => {
+    // Given: runtime faults and lookalikes carry no stable code
+    expect(errorCode(new TypeError("boom"))).toBeNull()
+    expect(errorCode({ message: "no code" })).toBeNull()
+    expect(errorCode({ code: 7, message: "numeric code" })).toBeNull()
+    expect(errorCode("string error")).toBeNull()
+    expect(errorCode(undefined)).toBeNull()
   })
 })

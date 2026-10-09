@@ -39,7 +39,7 @@ and `docs/ARCHITECTURE.md`; those win over this overview.
 
 ## SOLID as practiced (docs/ARCHITECTURE.md SOLID section)
 
-- Ports exist only at real boundaries (8 Rust traits in
+- Ports exist only at real boundaries (13 Rust traits in
   `application/ports.rs`, TS `BackendPort`), each with a production adapter
   and a test fake.
 - Extend by tagged union + exhaustive `match`/`switch`; never absorb new
