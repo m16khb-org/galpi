@@ -359,8 +359,7 @@ DIGIT_WORDS: Final = [
     "eight",
     "nine",
 ]
-LATIN_RULES: Final = (
-    (r"\d", lambda m: DIGIT_WORDS[int(m.group())]),
+LATIN_RULES: Final[tuple[tuple[str, str], ...]] = (
     (r"(?<=[^aeiouy])e\b", ""),
     (r"ti(?=on)", "s"),
     (r"ph", "p"),
@@ -392,8 +391,12 @@ VOWELS: Final = frozenset("aeiou")
 LATIN_THRESHOLD: Final = 0.2
 
 
+def spell_digit(match: re.Match[str]) -> str:
+    return DIGIT_WORDS[int(match.group())]
+
+
 def latin_sound(text: str) -> str:
-    sound = text.lower()
+    sound = re.sub(r"\d", spell_digit, text.lower())
     for pattern, replacement in LATIN_RULES:
         sound = re.sub(pattern, replacement, sound)
     return re.sub(r"[^a-z]", "", sound)
