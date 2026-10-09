@@ -66,7 +66,7 @@ On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple
 ### 2. Prepare the local engine
 
 1. Open `설정` (Settings) from the top-right corner.
-2. On a new Mac, save a Hugging Face token if the diarization model requires access.
+2. On a new computer, save a Hugging Face token if the diarization model requires access.
 3. Select `로컬 엔진 준비` (Prepare local engine).
 4. Wait until WhisperX, the transcription model, and ffmpeg all show `Ready`.
 
@@ -97,7 +97,7 @@ Write access and Inference Providers access are not required.
 Recording uses a bounded queue and a dedicated WAV writer, so the entire meeting is not kept in memory. `버리기` (Discard) cancels the recording and removes its partial file.
 
 > [!NOTE]
-> Galpi currently captures the selected Mac microphone input only. It does not capture system audio from Zoom, Meet, or other apps.
+> Galpi currently captures the selected microphone input only. It does not capture system audio from Zoom, Meet, or other apps.
 
 **Import an existing recording**
 
@@ -145,7 +145,7 @@ You can sign in with a ChatGPT account instead of an API key to use it as the mi
 - Tokens are currently stored in `settings.json` with `0600` permissions (see "Local data and privacy" below). The refresh token is valid for 30 days and rotates on each refresh.
 
 > [!WARNING]
-> Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on the Mac. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API (the OpenAI API when ChatGPT sign-in is used). Review the provider's security and retention policy before using this feature with sensitive meetings.
+> Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on your computer. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API (the OpenAI API when ChatGPT sign-in is used). Review the provider's security and retention policy before using this feature with sensitive meetings.
 
 ## Processing stages and models
 
@@ -196,7 +196,7 @@ Name collisions get a numeric suffix such as `팀미팅 2`. Both presets write t
 | `.aligned.v2.json` | Transcription/alignment checkpoint and reprocessing input |
 | `_회의록.md` | Decisions, owners, deadlines, and discussion notes (`회의록` means meeting minutes) |
 
-The completion screen can open each artifact or reveal its output folder in Finder.
+The completion screen can open each artifact or reveal its output folder in Finder (macOS) or File Explorer (Windows).
 
 ## Local data and privacy
 
