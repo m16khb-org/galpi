@@ -822,7 +822,9 @@ def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         for index, stem, honorific in name_mentions(words):
             if index in used or stem in vocabulary.names or syllables(stem) < 2:
                 continue
-            match = best_match(stem, vocabulary.names, NAME_THRESHOLD)
+            # `{X}님` is certainly a person; a bare word may be ordinary prose.
+            limit = ADDRESS_THRESHOLD if honorific else NAME_THRESHOLD
+            match = best_match(stem, vocabulary.names, limit)
             if match is not None:
                 seen[("이름", stem + honorific, match[0] + honorific)] += 1
     ordered = sorted(seen.items(), key=lambda item: (item[0][0], item[0][2], -item[1]))
