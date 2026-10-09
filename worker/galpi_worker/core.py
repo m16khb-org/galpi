@@ -75,33 +75,34 @@ def validate_speaker_hint(hint: SpeakerHint) -> None:
 def should_filter_segment(text: str) -> bool:
     """Return whether a segment is a known hallucination or a repetition loop."""
 
-    return (
-        _HALLUCINATION_PATTERN.search(text) is not None
-        or _is_repetition_loop(text)
-        or _is_phrase_loop(text)
-    )
-
-
-def _is_repetition_loop(text: str) -> bool:
+    if _HALLUCINATION_PATTERN.search(text) is not None:
+        return True
     tokens = [token for token in _REPETITION_TOKEN_SPLIT.split(text) if token]
+    if len(tokens) < min(_REPETITION_MIN_TOKENS, _PHRASE_MIN_TOKENS):
+        return False
+    dominant = max(Counter(tokens).values())
+    return _is_repetition_loop(tokens, dominant) or _is_phrase_loop(tokens, dominant)
+
+
+def _is_repetition_loop(tokens: list[str], dominant: int) -> bool:
     if len(tokens) < _REPETITION_MIN_TOKENS:
         return False
-    dominant_count = Counter(tokens).most_common(1)[0][1]
-    return dominant_count / len(tokens) >= _REPETITION_DOMINANCE
+    return dominant / len(tokens) >= _REPETITION_DOMINANCE
 
 
-def _is_phrase_loop(text: str) -> bool:
-    tokens = [token for token in _REPETITION_TOKEN_SPLIT.split(text) if token]
+def _is_phrase_loop(tokens: list[str], dominant: int) -> bool:
     if len(tokens) < _PHRASE_MIN_TOKENS:
         return False
     for length in _PHRASE_LENGTHS:
-        if len(tokens) < length * 2:
+        # A phrase repeats at most as often as its first token, so a length
+        # the most frequent token cannot reach the coverage with is skipped.
+        if (
+            len(tokens) < length * 2
+            or dominant * length / len(tokens) < _PHRASE_COVERAGE
+        ):
             continue
-        phrases = [
-            tuple(tokens[index : index + length])
-            for index in range(len(tokens) - length + 1)
-        ]
-        repeats = Counter(phrases).most_common(1)[0][1]
+        phrases = zip(*(tokens[offset:] for offset in range(length)), strict=False)
+        repeats = max(Counter(phrases).values())
         if repeats * length / len(tokens) >= _PHRASE_COVERAGE:
             return True
     return False

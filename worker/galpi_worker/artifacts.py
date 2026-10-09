@@ -39,16 +39,16 @@ def filter_segments(
     filtered: list[Segment] = []
     for segment in segments:
         text = segment["text"].strip()
-        duration = segment["end"] - segment["start"]
-        spoken = sum(character.isalnum() for character in text)
-        rate = spoken / duration if duration > 0 else float("inf")
-        tail_noise = (
-            tail_start is not None
-            and segment["start"] >= tail_start
-            and (
-                segment.get("avg_logprob", 0.0) < -0.7 or (duration < 0.5 and rate > 12)
-            )
-        )
+        tail_noise = False
+        if tail_start is not None and segment["start"] >= tail_start:
+            duration = segment["end"] - segment["start"]
+            if segment.get("avg_logprob", 0.0) < -0.7:
+                tail_noise = True
+            elif duration < 0.5:
+                # Characters per second; only short tail segments need it.
+                spoken = sum(character.isalnum() for character in text)
+                rate = spoken / duration if duration > 0 else float("inf")
+                tail_noise = rate > 12
         (filtered if should_filter_segment(text) or tail_noise else kept).append(
             segment
         )

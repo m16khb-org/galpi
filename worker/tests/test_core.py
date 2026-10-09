@@ -6,7 +6,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 
-from ..galpi_worker.artifacts import format_timestamp
+from ..galpi_worker.artifacts import Segment, filter_segments, format_timestamp
 from ..galpi_worker.core import (
     ASR_HOTWORDS_CHAR_BUDGET,
     SpeakerHint,
@@ -243,6 +243,27 @@ class HallucinationFilterTests(unittest.TestCase):
 
         # Then
         self.assertFalse(filtered)
+
+    def test_drops_only_low_confidence_or_implausibly_fast_tail_segments(self) -> None:
+        # Given: speech in the first half, then a silence of two minutes after
+        # which the decoder emits noise into the tail
+        def segment(start: float, end: float, text: str, logprob: float) -> Segment:
+            return Segment(start=start, end=end, text=text, avg_logprob=logprob)
+
+        speech = segment(0.0, 60.0, "오늘 회의를 시작하겠습니다", -0.7)
+        before_gap = segment(60.0, 70.0, "다음 안건으로 넘어가겠습니다", -0.1)
+        unsure = segment(190.0, 192.0, "감사합니다", -0.71)
+        too_fast = segment(193.0, 193.4, "가나다라마바사", -0.1)
+        plausible = segment(194.0, 194.4, "네", -0.1)
+        segments = [speech, before_gap, unsure, too_fast, plausible]
+
+        # When
+        kept, filtered = filter_segments(segments, audio_duration=120.0)
+
+        # Then: before the gap nothing is judged by confidence; after it,
+        # low confidence (< -0.7) or > 12 characters per second is noise
+        self.assertEqual(kept, [speech, before_gap, plausible])
+        self.assertEqual(filtered, [unsure, too_fast])
 
     def test_normalizes_rounded_srt_timestamp_carry(self) -> None:
         self.assertEqual(format_timestamp(59.9999), "00:01:00,000")
