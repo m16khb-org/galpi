@@ -147,6 +147,27 @@ You can sign in with a ChatGPT account instead of an API key to use it as the mi
 > [!WARNING]
 > Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on the Mac. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API (the OpenAI API when ChatGPT sign-in is used). Review the provider's security and retention policy before using this feature with sensitive meetings.
 
+## Processing stages and models
+
+Recording through transcription runs locally; the transcript leaves the machine only when you select `AI 증강 실행`. The stage order is the same on every OS; only the speech recognition engine and compute device differ. There is no Linux build.
+
+| Stage | macOS (Apple Silicon) | Windows 10/11 x64 |
+|---|---|---|
+| 1. Input | Microphone recording (WAV) or imported audio file | Same |
+| 2. Decoding | Bundled ffmpeg converts to 16 kHz mono WAV | Same |
+| 3. Speech recognition | `Qwen3` (default): `Qwen/Qwen3-ASR-1.7B` converted to 8-bit MLX weights, run on the Metal GPU<br>`WhisperX`: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 | `WhisperX` only: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 |
+| 4. Word timestamp alignment | `Qwen3`: `Qwen/Qwen3-ForcedAligner-0.6B` (MLX, same pass as recognition)<br>`WhisperX`: `kresnik/wav2vec2-large-xlsr-korean` (MPS) | `kresnik/wav2vec2-large-xlsr-korean` (CPU or CUDA) |
+| 5. Diarization | `pyannote/speaker-diarization-community-1` (MPS) | `pyannote/speaker-diarization-community-1` (CPU or CUDA) |
+| 6. Post-processing | Sentence merging and hallucination filtering (rule-based, no model) | Same |
+| 7. AI augmentation | External LLM API (see below) | Same |
+
+- macOS has no compute device setting; MPS is used automatically when the installed PyTorch supports it. On Windows, CUDA accelerates alignment and diarization only.
+- The WhisperX preset retries alignment or diarization once on CPU if it fails on MPS or CUDA.
+- The Qwen3 preset recognizes audio in chunks of 30 seconds or less, cut at silences.
+- Participant names and the glossary also bias speech recognition: as `hotwords` for WhisperX and as a context hint for Qwen3.
+- AI augmentation uses an OpenAI-compatible Chat Completions API with an API key (default model `glm-5.3-flash`), or the OpenAI Responses API with a model from the account's list when signed in with ChatGPT.
+- Transcripts over 48,000 characters are split into 16,000-character chunks; facts are extracted per chunk (up to 3 requests at once) and then combined into the final minutes. Shorter transcripts take a single request.
+
 ## Outputs
 
 The default location is `~/Documents/Galpi` (changeable from the output folder picker). One folder corresponds to one meeting: a microphone recording creates `YYYY-MM-DD HHMMSS 녹음` named after its start time, while imported audio and transcripts keep their original file name. Every artifact inside a meeting folder shares the folder's name.

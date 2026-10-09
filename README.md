@@ -147,6 +147,27 @@ API Key 대신 ChatGPT 계정으로 로그인해 회의록 정제 모델을 사�
 > [!WARNING]
 > 음성 녹음과 전사(Qwen3·WhisperX 모두)는 로컬에서 처리됩니다. `AI 증강 실행`을 누르면 전사문, 이번 회의에서 선택한 참석자, 단어집, 사전 정보가 설정한 외부 API(ChatGPT 로그인 사용 시 OpenAI API)로 전송됩니다. 민감한 회의에서는 사용 중인 API 제공자의 보안·보존 정책을 먼저 확인하세요.
 
+## 처리 단계와 사용 모델
+
+녹음부터 전사까지는 모두 로컬에서 처리하고, `AI 증강 실행`을 눌렀을 때만 전사문을 외부 API로 보냅니다. 단계 순서는 OS와 관계없이 같으며, OS에 따라 달라지는 것은 음성 인식 엔진과 연산 장치입니다. Linux용 빌드는 제공하지 않습니다.
+
+| 단계 | macOS (Apple Silicon) | Windows 10/11 x64 |
+|---|---|---|
+| 1. 입력 | 마이크 녹음(WAV) 또는 오디오 파일 가져오기 | 같음 |
+| 2. 디코딩 | 앱에 포함된 ffmpeg로 16 kHz 모노 WAV 변환 | 같음 |
+| 3. 음성 인식 | `Qwen3`(기본): `Qwen/Qwen3-ASR-1.7B`를 MLX 8비트 가중치로 변환해 Metal GPU에서 실행<br>`WhisperX`: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 | `WhisperX`만 제공: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 |
+| 4. 단어 시간 정렬 | `Qwen3`: `Qwen/Qwen3-ForcedAligner-0.6B`(MLX, 음성 인식과 같은 단계에서 실행)<br>`WhisperX`: `kresnik/wav2vec2-large-xlsr-korean`(MPS) | `kresnik/wav2vec2-large-xlsr-korean`(CPU 또는 CUDA) |
+| 5. 화자분리 | `pyannote/speaker-diarization-community-1`(MPS) | `pyannote/speaker-diarization-community-1`(CPU 또는 CUDA) |
+| 6. 후처리 | 문장 병합과 환각 구간 제거(규칙 기반, 모델 없음) | 같음 |
+| 7. AI 증강 | 외부 LLM API(아래 설명 참고) | 같음 |
+
+- macOS에는 연산 장치 선택 메뉴가 없고, 설치된 PyTorch에서 MPS를 쓸 수 있으면 자동으로 사용합니다. Windows의 CUDA는 정렬과 화자분리만 가속합니다.
+- WhisperX 프리셋은 MPS나 CUDA에서 정렬·화자분리가 실패하면 CPU로 한 번 다시 시도합니다.
+- Qwen3 프리셋은 오디오를 무음 위치 기준으로 30초 이하 구간으로 나눠 인식합니다.
+- 참석자 이름과 단어집은 음성 인식 단계에도 반영됩니다. WhisperX는 `hotwords` 옵션으로, Qwen3는 문맥 힌트로 넣습니다.
+- AI 증강은 API 키 방식이면 OpenAI 호환 Chat Completions API(기본 모델 `glm-5.3-flash`)를, ChatGPT 로그인 방식이면 OpenAI Responses API와 계정 모델 목록에서 고른 모델을 사용합니다.
+- 전사문이 48,000자를 넘으면 16,000자 단위 구간으로 나눠 구간별 핵심 사실을 먼저 추출하고(동시 요청 최대 3개), 이를 종합해 최종 회의록을 씁니다. 그 이하는 요청 한 번으로 회의록을 만듭니다.
+
 ## 산출물
 
 기본 저장 위치는 `~/Documents/Galpi`입니다(출력 폴더에서 변경할 수 있습니다). 회의 하나에 폴더 하나가 대응됩니다. 마이크 녹음은 시작 시각으로 폴더를 만들고(`YYYY-MM-DD HHMMSS 녹음`), 전사 결과는 오디오 파일 이름과 같은 폴더에 저장됩니다. 폴더 안의 모든 파일은 폴더와 같은 이름을 공유합니다.
