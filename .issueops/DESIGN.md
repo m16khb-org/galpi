@@ -12,12 +12,12 @@ Client design contract for this repository. Read the root `DESIGN.md` before any
 ## Authoritative design document
 
 - Root [`DESIGN.md`](../DESIGN.md) is normative for palette, layout, motion, accessibility, and component states (galpi `AGENTS.md`, "Unique Styles").
-- `src/styles.css` is the implementing stylesheet and is authoritative over the root `DESIGN.md` typography table; the table documents the stylesheet, and drift between them is a defect (root `DESIGN.md`, section 3).
+- `@seed-design/css` 3.0.2 (`base.css`, `recipes/action-button.css`) is the single source of style values. `src/styles.css` only references `--seed-*` tokens; the root `DESIGN.md` tables list the tokens in use, and `src/styles.test.ts` fails when the two token sets differ.
 
 ## When to read
 
 - Before editing `src/styles.css`, `src/ui/app-template.ts`, or any `src/ui/*` view/controller that changes layout, states, or copy presentation.
-- Before adding a color, spacing, or motion value anywhere in the client.
+- Before adding a color, spacing, or motion value anywhere in the client: take it from a SEED token only (no new hex, `rgb()`, or px spacing/type/radius literals), and re-run the manual visual and AA checks whenever the `@seed-design/css` version changes.
 
 ## How changes are verified
 
@@ -30,3 +30,4 @@ Client design contract for this repository. Read the root `DESIGN.md` before any
 
 - Tauri (desktop shell: `src-tauri/tauri.conf.json`)
 - Vite (`package.json:vite`)
+- `@seed-design/css` 3.0.2 (`package.json` dependencies; framework-neutral CSS, no React)

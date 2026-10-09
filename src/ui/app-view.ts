@@ -13,6 +13,7 @@ import { ChatGptSettingsView } from "./chatgpt-settings"
 import { GlossarySettingsView } from "./glossary-settings"
 import { ParticipantPickerView } from "./participant-picker"
 import { ParticipantSettingsView } from "./participant-settings"
+import { setActionButtonVariant } from "./seed"
 import { bindTokenGuide } from "./token-guide"
 import { TokenSettingsView } from "./token-settings"
 
@@ -569,6 +570,7 @@ const refinementTitles: JobTitles = {
 function setPrimary(button: HTMLElement, primary: boolean): void {
   button.classList.toggle("primary-button", primary)
   button.classList.toggle("secondary-button", !primary)
+  setActionButtonVariant(button, primary ? "brandSolid" : "neutralOutline")
 }
 
 /** "/in/2026-10-03 주간 회의.m4a" → "2026-10-03 주간 회의" */

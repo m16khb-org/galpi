@@ -122,6 +122,8 @@ call sites, not semantic workspace references.
 
 - User-facing copy is Korean; protocol/error identifiers remain stable ASCII.
 - `DESIGN.md` is normative for palette, layout, motion, accessibility, and component states.
+- Style values come only from `@seed-design/css` `--seed-*` tokens; do not define new hex or px
+  tokens in `src/styles.css`. Buttons use the SEED `action-button` recipe via `src/ui/seed.ts`.
 - `docs/ARCHITECTURE.md` is normative for layering and port ownership.
 - Status always pairs color with text; labels are never placeholders.
 - Running setup/transcription exposes cancellation; progress reports phase completion, not ETA.

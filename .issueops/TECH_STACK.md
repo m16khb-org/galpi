@@ -15,6 +15,8 @@ high unless noted.
   through `bun run`, not npm. `npm test` does not apply.
 - TypeScript 7.0.2 (`tsc --noEmit`), Vite 8.2.1, Biome 2.5.9 (lint), Zod 4.4.3
   (IPC boundary parsing), happy-dom (DOM tests), `@tauri-apps/api` 2.11.1.
+- `@seed-design/css` 3.0.2 (Daangn SEED, Apache-2.0, exact pin): framework-neutral
+  CSS tokens (`base.css`) and the `action-button` recipe; no `@seed-design/react`.
 - Strict flags in `tsconfig.json`: `strict`, `exactOptionalPropertyTypes`,
   `noUncheckedIndexedAccess`, `noPropertyAccessFromIndexSignature`,
   `verbatimModuleSyntax`.
