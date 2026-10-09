@@ -56,6 +56,7 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 | ChatGPT sign-in (adapters) | `src-tauri/src/adapters/outbound/chatgpt/` | OAuth authorize/callback, ID-token, models |
 | ChatGPT sign-in (UI) | `src/ui/chatgpt-controller.ts` | Sign-in/out, model choice, `chatgpt-event` handling |
 | Responses API stream | `worker/galpi_worker/responses_stream.py` | Worker-side refinement transport for ChatGPT sign-in |
+| Refinement correction evidence | `worker/galpi_worker/transcript_hints.py` | Deterministic `<보정후보>` (misheard terms/names, speaker mapping, boundary errors) and same-speaker line merge; scored by `scripts/bench/correction_eval.py` |
 | Backend use cases | `src-tauri/src/application/use_cases.rs` | Central `Application` facade |
 | Port contracts | `src-tauri/src/application/ports.rs` | Add platform behavior behind a port |
 | Roster value objects | `src-tauri/src/domain/roster.rs` | `AssistantSettings`, `Participant`, `GlossaryEntry`, trimming rules |
