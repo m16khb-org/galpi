@@ -805,7 +805,9 @@ def name_mentions(words: list[str]) -> list[tuple[int, str, str]]:
 
 
 def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
-    hints: dict[tuple[str, str], str] = {}
+    """Misheard terms and names; a repeated misspelling says how often."""
+
+    seen: Counter[tuple[str, str, str]] = Counter()
     matcher = TermMatcher(vocabulary)
     for line in lines:
         words = line.text.split()
@@ -813,17 +815,18 @@ def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         for _, start, end, spoken, term in sorted(term_candidates(words, matcher)):
             if used.isdisjoint(range(start, end)):
                 used.update(range(start, end))
-                hints[(spoken, term)] = f'- 용어: "{spoken}" → "{term}"'
+                seen[("용어", spoken, term)] += 1
         for index, stem, honorific in name_mentions(words):
             if index in used or stem in vocabulary.names or syllables(stem) < 2:
                 continue
             match = best_match(stem, vocabulary.names, NAME_THRESHOLD)
-            if match is None:
-                continue
-            surface = stem + honorific
-            correct = match[0] + honorific
-            hints[(surface, correct)] = f'- 이름: "{surface}" → "{correct}"'
-    return list(hints.values())
+            if match is not None:
+                seen[("이름", stem + honorific, match[0] + honorific)] += 1
+    ordered = sorted(seen.items(), key=lambda item: (item[0][0], item[0][2], -item[1]))
+    return [
+        f'- {kind}: "{spoken}" → "{correct}"' + (f" ({count}회)" if count > 1 else "")
+        for (kind, spoken, correct), count in ordered
+    ]
 
 
 def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
@@ -945,11 +948,13 @@ def speaker_hints(
     lines: list[TranscriptLine], vocabulary: Vocabulary, roster_size: int
 ) -> list[str]:
     votes: dict[str, dict[str, int]] = {}
+    evidence: dict[tuple[str, str], list[str]] = {}
 
-    def vote(label: str, name: str) -> None:
+    def vote(label: str, name: str, why: str) -> None:
         if label != "UNKNOWN":
             votes.setdefault(label, {}).setdefault(name, 0)
             votes[label][name] += 1
+            evidence.setdefault((label, name), []).append(why)
 
     def roster_name(word: str) -> str | None:
         stem, _ = split_honorific(word)
@@ -963,7 +968,7 @@ def speaker_hints(
             for found in pattern.finditer(line.text + " "):
                 name = roster_name(found.group(1))
                 if name is not None:
-                    vote(line.label, name)
+                    vote(line.label, name, f"{line.second}s 자기소개")
         words = line.text.split()
         # A sentence opening with an address ("{이름} 님, ...") hands the floor
         # to that person; a reply opening with one ("네, {이름}님.") answers them.
@@ -1003,7 +1008,7 @@ def speaker_hints(
                     None,
                 )
                 if previous is not None:
-                    vote(previous.label, name)
+                    vote(previous.label, name, f"{line.second}s 응답 호칭")
             else:
                 following = next(
                     (
@@ -1014,7 +1019,7 @@ def speaker_hints(
                     None,
                 )
                 if following is not None:
-                    vote(following.label, name)
+                    vote(following.label, name, f"{line.second}s 호명")
 
     assigned: dict[str, str] = {}
     for label, tally in sorted(votes.items(), key=lambda item: -max(item[1].values())):
@@ -1030,7 +1035,13 @@ def speaker_hints(
         and len(remaining_names) == 1
     ):
         assigned[remaining_labels[0]] = remaining_names[0]
-    return [f"- 화자: {label} → {name}" for label, name in sorted(assigned.items())]
+        evidence[(remaining_labels[0], remaining_names[0])] = [
+            "나머지 화자와 명단 대조"
+        ]
+    return [
+        f"- 화자: {label} → {name} (근거: {', '.join(evidence[(label, name)][:3])})"
+        for label, name in sorted(assigned.items())
+    ]
 
 
 def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:

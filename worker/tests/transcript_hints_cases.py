@@ -26,13 +26,15 @@ class LexicalHintTests(unittest.TestCase):
         transcript = (
             "[SPEAKER_00] (0s) 웹서켓이 자꾸 끊겨요.\n"
             "[SPEAKER_01] (4s) 웹 소켓 재연결은 레디스에 상태를 두면 됩니다.\n"
+            "[SPEAKER_00] (9s) 웹서켓도 같이 볼게요.\n"
         )
 
         # When
         block = analyze(transcript, "", [], glossary("웹소켓", "Redis")).block
 
         # Then
-        self.assertIn('- 용어: "웹서켓" → "웹소켓"', block)
+        # a repeated misspelling says how often it occurs
+        self.assertIn('- 용어: "웹서켓" → "웹소켓" (2회)\n', block)
         self.assertIn('- 용어: "웹 소켓" → "웹소켓"', block)
         self.assertIn('- 용어: "레디스" → "Redis"', block)
 
@@ -85,8 +87,11 @@ class SpeakerMappingTests(unittest.TestCase):
         block = analyze(transcript, "", [person("누리"), person("태오")], []).block
 
         # Then
-        self.assertIn("- 화자: SPEAKER_01 → 누리", block)
-        self.assertIn("- 화자: SPEAKER_00 → 태오", block)
+        # each mapping names the evidence the model should check
+        self.assertIn("- 화자: SPEAKER_01 → 누리 (근거: 0s 호명)", block)
+        self.assertIn(
+            "- 화자: SPEAKER_00 → 태오 (근거: 나머지 화자와 명단 대조)", block
+        )
 
     def test_leaves_a_label_unmapped_when_a_guest_may_hold_it(self) -> None:
         # Given three labels and a two-person roster
