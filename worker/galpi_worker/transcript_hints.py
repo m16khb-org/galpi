@@ -1,0 +1,465 @@
+"""Deterministic correction evidence for the refinement request.
+
+Korean ASR misspells unfamiliar words in predictable ways (jamo confusions,
+dropped or added spaces) and diarization mislabels short replies and the
+tails of sentences. A general LLM fixes these far more reliably when the
+request points at the suspicious spans than when it is asked to rewrite the
+transcript on its own. This module derives that evidence only from what the
+user supplied (glossary, background, roster) and the transcript itself; it
+never edits the transcript's words. The model makes the final call.
+"""
+
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from .minutes_prompt import GlossaryEntry, Participant
+
+LINE: Final = re.compile(r"^\[(SPEAKER_\d+|UNKNOWN)\]\s*\((\d+)s\)\s*(.*)$")
+HANGUL_BASE: Final = 0xAC00
+INITIALS: Final = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+MEDIALS: Final = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+FINALS: Final = "·ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ"
+# Pairs Korean ASR confuses; substituting one for the other costs half.
+CONFUSABLE: Final = frozenset(
+    frozenset(pair)
+    for pair in (
+        "ㄱㅋ",
+        "ㄱㄲ",
+        "ㄷㅌ",
+        "ㄷㄸ",
+        "ㅂㅍ",
+        "ㅂㅃ",
+        "ㅈㅊ",
+        "ㅈㅉ",
+        "ㅅㅆ",
+        "ㅇㅎ",
+        "ㄴㄹ",
+        "ㅐㅔ",
+        "ㅒㅖ",
+        "ㅓㅗ",
+        "ㅡㅜ",
+        "ㅕㅛ",
+        "ㅙㅚ",
+        "ㅚㅞ",
+        "ㅢㅣ",
+        "ㅟㅣ",
+        "ㄴㅇ",
+        "ㅁㅇ",
+        "·ㄴ",
+        "·ㅇ",
+        "·ㄹ",
+        "·ㄱ",
+    )
+)
+PARTICLES: Final = (
+    "께서는",
+    "에서는",
+    "으로는",
+    "께서",
+    "에서",
+    "에게",
+    "한테",
+    "으로",
+    "이랑",
+    "라고",
+    "이고",
+    "이며",
+    "인데",
+    "처럼",
+    "까지",
+    "부터",
+    "보다",
+    "랑",
+    "로",
+    "이",
+    "가",
+    "은",
+    "는",
+    "을",
+    "를",
+    "의",
+    "에",
+    "도",
+    "와",
+    "과",
+    "만",
+)
+HONORIFICS: Final = ("님", "씨")
+REPLY: Final = re.compile(
+    r"^(네|예|응|아|어|음|맞아요|맞습니다|맞아|그렇죠|그렇습니다|좋습니다|좋아요|알겠습니다)([,.!?\s]|$)"
+)
+SENTENCE_END: Final = re.compile(r"[.?!…]$|(요|다|죠|까|네|군|지)$")
+SELF_INTRO: Final = (
+    re.compile(r"(?:^|\s)저(?:는)?\s+(\S+?)(?:이|가)?\s"),
+    re.compile(r"(\S+?)(?:입니다|이고요|이고|인데요|이에요)(?:[.,\s]|$)"),
+)
+TERM_THRESHOLD: Final = 0.2
+NAME_THRESHOLD: Final = 0.17
+CLUSTER_THRESHOLD: Final = 0.2
+BACKGROUND_TOKEN: Final = re.compile(r"[가-힣A-Za-z0-9]{2,}")
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptLine:
+    label: str
+    second: int
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptHints:
+    """The evidence block and the transcript to send with it."""
+
+    block: str
+    transcript: str
+
+
+def parse_lines(transcript: str) -> list[TranscriptLine]:
+    lines: list[TranscriptLine] = []
+    for raw in transcript.splitlines():
+        match = LINE.match(raw.strip())
+        if match is not None:
+            lines.append(
+                TranscriptLine(
+                    match.group(1), int(match.group(2)), match.group(3).strip()
+                )
+            )
+    return lines
+
+
+def jamo_units(text: str) -> list[str]:
+    """Spelling as jamo, ignoring spaces; non-Hangul characters stay as-is."""
+
+    units: list[str] = []
+    for character in text.lower():
+        code = ord(character) - HANGUL_BASE
+        if 0 <= code < 11172:
+            units += [
+                INITIALS[code // 588],
+                MEDIALS[(code % 588) // 28],
+                FINALS[code % 28],
+            ]
+        elif not character.isspace():
+            units.append(character)
+    return units
+
+
+def distance(left: str, right: str) -> float:
+    """Confusion-weighted edit distance, normalized by the longer spelling."""
+
+    a, b = jamo_units(left), jamo_units(right)
+    if not a or not b:
+        return 1.0
+    previous = [float(j) for j in range(len(b) + 1)]
+    for i, x in enumerate(a, 1):
+        current = [float(i)] + [0.0] * len(b)
+        for j, y in enumerate(b, 1):
+            if x == y:
+                cost = 0.0
+            elif frozenset((x, y)) in CONFUSABLE:
+                cost = 0.5
+            else:
+                cost = 1.0
+            current[j] = min(
+                previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost
+            )
+        previous = current
+    return previous[-1] / max(len(a), len(b))
+
+
+def split_particle(word: str) -> tuple[str, str]:
+    stripped = word.rstrip(".,?!")
+    for particle in PARTICLES:
+        if stripped.endswith(particle) and len(stripped) > len(particle) + 1:
+            return stripped[: -len(particle)], particle
+    return stripped, ""
+
+
+def split_honorific(word: str) -> tuple[str, str]:
+    stem, _ = split_particle(word)
+    for honorific in HONORIFICS:
+        if stem.endswith(honorific) and len(stem) > len(honorific):
+            return stem[: -len(honorific)], honorific
+    return stem, ""
+
+
+def syllables(text: str) -> int:
+    return sum(1 for character in text if not character.isspace())
+
+
+@dataclass(frozen=True, slots=True)
+class Vocabulary:
+    terms: tuple[str, ...]
+    names: dict[str, str]  # spoken form -> roster name
+    known: frozenset[str]
+
+
+def build_vocabulary(
+    background: str, participants: "list[Participant]", glossary: "list[GlossaryEntry]"
+) -> Vocabulary:
+    names: dict[str, str] = {}
+    for person in participants:
+        forms = [
+            person.name,
+            *person.aliases,
+            *(alias.split()[0] for alias in person.aliases),
+        ]
+        # Three-syllable Korean names are often said without the surname.
+        if len(person.name) == 3 and all("가" <= c <= "힣" for c in person.name):
+            forms.append(person.name[1:])
+        for form in forms:
+            spoken, _ = split_honorific(form)
+            if syllables(spoken) >= 2:
+                names[spoken] = person.name
+    glossary_terms = [entry.term for entry in glossary]
+    background_terms = [
+        split_particle(token)[0] for token in BACKGROUND_TOKEN.findall(background)
+    ]
+    terms = tuple(dict.fromkeys(t for t in glossary_terms if syllables(t) >= 2))
+    # Background words are only candidates when they look like names of
+    # things: Latin script, or Hangul that recurs in the background.
+    counts: dict[str, int] = {}
+    for term in background_terms:
+        counts[term] = counts.get(term, 0) + 1
+    extra = tuple(
+        term
+        for term, count in counts.items()
+        if syllables(term) >= 2 and (count >= 2 or not re.search(r"[가-힣]", term))
+    )
+    known = frozenset(
+        [*terms, *extra, *names, *(split_particle(t)[0] for t in background_terms)]
+    )
+    return Vocabulary(tuple(dict.fromkeys([*terms, *extra])), names, known)
+
+
+def best_match(
+    span: str, candidates: Iterable[str], threshold: float
+) -> tuple[str, float] | None:
+    best: tuple[str, float] | None = None
+    for candidate in candidates:
+        if abs(syllables(span) - syllables(candidate)) > 1:
+            continue
+        score = distance(span, candidate)
+        if 0 < score <= threshold and (best is None or score < best[1]):
+            best = (candidate, score)
+    return best
+
+
+def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
+    hints: dict[tuple[str, str], str] = {}
+    for line in lines:
+        words = line.text.split()
+        used: set[int] = set()
+        for width in (3, 2, 1):
+            for start in range(len(words) - width + 1):
+                if any(index in used for index in range(start, start + width)):
+                    continue
+                head = words[start : start + width - 1]
+                stem, _ = split_particle(words[start + width - 1])
+                span = " ".join([*head, stem]).strip(".,?!")
+                if not span or span.replace(" ", "") in {
+                    k.replace(" ", "") for k in vocabulary.known
+                }:
+                    continue
+                match = best_match(span, vocabulary.terms, TERM_THRESHOLD)
+                if match is None:
+                    continue
+                used.update(range(start, start + width))
+                hints[(span, match[0])] = f'- 용어: "{span}" → "{match[0]}"'
+        for index, word in enumerate(words):
+            if index in used:
+                continue
+            stem, honorific = split_honorific(word)
+            next_word = words[index + 1] if index + 1 < len(words) else ""
+            addressed = honorific or next_word.startswith(HONORIFICS)
+            if not addressed or stem in vocabulary.names:
+                continue
+            match = best_match(stem, vocabulary.names, NAME_THRESHOLD)
+            if match is None:
+                continue
+            surface = stem + honorific
+            correct = match[0] + honorific
+            hints[(surface, correct)] = f'- 이름: "{surface}" → "{correct}"'
+    return list(hints.values())
+
+
+def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
+    """Group spellings that are probably one unlisted word."""
+
+    counts: dict[str, int] = {}
+    for line in lines:
+        for word in line.text.split():
+            stem, _ = split_particle(word)
+            if syllables(stem) >= 3 and re.fullmatch(r"[가-힣]+", stem):
+                counts[stem] = counts.get(stem, 0) + 1
+    stems = [
+        stem
+        for stem in counts
+        if not any(
+            distance(stem, known) <= TERM_THRESHOLD for known in vocabulary.known
+        )
+    ]
+    groups: list[set[str]] = []
+    for stem in stems:
+        for group in groups:
+            if any(0 < distance(stem, member) <= CLUSTER_THRESHOLD for member in group):
+                group.add(stem)
+                break
+        else:
+            groups.append({stem})
+    return [
+        "- 같은 표현: " + " = ".join(f'"{member}"' for member in sorted(group))
+        for group in groups
+        if len(group) > 1
+    ]
+
+
+def speaker_hints(
+    lines: list[TranscriptLine], vocabulary: Vocabulary, roster_size: int
+) -> list[str]:
+    votes: dict[str, dict[str, int]] = {}
+
+    def vote(label: str, name: str) -> None:
+        if label != "UNKNOWN":
+            votes.setdefault(label, {}).setdefault(name, 0)
+            votes[label][name] += 1
+
+    def roster_name(word: str) -> str | None:
+        stem, _ = split_honorific(word)
+        if stem in vocabulary.names:
+            return vocabulary.names[stem]
+        match = best_match(stem, vocabulary.names, NAME_THRESHOLD)
+        return vocabulary.names[match[0]] if match is not None else None
+
+    for index, line in enumerate(lines):
+        for pattern in SELF_INTRO:
+            for found in pattern.finditer(line.text + " "):
+                name = roster_name(found.group(1))
+                if name is not None:
+                    vote(line.label, name)
+        words = line.text.split()
+        # Vocative at the start of a sentence: "{이름} 님, ..." -> the next
+        # speaker is that person.
+        for position, word in enumerate(words):
+            starts_sentence = position == 0 or words[position - 1].endswith(
+                (".", "?", "!")
+            )
+            stem, honorific = split_honorific(word.rstrip(","))
+            spaced = position + 1 < len(words) and words[position + 1].startswith(
+                HONORIFICS
+            )
+            vocative = word.endswith(",") or (
+                spaced and words[position + 1].endswith(",")
+            )
+            if not (starts_sentence and (honorific or spaced) and vocative):
+                continue
+            name = roster_name(stem)
+            if name is None:
+                continue
+            is_reply = (
+                position > 0 and REPLY.match(" ".join(words[:position])) is not None
+            )
+            if is_reply:
+                previous = next(
+                    (l for l in reversed(lines[:index]) if l.label != line.label), None
+                )
+                if previous is not None:
+                    vote(previous.label, name)
+            else:
+                following = next(
+                    (l for l in lines[index + 1 :] if l.label != line.label), None
+                )
+                if following is not None:
+                    vote(following.label, name)
+
+    assigned: dict[str, str] = {}
+    for label, tally in sorted(votes.items(), key=lambda item: -max(item[1].values())):
+        name = max(tally, key=lambda key: tally[key])
+        if name not in assigned.values():
+            assigned[label] = name
+    labels = sorted({line.label for line in lines if line.label != "UNKNOWN"})
+    remaining_labels = [label for label in labels if label not in assigned]
+    remaining_names = sorted(set(vocabulary.names.values()) - set(assigned.values()))
+    if (
+        len(labels) == roster_size
+        and len(remaining_labels) == 1
+        and len(remaining_names) == 1
+    ):
+        assigned[remaining_labels[0]] = remaining_names[0]
+    return [f"- 화자: {label} → {name}" for label, name in sorted(assigned.items())]
+
+
+def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
+    hints: list[str] = []
+    flagged: set[int] = set()
+    for index in range(1, len(lines)):
+        line, previous = lines[index], lines[index - 1]
+        following = lines[index + 1] if index + 1 < len(lines) else None
+        if REPLY.match(line.text) and len(line.text) <= 12:
+            asked = previous.text.endswith("?")
+            misattributed = line.label == "UNKNOWN" or (asked and line.label == previous.label)
+            if (
+                misattributed
+                and following is not None
+                and following.label not in (line.label, "UNKNOWN")
+                and following.label != previous.label
+            ):
+                hints.append(f"- 화자 경계: ({line.second}s) {line.label} → {following.label}")
+                flagged.add(index)
+            continue
+        cut_off = SENTENCE_END.search(previous.text) is None
+        if (
+            cut_off
+            and line.label != previous.label
+            and previous.label != "UNKNOWN"
+            and line.second - previous.second <= 6
+        ):
+            hints.append(
+                f"- 화자 경계: ({line.second}s) {line.label} → {previous.label}"
+            )
+            flagged.add(index)
+    return hints, flagged
+
+
+def compact_transcript(lines: list[TranscriptLine], keep: set[int]) -> str:
+    """Merge consecutive lines of one speaker, keeping flagged lines apart."""
+
+    merged: list[list[str | int]] = []
+    for index, line in enumerate(lines):
+        if (
+            merged
+            and index not in keep
+            and index - 1 not in keep
+            and merged[-1][0] == line.label
+        ):
+            merged[-1][2] = f"{merged[-1][2]} {line.text}"
+        else:
+            merged.append([line.label, line.second, line.text])
+    return (
+        "\n".join(f"[{label}] ({second}s) {text}" for label, second, text in merged)
+        + "\n"
+    )
+
+
+def analyze(
+    transcript: str,
+    background: str,
+    participants: "list[Participant]",
+    glossary: "list[GlossaryEntry]",
+) -> TranscriptHints:
+    lines = parse_lines(transcript)
+    if not lines:
+        return TranscriptHints("", transcript)
+    vocabulary = build_vocabulary(background, participants, glossary)
+    boundaries, flagged = boundary_hints(lines)
+    entries = [
+        *lexical_hints(lines, vocabulary),
+        *cluster_hints(lines, vocabulary),
+        *speaker_hints(lines, vocabulary, len(participants)),
+        *boundaries,
+    ]
+    block = "\n".join(entries)
+    return TranscriptHints(block, compact_transcript(lines, flagged))

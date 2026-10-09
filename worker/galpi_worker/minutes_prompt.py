@@ -16,6 +16,7 @@ from .minutes_pipeline import (
     split_transcript,
 )
 from .minutes_template import SYSTEM_PROMPT
+from .transcript_hints import analyze as analyze_transcript
 
 NO_BACKGROUND = "(등록된 사전 정보가 없습니다. 전사본에 있는 근거만 사용하세요.)"
 NO_PARTICIPANTS = "(선택된 참석자가 없습니다. 전사본에 있는 근거만 사용하세요.)"
@@ -149,12 +150,24 @@ def transcript_date(path: Path) -> str | None:
         return None
 
 
+def render_corrections(block: str) -> str:
+    """Wrap correction candidates for a prompt; empty when there are none."""
+
+    if not block.strip():
+        return ""
+    return (
+        "다음은 전사본에서 자동으로 찾은 오인식·화자 후보입니다. 확정이 아니므로 전사본 문맥으로 확인하세요.\n"
+        f"<보정후보>\n{block.strip()}\n</보정후보>\n"
+    )
+
+
 def build_messages(
     transcript: str,
     background: str,
     participants: list[Participant],
     glossary: list[GlossaryEntry],
     meeting_date: str | None = None,
+    corrections: str = "",
 ) -> list[ChatMessage]:
     """Build the chat messages for one refinement request."""
 
@@ -179,7 +192,8 @@ def build_messages(
         "<단어집>\n"
         f"{render_glossary(glossary)}\n"
         "</단어집>\n\n"
-        "다음은 화자분리된 회의 전사본입니다.\n"
+        + (f"{corrections}\n" if corrections else "")
+        + "다음은 화자분리된 회의 전사본입니다.\n"
         "<전사본>\n"
         f"{transcript.strip()}\n"
         "</전사본>\n\n"
@@ -222,11 +236,16 @@ def plan_refinement(
     exercised on short transcripts.
     """
 
+    if not transcript.strip():
+        raise InvalidInput("transcript is empty")
+    hints = analyze_transcript(transcript, background, participants, glossary)
+    corrections = render_corrections(hints.block)
     context = MinutesContext(
         background=background.strip() or NO_BACKGROUND,
         participants=render_participants(participants),
         glossary=render_glossary(glossary),
         meeting_date=meeting_date,
+        corrections=corrections,
     )
     chosen = strategy or refinement_strategy(transcript)
     if chosen == "single":
@@ -234,15 +253,18 @@ def plan_refinement(
             strategy="single",
             context=context,
             single=build_messages(
-                transcript, background, participants, glossary, meeting_date
+                hints.transcript,
+                background,
+                participants,
+                glossary,
+                meeting_date,
+                corrections,
             ),
             chunks=[],
         )
-    if not transcript.strip():
-        raise InvalidInput("transcript is empty")
     return RefinementPlan(
         strategy="map_reduce",
         context=context,
         single=None,
-        chunks=split_transcript(transcript),
+        chunks=split_transcript(hints.transcript),
     )
