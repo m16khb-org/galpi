@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Canonical benchmark: worker correctness gate, then the deterministic
-# post-processing benchmark. No network, fixed seed.
+# minutes-prompt rubric (no model call, no network).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,4 +11,4 @@ PYTHONPATH=. python3 -m unittest discover -s worker/tests -t . >/tmp/autoresearc
 }
 uvx --offline ruff check worker scripts/bench >&2
 
-python3 scripts/bench/worker_bench.py
+python3 scripts/bench/minutes_prompt_eval.py
