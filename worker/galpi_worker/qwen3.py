@@ -538,6 +538,9 @@ def build_word_spans(
     """
 
     text = transcription_text.strip()
+    length = len(text)
+    # Classify each character once; the cursor loops below visit every one.
+    matchable = [is_matchable(character) for character in text]
     spans: list[WordSpan] = []
     cursor = 0
     for entry in entries:
@@ -546,13 +549,13 @@ def build_word_spans(
             continue
         span_start = cursor
         consumed = 0
-        while cursor < len(text) and consumed < needed:
-            if matchable_chars(text[cursor]):
+        while cursor < length and consumed < needed:
+            if matchable[cursor]:
                 consumed += 1
             cursor += 1
         # Trailing punctuation and spacing belong to the word just consumed,
         # so a sentence-ending mark stays attached to its own word.
-        while cursor < len(text) and not matchable_chars(text[cursor]):
+        while cursor < length and not matchable[cursor]:
             cursor += 1
         piece = text[span_start:cursor]
         if piece.strip():
@@ -682,14 +685,16 @@ def group_word_spans(
     return segments
 
 
-def matchable_chars(text: str) -> list[str]:
+def is_matchable(character: str) -> bool:
     """Apply the exact character rule used by the MLX forced aligner."""
 
-    return [
-        character
-        for character in text
-        if character == "'" or unicodedata.category(character)[0] in "LN"
-    ]
+    return character == "'" or unicodedata.category(character)[0] in "LN"
+
+
+def matchable_chars(text: str) -> list[str]:
+    """The characters of `text` the MLX forced aligner counts."""
+
+    return [character for character in text if is_matchable(character)]
 
 
 def diarize(
