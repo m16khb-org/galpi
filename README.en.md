@@ -166,13 +166,13 @@ The default location is `~/Documents/Galpi` (changeable from the output folder p
     └── 팀미팅_회의록.md
 ```
 
-Name collisions get a numeric suffix such as `팀미팅 2`. The alignment checkpoint (`.aligned.v2.json`) is produced by the **WhisperX preset only**; when it exists, re-transcribing the same audio skips the transcription and alignment stages. The Qwen3 preset publishes srt/txt and leaves no checkpoint.
+Name collisions get a numeric suffix such as `팀미팅 2`. Both presets write the checkpoint (`.aligned.v2.json`); re-transcribing the same audio skips the transcription and alignment stages and reruns diarization onward. The checkpoint records the engine that wrote it, so a checkpoint from the other preset is not reused.
 
 | File | Purpose |
 |---|---|
 | `.srt` | Subtitles with timestamps |
 | `_화자별.txt` | Readable speaker-oriented transcript |
-| `.aligned.v2.json` | Alignment checkpoint and reprocessing input (WhisperX only) |
+| `.aligned.v2.json` | Transcription/alignment checkpoint and reprocessing input |
 | `_회의록.md` | Decisions, owners, deadlines, and discussion notes (`회의록` means meeting minutes) |
 
 The completion screen can open each artifact or reveal its output folder in Finder.
