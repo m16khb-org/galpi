@@ -160,6 +160,16 @@ CLUSTER_THRESHOLD: Final = 0.15
 CLUSTER_TERM_THRESHOLD: Final = 0.25
 CLUSTER_TERM_MAX: Final = 0.35
 SILENT_INITIAL: Final = 11  # ㅇ
+# Loanword spelling writes a final consonant with its representative letter
+# (`북`, not `붘`).
+LOANWORD_FINAL: Final = {
+    "ㅋ": "ㄱ",
+    "ㄲ": "ㄱ",
+    "ㅍ": "ㅂ",
+    "ㅌ": "ㅅ",
+    "ㄷ": "ㅅ",
+    "ㅆ": "ㅅ",
+}
 VERB_FORM: Final = re.compile(r"(다|요|된|한|할|하는|되는|해서|하고|되어|했던|됐던)$")
 BACKGROUND_TOKEN: Final = re.compile(r"[가-힣A-Za-z0-9]{2,}")
 # What may follow a noun inside one written word: a bound noun, then a
@@ -245,7 +255,8 @@ def jamo_forms(text: str) -> tuple[tuple[str, ...], ...]:
             and syllable[1:] == ["ㅡ", "·"]
             and syllable[0] in FINALS
         ):
-            folded[-1] = [*previous[:2], syllable[0]]
+            final = LOANWORD_FINAL.get(syllable[0], syllable[0])
+            folded[-1] = [*previous[:2], final]
         else:
             folded.append(list(syllable))
     return tuple(

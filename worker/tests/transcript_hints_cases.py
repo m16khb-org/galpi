@@ -67,6 +67,10 @@ class LexicalHintTests(unittest.TestCase):
         # A final consonant before ㅇ is heard as the next initial.
         self.assertEqual(distance("음악", "으막"), 0.0)
         self.assertGreater(distance("음악", "으낙"), 0.0)
+        # The written form still counts when liaison would hide the match.
+        self.assertLess(distance("북엔드", "북핸드"), distance("부겐드", "북핸드"))
+        # A loanword's inserted ㅡ syllable is the previous syllable's final.
+        self.assertEqual(distance("부크마크", "북마크"), 0.0)
 
 
 class SpeakerMappingTests(unittest.TestCase):
