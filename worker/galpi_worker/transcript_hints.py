@@ -55,6 +55,9 @@ CONFUSABLE: Final = frozenset(
     )
 )
 PARTICLES: Final = (
+    "이라고",
+    "이라는",
+    "이라서",
     "께서는",
     "에서는",
     "으로는",
@@ -137,7 +140,9 @@ ONCE_THRESHOLD: Final = 0.12
 INTRO_SUFFIX: Final = re.compile(r"(입니다|이고요|이고|인데요|이에요)[.,]?$")
 NAME_THRESHOLD: Final = 0.17
 CLUSTER_THRESHOLD: Final = 0.2
-CLUSTER_TERM_THRESHOLD: Final = 0.3
+CLUSTER_TERM_THRESHOLD: Final = 0.25
+CLUSTER_TERM_MAX: Final = 0.35
+SILENT_INITIAL: Final = 11  # ㅇ
 VERB_FORM: Final = re.compile(r"(다|요|된|한|할|하는|되는|해서|하고|되어|했던|됐던)$")
 BACKGROUND_TOKEN: Final = re.compile(r"[가-힣A-Za-z0-9]{2,}")
 # What may follow a noun inside one written word: a bound noun, then a
@@ -178,20 +183,283 @@ def parse_lines(transcript: str) -> list[TranscriptLine]:
 
 
 def jamo_units(text: str) -> list[str]:
-    """Spelling as jamo, ignoring spaces; non-Hangul characters stay as-is."""
+    """Pronounced jamo, ignoring spaces; non-Hangul characters stay as-is.
+
+    A final consonant before a syllable starting with ㅇ is pronounced as
+    that syllable's initial (`음악` sounds like `으막`), which is how ASR
+    hears it.
+    """
 
     units: list[str] = []
-    for character in text.lower():
+    characters = [c for c in text.lower() if not c.isspace()]
+    carried = ""
+    for index, character in enumerate(characters):
+        code = ord(character) - HANGUL_BASE
+        if not 0 <= code < 11172:
+            units.append(character)
+            carried = ""
+            continue
+        initial, final = INITIALS[code // 588], FINALS[code % 28]
+        if carried and initial == "ㅇ":
+            initial = carried
+        upcoming = (
+            ord(characters[index + 1]) - HANGUL_BASE
+            if index + 1 < len(characters)
+            else -1
+        )
+        carried = ""
+        silent_next = 0 <= upcoming < 11172 and upcoming // 588 == SILENT_INITIAL
+        if silent_next and final in INITIALS and final != "ㅇ":
+            carried = "" if final == "ㅎ" else final
+            final = "·"
+        units += [initial, MEDIALS[(code % 588) // 28], final]
+    return units
+
+
+# Hangul and Latin spellings meet in a rough sound alphabet: consonants by
+# place of articulation, vowels by quality, glides as `w`. Korean inserts ㅡ
+# to break up consonant clusters and drops English post-vowel `r`, so both
+# disappear.
+HANGUL: Final = re.compile(r"[가-힣]")
+INITIAL_SOUND: Final = dict(
+    zip(
+        INITIALS,
+        [
+            "k",
+            "k",
+            "n",
+            "t",
+            "t",
+            "r",
+            "m",
+            "p",
+            "p",
+            "s",
+            "s",
+            "",
+            "j",
+            "j",
+            "j",
+            "k",
+            "t",
+            "p",
+            "",
+        ],
+        strict=True,
+    )
+)
+MEDIAL_SOUND: Final = dict(
+    zip(
+        MEDIALS,
+        [
+            "a",
+            "e",
+            "a",
+            "e",
+            "o",
+            "e",
+            "o",
+            "e",
+            "o",
+            "wa",
+            "we",
+            "we",
+            "o",
+            "u",
+            "wo",
+            "we",
+            "wi",
+            "u",
+            "",
+            "i",
+            "i",
+        ],
+        strict=True,
+    )
+)
+FINAL_SOUND: Final = dict(
+    zip(
+        FINALS,
+        [
+            "",
+            "k",
+            "k",
+            "k",
+            "n",
+            "n",
+            "n",
+            "t",
+            "r",
+            "k",
+            "m",
+            "r",
+            "r",
+            "r",
+            "p",
+            "r",
+            "m",
+            "p",
+            "p",
+            "t",
+            "t",
+            "n",
+            "t",
+            "t",
+            "k",
+            "t",
+            "p",
+            "",
+        ],
+        strict=True,
+    )
+)
+LETTER_NAMES: Final = dict(
+    zip(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        [
+            "에이",
+            "비",
+            "씨",
+            "디",
+            "이",
+            "에프",
+            "지",
+            "에이치",
+            "아이",
+            "제이",
+            "케이",
+            "엘",
+            "엠",
+            "엔",
+            "오",
+            "피",
+            "큐",
+            "알",
+            "에스",
+            "티",
+            "유",
+            "브이",
+            "더블유",
+            "엑스",
+            "와이",
+            "지",
+        ],
+        strict=True,
+    )
+)
+DIGIT_WORDS: Final = [
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+]
+LATIN_RULES: Final = (
+    (r"\d", lambda m: DIGIT_WORDS[int(m.group())]),
+    (r"(?<=[^aeiouy])e\b", ""),
+    (r"ti(?=on)", "s"),
+    (r"ph", "p"),
+    (r"th", "s"),
+    (r"wh", "w"),
+    (r"sh", "s"),
+    (r"ch", "j"),
+    (r"ck", "k"),
+    (r"qu", "kw"),
+    (r"ng", "n"),
+    (r"ee", "i"),
+    (r"oo", "u"),
+    (r"c(?=[eiy])", "s"),
+    (r"x", "ks"),
+    (r"g(?=[eiy])", "j"),
+    (r"[qcg]", "k"),
+    (r"[fvb]", "p"),
+    (r"d", "t"),
+    (r"z", "j"),
+    (r"l", "r"),
+    (r"h", ""),
+    (r"y(?=[aeiou])", ""),
+    (r"y", "i"),
+    (r"w(?![aeiou])", "u"),
+    (r"(?<=[aeiou])r(?![aeiou])", ""),
+    (r"([^aeiou])\1+", r"\1"),
+)
+VOWELS: Final = frozenset("aeiou")
+LATIN_THRESHOLD: Final = 0.2
+
+
+def latin_sound(text: str) -> str:
+    sound = text.lower()
+    for pattern, replacement in LATIN_RULES:
+        sound = re.sub(pattern, replacement, sound)
+    return re.sub(r"[^a-z]", "", sound)
+
+
+def hangul_sound(text: str) -> str:
+    parts: list[str] = []
+    for character in text:
         code = ord(character) - HANGUL_BASE
         if 0 <= code < 11172:
-            units += [
-                INITIALS[code // 588],
-                MEDIALS[(code % 588) // 28],
-                FINALS[code % 28],
+            parts += [
+                INITIAL_SOUND[INITIALS[code // 588]],
+                MEDIAL_SOUND[MEDIALS[(code % 588) // 28]],
+                FINAL_SOUND[FINALS[code % 28]],
             ]
-        elif not character.isspace():
-            units.append(character)
-    return units
+        elif character.isalnum():
+            parts.append(latin_sound(character))
+    return re.sub(r"([^aeiou])\1+", r"\1", "".join(parts))
+
+
+def term_sound(term: str) -> str:
+    """How a Latin term sounds; short all-caps terms are spelled out."""
+
+    if term.isupper() and term.isalpha() and len(term) <= 6:
+        return hangul_sound("".join(LETTER_NAMES[letter] for letter in term))
+    return latin_sound(term)
+
+
+def sound_distance(a: str, b: str) -> float:
+    previous = [0.0]
+    for y in b:
+        previous.append(previous[-1] + (0.5 if y in VOWELS else 1.0))
+    for x in a:
+        gap = 0.5 if x in VOWELS else 1.0
+        current = [previous[0] + gap] + [0.0] * len(b)
+        for j, y in enumerate(b, 1):
+            if x == y:
+                cost = 0.0
+            elif x in VOWELS and y in VOWELS:
+                cost = 0.5
+            else:
+                cost = 1.0
+            current[j] = min(
+                previous[j] + gap,
+                current[j - 1] + (0.5 if y in VOWELS else 1.0),
+                previous[j - 1] + cost,
+            )
+        previous = current
+    return previous[-1] / max(len(a), len(b), 1)
+
+
+def latin_match(spoken: str, term: str) -> float | None:
+    """Distance from a Hangul span to a Latin term it may be the sound of."""
+
+    if syllables(spoken) < 2:
+        return None
+    said, target = hangul_sound(spoken), term_sound(term)
+    longest = max(len(said), len(target))
+    if not target or abs(len(said) - len(target)) > longest * 0.4:
+        return None
+    score = sound_distance(said, target)
+    consonants = sum(1 for sound in target if sound not in VOWELS)
+    # Short words collide with ordinary Korean too easily to allow slack.
+    if score == 0 or (consonants >= 3 and score <= LATIN_THRESHOLD):
+        return score
+    return None
 
 
 def distance(left: str, right: str) -> float:
@@ -272,7 +540,11 @@ def build_vocabulary(
     # attracts near-identical spellings; repeated or Latin words are names of
     # things and get the glossary's tolerance.
     for term, count in counts.items():
-        if syllables(term) >= 2 and VERB_FORM.search(term) is None:
+        if (
+            syllables(term) >= 2
+            and VERB_FORM.search(term) is None
+            and re.search(r"[가-힣A-Za-z]", term) is not None
+        ):
             named = count >= 2 or re.search(r"[가-힣]", term) is None
             terms[term] = term_threshold(term) if named else ONCE_THRESHOLD
     for entry in glossary:
@@ -291,10 +563,10 @@ def best_match(
 ) -> tuple[str, float] | None:
     best: tuple[str, float] | None = None
     for candidate in candidates:
-        if abs(syllables(span) - syllables(candidate)) > 1:
+        if span == candidate or abs(syllables(span) - syllables(candidate)) > 1:
             continue
         score = distance(span, candidate)
-        if 0 < score <= threshold and (best is None or score < best[1]):
+        if score <= threshold and (best is None or score < best[1]):
             best = (candidate, score)
     return best
 
@@ -339,8 +611,16 @@ def term_candidates(
                 ]
             for spoken, fragment in spans:
                 for term, threshold in vocabulary.terms.items():
+                    if spoken == term:
+                        continue
+                    if HANGUL.search(term) is None:
+                        if HANGUL.search(spoken) is not None:
+                            score = latin_match(spoken, term)
+                            if score is not None:
+                                found.append((score, start, end, spoken, term))
+                        continue
                     said, registered = compact(spoken), compact(term)
-                    if spoken == term or abs(syllables(spoken) - syllables(term)) > 1:
+                    if abs(syllables(spoken) - syllables(term)) > 1:
                         continue
                     if said == registered:
                         found.append((0.0, start, end, spoken, term))
@@ -438,7 +718,8 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
     for stem in stems:
         for group in groups:
             if any(
-                0 < distance(stem, member) <= CLUSTER_THRESHOLD
+                stem != member
+                and distance(stem, member) <= CLUSTER_THRESHOLD
                 and stem not in member
                 and member not in stem
                 for member in group
@@ -462,8 +743,10 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             key=lambda term: max(distance(member, term) for member in group),
             default=None,
         )
-        if target is not None and all(
-            distance(member, target) <= CLUSTER_TERM_THRESHOLD for member in group
+        spread = [distance(member, target) for member in group] if target else []
+        if spread and (
+            max(spread) <= CLUSTER_TERM_MAX
+            and sum(spread) / len(spread) <= CLUSTER_TERM_THRESHOLD
         ):
             hints += [f'- 용어: "{member}" → "{target}"' for member in sorted(group)]
         else:
