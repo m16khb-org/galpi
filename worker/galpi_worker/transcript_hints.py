@@ -1083,8 +1083,14 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
                 and following.label not in (line.label, "UNKNOWN")
                 and following.label != previous.label
             ):
+                reason = (
+                    "라벨 없는 짧은 응답"
+                    if line.label == "UNKNOWN"
+                    else f"{previous.second}s 질문자 라벨이 붙은 짧은 응답"
+                )
                 hints.append(
                     f"- 화자 경계: ({line.second}s) {line.label} → {following.label}"
+                    f" (근거: {reason})"
                 )
                 flagged.add(index)
             continue
@@ -1095,8 +1101,11 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
             and previous.label != "UNKNOWN"
             and line.second - previous.second <= CONTINUATION_SECONDS
         ):
+            # The model must still check that the line finishes the cut
+            # sentence rather than starting a new one.
             hints.append(
                 f"- 화자 경계: ({line.second}s) {line.label} → {previous.label}"
+                f" (근거: {previous.second}s 줄이 문장 중간에서 끊김)"
             )
             flagged.add(index)
     return hints, flagged

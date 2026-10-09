@@ -123,7 +123,11 @@ class BoundaryHintTests(unittest.TestCase):
         hints = analyze(transcript, "", [], [])
 
         # Then
-        self.assertIn("- 화자 경계: (12s) SPEAKER_00 → SPEAKER_01", hints.block)
+        self.assertIn(
+            "- 화자 경계: (12s) SPEAKER_00 → SPEAKER_01"
+            " (근거: 10s 질문자 라벨이 붙은 짧은 응답)",
+            hints.block,
+        )
 
     def test_flags_a_sentence_tail_cut_into_the_next_turn(self) -> None:
         # Given
@@ -137,7 +141,11 @@ class BoundaryHintTests(unittest.TestCase):
         hints = analyze(transcript, "", [], [])
 
         # Then
-        self.assertIn("- 화자 경계: (22s) SPEAKER_01 → SPEAKER_00", hints.block)
+        self.assertIn(
+            "- 화자 경계: (22s) SPEAKER_01 → SPEAKER_00"
+            " (근거: 20s 줄이 문장 중간에서 끊김)",
+            hints.block,
+        )
         # The flagged part opens its own line, so the model can find it, and
         # what follows keeps an inline timestamp marking where it ends.
         self.assertIn(
