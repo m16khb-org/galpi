@@ -67,6 +67,7 @@ impl ChatGptStore for LocalSettingsStore {
         self.snapshot(|settings| ChatGptSettings {
             auth_mode: settings.chatgpt_auth_mode,
             model: settings.chatgpt_model.clone(),
+            reasoning_effort: settings.chatgpt_reasoning_effort.clone(),
             welcome_acknowledged: settings.chatgpt_welcome_acknowledged,
             account: account_view(settings),
         })
@@ -77,6 +78,7 @@ impl ChatGptStore for LocalSettingsStore {
         self.update(|settings| {
             settings.chatgpt_auth_mode = preferences.auth_mode;
             settings.chatgpt_model = preferences.model;
+            settings.chatgpt_reasoning_effort = preferences.reasoning_effort;
             settings.chatgpt_welcome_acknowledged = preferences.welcome_acknowledged;
         })
         .await
@@ -360,6 +362,7 @@ mod tests {
         let preferences = ChatGptPreferences {
             auth_mode: AssistantAuthMode::ChatGpt,
             model: Some("gpt-5".to_owned()),
+            reasoning_effort: Some("high".to_owned()),
             welcome_acknowledged: true,
         };
         store.save_preferences(preferences.clone()).await?;

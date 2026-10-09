@@ -101,6 +101,7 @@ const refinementResultSchema = z.object({
 export const chatGptSettingsSchema = z.strictObject({
   authMode: z.enum(["apiKey", "chatGpt"]),
   model: z.string().nullable(),
+  reasoningEffort: z.string().nullable(),
   welcomeAcknowledged: z.boolean(),
   account: z.strictObject({
     state: z.enum(["signedOut", "signInRequired", "signedIn"]),

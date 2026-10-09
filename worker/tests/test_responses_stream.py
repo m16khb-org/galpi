@@ -157,6 +157,13 @@ class BodyAndParserTests(unittest.TestCase):
             self.assertNotIn(key, body)
         self.assertNotIn("previous_response_id", body)
 
+    def test_body_carries_only_the_chosen_effort_under_reasoning(self) -> None:
+        body = cast(
+            dict[str, object], json.loads(build_responses_body(MESSAGES, "m", "xhigh"))
+        )
+        self.assertEqual(body["reasoning"], {"effort": "xhigh"})
+        self.assertNotIn("max_output_tokens", body)
+
     def test_stream_accumulates_deltas(self) -> None:
         lines = sse(delta("안"), delta("녕"), COMPLETED)
         self.assertEqual(
@@ -214,6 +221,21 @@ class HttpTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, expected)
                 self.assertEqual(len(fake.requests), 1)
                 self.assertNotIn("secret-token", str(raised.exception))
+
+    def test_a_rejected_request_with_an_effort_points_at_the_effort(self) -> None:
+        # Given: the model rejects the request while an effort was chosen
+        with serving() as fake:
+            fake.respond_json(400, {"error": {"code": "unsupported_value"}})
+            with responses_mode(fake), self.assertRaises(AssistantError) as raised:
+                request_via_responses(
+                    MESSAGES, "m", "tok", quiet_events(), 10, effort="max"
+                )
+
+        # Then: same stable code, but the message names the effort and the way out
+        self.assertEqual(raised.exception.code, "CHATGPT_UNSUPPORTED_REQUEST")
+        self.assertIn("(max)", str(raised.exception))
+        self.assertIn("모델 기본값", str(raised.exception))
+        self.assertEqual(len(fake.requests), 1)
 
     def test_request_headers_and_success(self) -> None:
         with serving() as fake:
@@ -283,6 +305,37 @@ class RefineTests(unittest.TestCase):
                 self.assertNotIn("system", [item["role"] for item in items])
                 self.assertIn("instructions", body)
                 self.assertNotIn("messages", body)
+
+    def test_an_offered_effort_reaches_the_request_and_others_are_dropped(self) -> None:
+        for effort, expected in (("XHigh", {"effort": "xhigh"}), ("none", None)):
+            with (
+                self.subTest(effort=effort),
+                serving() as fake,
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                fake.respond_stream("# 회의록")
+                root = Path(directory)
+                transcript = root / "t.txt"
+                transcript.write_text("화자1: 안녕", encoding="utf-8")
+                with (
+                    responses_mode(fake),
+                    patch.dict(
+                        os.environ, {"GALPI_ASSISTANT_REASONING_EFFORT": effort}
+                    ),
+                ):
+                    refine(
+                        transcript,
+                        root / "o.md",
+                        None,
+                        None,
+                        None,
+                        "m",
+                        quiet_events(),
+                        meeting_date="2026-01-01",
+                    )
+                self.assertEqual(
+                    request_body(fake.requests[0]).get("reasoning"), expected
+                )
 
     def test_unset_transport_uses_chat_completions_path(self) -> None:
         with serving() as fake, tempfile.TemporaryDirectory() as directory:

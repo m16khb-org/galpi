@@ -22,7 +22,8 @@ const USAGE_LIMIT_CODE = "CHATGPT_USAGE_LIMIT_EXCEEDED"
  * ChatGPT sign-in, account status and model list for the settings sheet.
  *
  * The host owns the account; this window only mirrors it and autosaves the
- * preferences it owns (`authMode`, `model`, `welcomeAcknowledged`). A failed
+ * preferences it owns (`authMode`, `model`, `reasoningEffort`,
+ * `welcomeAcknowledged`). A failed
  * sign-in is shown and left alone — nothing here retries it.
  */
 export class ChatGptController {
@@ -87,11 +88,13 @@ export class ChatGptController {
     const current: ChatGptPreferences = {
       authMode: this.view.chatGptSettings.authMode(),
       model: this.view.chatGptSettings.selectedModel() ?? saved.model,
+      reasoningEffort: this.view.chatGptSettings.selectedEffort(),
       welcomeAcknowledged: this.view.chatGptSettings.welcomeAcknowledged(),
     }
     const unchanged =
       current.authMode === saved.authMode &&
       current.model === saved.model &&
+      current.reasoningEffort === saved.reasoningEffort &&
       current.welcomeAcknowledged === saved.welcomeAcknowledged
     return unchanged ? null : current
   }
@@ -208,6 +211,7 @@ export class ChatGptController {
     const view = this.view.chatGptSettings
     view.setAuthMode(settings.authMode)
     view.setAccount(settings.account)
+    view.setEffort(settings.reasoningEffort)
     view.setWelcomeAcknowledged(settings.welcomeAcknowledged)
     this.view.setAssistantKeyReady(this.ready(this.view.assistantSettings.settings().apiKeyStored))
   }

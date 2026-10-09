@@ -233,9 +233,10 @@ def request_minutes(
 ) -> str:
     """Stream the chat completion and report writing progress as it arrives."""
 
+    requested_effort = os.environ.get(EFFORT_VARIABLE, "").strip().lower()
     if os.environ.get(TRANSPORT_VARIABLE) == "responses":
         # Deferred: responses_stream imports this module's helpers at load time.
-        from .responses_stream import request_via_responses
+        from .responses_stream import CHATGPT_REASONING_EFFORTS, request_via_responses
 
         return request_via_responses(
             messages,
@@ -246,11 +247,12 @@ def request_minutes(
             progress_start=progress_start,
             progress_ceiling=progress_ceiling,
             activity=activity,
+            effort=requested_effort
+            if requested_effort in CHATGPT_REASONING_EFFORTS
+            else None,
         )
     base_url = os.environ.get(BASE_URL_VARIABLE, DEFAULT_BASE_URL).rstrip("/")
-    effort = os.environ.get(EFFORT_VARIABLE, "").strip().lower()
-    if effort not in REASONING_EFFORTS:
-        effort = None
+    effort = requested_effort if requested_effort in REASONING_EFFORTS else None
     body = build_request_body(model, messages, base_url, effort)
     request = urllib.request.Request(
         f"{base_url}/chat/completions",

@@ -98,6 +98,7 @@ describe("TauriBackend compute device", () => {
 const signedInSettings = {
   authMode: "chatGpt",
   model: "gpt-5.5",
+  reasoningEffort: null,
   welcomeAcknowledged: true,
   account: { state: "signedIn", email: "dev@example.com" },
 }

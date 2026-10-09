@@ -297,6 +297,16 @@ export const appTemplate = `
             <div id="chatgpt-model-field" hidden>
               <label class="settings-field-label" for="settings-chatgpt-model">가공 모델</label>
               <select id="settings-chatgpt-model" class="settings-select" aria-describedby="chatgpt-plan-line"></select>
+              <label class="settings-field-label" for="settings-chatgpt-effort">추론 강도</label>
+              <select id="settings-chatgpt-effort" class="settings-select" aria-describedby="chatgpt-effort-help">
+                <option value="" selected>모델 기본값</option>
+                <option value="low">낮음</option>
+                <option value="medium">중간</option>
+                <option value="high">높음</option>
+                <option value="xhigh">매우 높음</option>
+                <option value="max">최대</option>
+              </select>
+              <p id="chatgpt-effort-help">모델이 회의록을 쓰기 전에 숙고하는 깊이입니다. 높을수록 오래 걸리고 ChatGPT 사용량을 더 씁니다. 지원하는 강도는 모델마다 달라서, 모델이 거부하면 다시 고르라는 안내가 나옵니다.</p>
               <p id="chatgpt-plan-line">ChatGPT 요금제 사용 중 · <button class="text-button ${ghost}" type="button" data-action="open-chatgpt-usage">사용량 관리</button></p>
             </div>
             <p id="chatgpt-data-notice">회의록 정제 때 전사문·참석자·단어집·사전 정보가 OpenAI API로 전송됩니다. ChatGPT 대화·계정 정보에는 접근하지 않습니다.</p>

@@ -29,6 +29,7 @@ const initialAssistant: AssistantSettings = {
 const signedOutChatGpt: ChatGptSettings = {
   authMode: "apiKey",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
@@ -330,6 +331,7 @@ describe("ChatGPT preferences autosave (real DOM)", () => {
   const signedIn: ChatGptSettings = {
     authMode: "chatGpt",
     model: "gpt-5.5",
+    reasoningEffort: null,
     welcomeAcknowledged: true,
     account: { state: "signedIn", email: "dev@example.com" },
   }
@@ -360,7 +362,7 @@ describe("ChatGPT preferences autosave (real DOM)", () => {
 
     // Then: the choice went to its own command with no account data
     expect(preferenceSaves).toEqual([
-      { authMode: "chatGpt", model: null, welcomeAcknowledged: false },
+      { authMode: "chatGpt", model: null, reasoningEffort: null, welcomeAcknowledged: false },
     ])
     // And the assistant document and key travel exactly as before
     expect(keySaves).toEqual([])
@@ -408,9 +410,43 @@ describe("ChatGPT preferences autosave (real DOM)", () => {
 
     // Then
     expect(preferenceSaves).toEqual([
-      { authMode: "chatGpt", model: "gpt-5.4-mini", welcomeAcknowledged: true },
+      { authMode: "chatGpt", model: "gpt-5.4-mini", reasoningEffort: null, welcomeAcknowledged: true },
     ])
     expect(assistantSaves.at(-1)?.model).toBe("glm-5.3-flash")
+    controller.stop()
+  })
+
+  test("shows the saved effort and saves a new choice as a preference", async () => {
+    // Given: a signed-in account that saved `high`
+    const assistantSaves: AssistantSettings[] = []
+    const preferenceSaves: ChatGptPreferences[] = []
+    const preferencesSaved = deferred<void>()
+    const { window, root, controller } = await createHarness(
+      (settings) => void assistantSaves.push(settings),
+      () => undefined,
+      (preferences) => {
+        preferenceSaves.push(preferences)
+        preferencesSaved.resolve(undefined)
+      },
+      { ...signedIn, reasoningEffort: "high" },
+    )
+    ;(root.querySelector('[data-action="open-settings"]') as HTMLElement).click()
+    await settle()
+    const effort = root.querySelector<HTMLSelectElement>("#settings-chatgpt-effort")
+    if (effort === null) throw new Error("ChatGPT effort select is missing")
+    expect(effort.value).toBe("high")
+    expect(preferenceSaves).toEqual([])
+
+    // When: the user raises it
+    effort.value = "xhigh"
+    dispatchChange(window, effort)
+    await withTimeout(preferencesSaved.promise)
+
+    // Then: only the ChatGPT preference changes; the API-key effort stays put
+    expect(preferenceSaves).toEqual([
+      { authMode: "chatGpt", model: "gpt-5.5", reasoningEffort: "xhigh", welcomeAcknowledged: true },
+    ])
+    expect(assistantSaves.at(-1)?.reasoningEffort).toBe("max")
     controller.stop()
   })
 })

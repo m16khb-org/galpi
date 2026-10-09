@@ -305,6 +305,7 @@ struct LocalSettings {
     chatgpt_tokens_stored: bool,
     chatgpt_auth_mode: AssistantAuthMode,
     chatgpt_model: Option<String>,
+    chatgpt_reasoning_effort: Option<String>,
     chatgpt_welcome_acknowledged: bool,
 }
 
@@ -329,6 +330,7 @@ impl LocalSettings {
             && !self.chatgpt_tokens_stored
             && self.chatgpt_auth_mode == AssistantAuthMode::default()
             && self.chatgpt_model.is_none()
+            && self.chatgpt_reasoning_effort.is_none()
             && !self.chatgpt_welcome_acknowledged
     }
 }

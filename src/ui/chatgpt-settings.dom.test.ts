@@ -25,6 +25,7 @@ const assistant: AssistantSettings = {
 const signedOut: ChatGptSettings = {
   authMode: "apiKey",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
@@ -32,6 +33,7 @@ const signedOut: ChatGptSettings = {
 const signedIn: ChatGptSettings = {
   authMode: "chatGpt",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedIn", email: "dev@example.com" },
 }
@@ -410,7 +412,7 @@ describe("ChatGPT settings panel (real DOM)", () => {
 
     // Then: it is dismissed and remembered as a preference
     expect(hidden(root, "#chatgpt-welcome")).toBe(true)
-    expect(saved).toEqual([{ authMode: "chatGpt", model: null, welcomeAcknowledged: true }])
+    expect(saved).toEqual([{ authMode: "chatGpt", model: null, reasoningEffort: null, welcomeAcknowledged: true }])
     controller.stop()
   })
 

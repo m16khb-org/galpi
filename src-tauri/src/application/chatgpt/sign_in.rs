@@ -113,6 +113,7 @@ impl ChatGptAccounts {
             .save_preferences(ChatGptPreferences {
                 auth_mode: AssistantAuthMode::ChatGpt,
                 model: choose_model(&listed, current.model),
+                reasoning_effort: current.reasoning_effort,
                 welcome_acknowledged: current.welcome_acknowledged,
             })
             .await?;

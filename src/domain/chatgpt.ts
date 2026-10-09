@@ -11,6 +11,8 @@ export interface ChatGptAccount {
 export interface ChatGptSettings {
   readonly authMode: AssistantAuthMode
   readonly model: string | null
+  /** `reasoning.effort` for minutes; null leaves the model on its default. */
+  readonly reasoningEffort: string | null
   readonly welcomeAcknowledged: boolean
   readonly account: ChatGptAccount
 }
@@ -19,6 +21,7 @@ export interface ChatGptSettings {
 export interface ChatGptPreferences {
   readonly authMode: AssistantAuthMode
   readonly model: string | null
+  readonly reasoningEffort: string | null
   readonly welcomeAcknowledged: boolean
 }
 

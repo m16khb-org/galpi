@@ -178,7 +178,8 @@ impl Application {
         &self,
         assistant: &AssistantSettings,
     ) -> Result<RefinementCredential, AppError> {
-        match self.chatgpt.settings().await?.auth_mode {
+        let chatgpt = self.chatgpt.settings().await?;
+        match chatgpt.auth_mode {
             AssistantAuthMode::ApiKey => {
                 // Read here rather than with the rest of the settings: this is the one
                 // moment the key is actually needed, so it is the only moment worth
@@ -207,7 +208,7 @@ impl Application {
                     api_key: access.token,
                     model: Some(access.model),
                     base_url: None,
-                    reasoning_effort: None,
+                    reasoning_effort: chatgpt.reasoning_effort,
                     transport: AssistantTransport::Responses,
                 })
             }

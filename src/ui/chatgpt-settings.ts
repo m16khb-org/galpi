@@ -9,6 +9,7 @@ import { required } from "./dom"
 
 const MODE_SELECTOR = 'input[name="assistant-auth-mode"]'
 const MODEL_SELECTOR = "#settings-chatgpt-model"
+const EFFORT_SELECTOR = "#settings-chatgpt-effort"
 
 const FLOW_MESSAGES = {
   awaitingBrowser:
@@ -60,6 +61,19 @@ export class ChatGptSettingsView {
   selectedModel(): string | null {
     const value = this.element<HTMLSelectElement>(MODEL_SELECTOR).value
     return value.length > 0 ? value : null
+  }
+
+  /** The chosen `reasoning.effort`, or null for the model's own default. */
+  selectedEffort(): string | null {
+    const value = this.element<HTMLSelectElement>(EFFORT_SELECTOR).value
+    return value.length > 0 ? value : null
+  }
+
+  /** An effort the select does not offer shows as the model default. */
+  setEffort(effort: string | null): void {
+    const select = this.element<HTMLSelectElement>(EFFORT_SELECTOR)
+    select.value = effort ?? ""
+    if (select.value !== (effort ?? "")) select.value = ""
   }
 
   welcomeAcknowledged(): boolean {
@@ -156,6 +170,7 @@ export class ChatGptSettingsView {
     this.element("#chatgpt-welcome").hidden = !signedIn || this.welcomeSeen
     this.element("#chatgpt-model-field").hidden = !signedIn || flowActive
     this.element<HTMLSelectElement>(MODEL_SELECTOR).disabled = this.busy
+    this.element<HTMLSelectElement>(EFFORT_SELECTOR).disabled = this.busy
     for (const input of this.modeInputs()) input.disabled = this.busy || flowActive
   }
 

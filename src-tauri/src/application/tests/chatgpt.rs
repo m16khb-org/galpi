@@ -130,6 +130,7 @@ impl ChatGptFake {
         account.preferences = ChatGptPreferences {
             auth_mode: AssistantAuthMode::ChatGpt,
             model: model.map(str::to_owned),
+            reasoning_effort: None,
             welcome_acknowledged: true,
         };
         Ok(())
@@ -211,6 +212,7 @@ impl ChatGptStore for FakePort {
         Ok(ChatGptSettings {
             auth_mode: account.preferences.auth_mode,
             model: account.preferences.model.clone(),
+            reasoning_effort: account.preferences.reasoning_effort.clone(),
             welcome_acknowledged: account.preferences.welcome_acknowledged,
             account: ChatGptAccountView {
                 state,
@@ -709,6 +711,47 @@ async fn chatgpt_refinement_ignores_the_api_key_endpoint_settings() -> Result<()
 }
 
 #[tokio::test]
+async fn chatgpt_refinement_carries_the_chatgpt_effort_not_the_api_key_one() -> Result<(), AppError>
+{
+    // Given: ChatGPT mode with its own effort, and a different API-key effort
+    let port = port();
+    port.chatgpt.seed(
+        Some(tokens("access-old", "refresh-old", NOW + HOUR)),
+        Some("gpt-5"),
+    )?;
+    let app = port.application();
+    app.save_assistant_settings(AssistantSettings {
+        api_key_stored: false,
+        model: None,
+        base_url: None,
+        reasoning_effort: Some("max".to_owned()),
+        background: None,
+        participants: Vec::new(),
+        glossary: Vec::new(),
+    })
+    .await?;
+    app.save_chatgpt_preferences(ChatGptPreferences {
+        auth_mode: AssistantAuthMode::ChatGpt,
+        model: Some("gpt-5".to_owned()),
+        reasoning_effort: Some(" High ".to_owned()),
+        welcome_acknowledged: true,
+    })
+    .await?;
+
+    // When
+    refine(&app).await?;
+
+    // Then: the normalized ChatGPT effort reaches the Responses job
+    let refinements = lock(&port.refinements)?;
+    let job = refinements
+        .first()
+        .ok_or_else(|| AppError::new("TEST_ERROR", "refinement was not requested"))?;
+    assert_eq!(job.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(job.transport, AssistantTransport::Responses);
+    Ok(())
+}
+
+#[tokio::test]
 async fn chatgpt_refinement_needs_a_selected_model_before_any_token_work() -> Result<(), AppError> {
     // Given: signed in with an expired token but no model chosen
     let port = port();
@@ -968,6 +1011,7 @@ async fn saved_preferences_are_trimmed_and_a_blank_model_is_cleared() -> Result<
     app.save_chatgpt_preferences(ChatGptPreferences {
         auth_mode: AssistantAuthMode::ChatGpt,
         model: Some("  gpt-5  ".to_owned()),
+        reasoning_effort: None,
         welcome_acknowledged: true,
     })
     .await?;
@@ -975,6 +1019,7 @@ async fn saved_preferences_are_trimmed_and_a_blank_model_is_cleared() -> Result<
     app.save_chatgpt_preferences(ChatGptPreferences {
         auth_mode: AssistantAuthMode::ChatGpt,
         model: Some("   ".to_owned()),
+        reasoning_effort: None,
         welcome_acknowledged: true,
     })
     .await?;

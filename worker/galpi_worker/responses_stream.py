@@ -22,6 +22,13 @@ from .protocol import EventWriter
 
 RESPONSES_BASE_URL = "https://api.openai.com/v1"
 USER_AGENT = "galpi-worker"
+# `reasoning.effort` values the host offers for ChatGPT-plan minutes; support
+# is model-dependent, and an absent effort leaves the model on its default.
+CHATGPT_REASONING_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
+EFFORT_REJECTED_HINT = (
+    "선택한 추론 강도({effort})를 이 모델이 지원하지 않을 수 있습니다. "
+    "설정에서 추론 강도를 '모델 기본값'으로 바꾸거나 다른 모델을 골라 다시 실행해 주세요."
+)
 MESSAGES = {
     "CHATGPT_USAGE_LIMIT_EXCEEDED": (
         "ChatGPT 사용량 한도에 도달했습니다. ChatGPT 설정의 사용량에서 확인해 주세요. "
@@ -47,8 +54,8 @@ MESSAGES = {
 class AssistantError(RuntimeError):
     """A failure with a stable, host-visible error code."""
 
-    def __init__(self, code: str) -> None:
-        super().__init__(MESSAGES[code])
+    def __init__(self, code: str, message: str | None = None) -> None:
+        super().__init__(message or MESSAGES[code])
         self.code = code
 
 
@@ -73,8 +80,14 @@ def map_failure(status: int | None, code: str) -> str:
     return "CHATGPT_UNAVAILABLE"
 
 
-def build_responses_body(messages: Sequence[ChatMessage], model: str) -> bytes:
-    """Build the preview-safe body: no sampling, token, or reasoning fields."""
+def build_responses_body(
+    messages: Sequence[ChatMessage], model: str, effort: str | None = None
+) -> bytes:
+    """Build the body the ChatGPT-plan preview accepts.
+
+    No sampling or token-limit fields, which the preview rejects; `reasoning`
+    carries only the effort, and only when one was chosen.
+    """
 
     instructions = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
     body: dict[str, object] = {
@@ -89,6 +102,8 @@ def build_responses_body(messages: Sequence[ChatMessage], model: str) -> bytes:
     }
     if instructions:
         body["instructions"] = instructions
+    if effort is not None:
+        body["reasoning"] = {"effort": effort}
     return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
@@ -184,12 +199,13 @@ def request_via_responses(
     progress_start: float = REFINE_STREAM_START_PERCENT,
     progress_ceiling: float = REFINE_STREAM_CEILING_PERCENT,
     activity: str = "회의록 작성",
+    effort: str | None = None,
 ) -> str:
     """POST one streaming Responses request. Never retries."""
 
     request = urllib.request.Request(
         f"{RESPONSES_BASE_URL}/responses",
-        data=build_responses_body(messages, model),
+        data=build_responses_body(messages, model, effort),
         method="POST",
         headers={
             "Authorization": f"Bearer {access_token}",
@@ -222,7 +238,14 @@ def request_via_responses(
             "openai-request-id"
         )
         events.log(f"ChatGPT 요청 실패 (HTTP {error.code}, 요청 ID {request_id})")
-        raise AssistantError(map_failure(error.code, code)) from error
+        mapped = map_failure(error.code, code)
+        if mapped == "CHATGPT_UNSUPPORTED_REQUEST" and effort is not None:
+            # Effort support is model-dependent, so a rejected request that
+            # carried one most likely names an effort this model lacks.
+            raise AssistantError(
+                mapped, EFFORT_REJECTED_HINT.format(effort=effort)
+            ) from error
+        raise AssistantError(mapped) from error
     except urllib.error.URLError as error:
         raise AssistantError("CHATGPT_UNAVAILABLE") from error
     except OSError as error:
