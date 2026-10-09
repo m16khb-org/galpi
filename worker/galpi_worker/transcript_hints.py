@@ -132,9 +132,21 @@ SELF_INTRO: Final = (
     re.compile(r"(\S+?)(?:입니다|이고요|이고|인데요|이에요)(?:[.,\s]|$)"),
 )
 TERM_THRESHOLD: Final = 0.2
+LONG_TERM_THRESHOLD: Final = 0.25
+ONCE_THRESHOLD: Final = 0.12
+INTRO_SUFFIX: Final = re.compile(r"(입니다|이고요|이고|인데요|이에요)[.,]?$")
 NAME_THRESHOLD: Final = 0.17
 CLUSTER_THRESHOLD: Final = 0.2
+CLUSTER_TERM_THRESHOLD: Final = 0.3
+VERB_FORM: Final = re.compile(r"(다|요|된|한|할|하는|되는|해서|하고|되어|했던|됐던)$")
 BACKGROUND_TOKEN: Final = re.compile(r"[가-힣A-Za-z0-9]{2,}")
+# What may follow a noun inside one written word: a bound noun, then a
+# particle or a light verb ending.
+WORD_TAIL: Final = re.compile(
+    r"(별|들|쪽|용|측|상|적|간|화)?"
+    r"(하는|하고|해서|하면|한|할|된|되는|되고|도|을|를|은|는|이|가|에|의|로|으로|과|와|만"
+    r"|까지|부터|에서|이나|나|랑|이랑|에는|으로는|이라|라)?"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,7 +239,7 @@ def syllables(text: str) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Vocabulary:
-    terms: tuple[str, ...]
+    terms: dict[str, float]  # registered spelling -> accepted distance
     names: dict[str, str]  # spoken form -> roster name
     known: frozenset[str]
 
@@ -249,25 +261,29 @@ def build_vocabulary(
             spoken, _ = split_honorific(form)
             if syllables(spoken) >= 2:
                 names[spoken] = person.name
-    glossary_terms = [entry.term for entry in glossary]
     background_terms = [
         split_particle(token)[0] for token in BACKGROUND_TOKEN.findall(background)
     ]
-    terms = tuple(dict.fromkeys(t for t in glossary_terms if syllables(t) >= 2))
-    # Background words are only candidates when they look like names of
-    # things: Latin script, or Hangul that recurs in the background.
     counts: dict[str, int] = {}
     for term in background_terms:
         counts[term] = counts.get(term, 0) + 1
-    extra = tuple(
-        term
-        for term, count in counts.items()
-        if syllables(term) >= 2 and (count >= 2 or not re.search(r"[가-힣]", term))
-    )
-    known = frozenset(
-        [*terms, *extra, *names, *(split_particle(t)[0] for t in background_terms)]
-    )
-    return Vocabulary(tuple(dict.fromkeys([*terms, *extra])), names, known)
+    terms: dict[str, float] = {}
+    # A word the background mentions once may be ordinary prose, so it only
+    # attracts near-identical spellings; repeated or Latin words are names of
+    # things and get the glossary's tolerance.
+    for term, count in counts.items():
+        if syllables(term) >= 2 and VERB_FORM.search(term) is None:
+            named = count >= 2 or re.search(r"[가-힣]", term) is None
+            terms[term] = term_threshold(term) if named else ONCE_THRESHOLD
+    for entry in glossary:
+        if syllables(entry.term) >= 2:
+            terms[entry.term] = term_threshold(entry.term)
+    known = frozenset([*terms, *names, *background_terms])
+    return Vocabulary(terms, names, known)
+
+
+def term_threshold(term: str) -> float:
+    return LONG_TERM_THRESHOLD if syllables(term) >= 4 else TERM_THRESHOLD
 
 
 def best_match(
@@ -283,34 +299,101 @@ def best_match(
     return best
 
 
+def compact(text: str) -> str:
+    return text.replace(" ", "")
+
+
+def term_candidates(
+    words: list[str], vocabulary: Vocabulary
+) -> list[tuple[float, int, int, str, str]]:
+    """(distance, start, end, spoken span, registered term) for one line.
+
+    A span is up to three words, or the front of one word when a suffix such
+    as `별` or `쪽` follows the term. Spacing-only differences count as
+    distance zero but still differ from the registered spelling.
+    """
+
+    known = {compact(word) for word in vocabulary.known}
+    found: list[tuple[float, int, int, str, str]] = []
+    for start in range(len(words)):
+        for width in (1, 2, 3):
+            end = start + width
+            if end > len(words) or any(
+                word.endswith((",", ".", "?", "!")) for word in words[start : end - 1]
+            ):
+                break
+            head = words[start : end - 1]
+            last = words[end - 1].rstrip(".,?!")
+            stem, _ = split_particle(last)
+            # The last word may carry a suffix (`별`, `하는`, `은`) after the
+            # misheard part. A one-syllable piece is too little to judge a
+            # misspelling by, so it only counts for spacing-only differences.
+            spans = [(" ".join([*head, stem]), False)] + [
+                (" ".join([*head, last[:cut]]), cut < 2)
+                for cut in range(1, len(last))
+                if WORD_TAIL.fullmatch(last[cut:])
+            ]
+            if width == 1:
+                spans = [
+                    (spoken, fragment) for spoken, fragment in spans if not fragment
+                ]
+            for spoken, fragment in spans:
+                for term, threshold in vocabulary.terms.items():
+                    said, registered = compact(spoken), compact(term)
+                    if spoken == term or abs(syllables(spoken) - syllables(term)) > 1:
+                        continue
+                    if said == registered:
+                        found.append((0.0, start, end, spoken, term))
+                        continue
+                    # The registered spelling already present, or a correct
+                    # partial mention of it, is not a misrecognition.
+                    if (
+                        fragment
+                        or registered in said
+                        or registered.startswith(said)
+                        or said in known
+                    ):
+                        continue
+                    score = distance(spoken, term)
+                    if score <= threshold:
+                        found.append((score, start, end, spoken, term))
+    return found
+
+
+def name_mentions(words: list[str]) -> list[tuple[int, str, str]]:
+    """(word index, spoken name, attached honorific) where a person is named."""
+
+    mentions: list[tuple[int, str, str]] = []
+    for index, word in enumerate(words):
+        stem, honorific = split_honorific(word.rstrip(",.?!"))
+        following = (
+            split_honorific(words[index + 1].rstrip(",.?!"))
+            if index + 1 < len(words)
+            else ("", "")
+        )
+        addressed = (
+            bool(honorific) or following[0] in HONORIFICS or following[0] in TITLES
+        )
+        introduced = index > 0 and words[index - 1] in ("저", "저는")
+        intro = INTRO_SUFFIX.search(word)
+        if intro is not None and not honorific:
+            mentions.append((index, word[: intro.start()], ""))
+        elif addressed or introduced:
+            mentions.append((index, stem, honorific))
+    return mentions
+
+
 def lexical_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
     hints: dict[tuple[str, str], str] = {}
     for line in lines:
         words = line.text.split()
         used: set[int] = set()
-        for width in (3, 2, 1):
-            for start in range(len(words) - width + 1):
-                if any(index in used for index in range(start, start + width)):
-                    continue
-                head = words[start : start + width - 1]
-                stem, _ = split_particle(words[start + width - 1])
-                span = " ".join([*head, stem]).strip(".,?!")
-                if not span or span.replace(" ", "") in {
-                    k.replace(" ", "") for k in vocabulary.known
-                }:
-                    continue
-                match = best_match(span, vocabulary.terms, TERM_THRESHOLD)
-                if match is None:
-                    continue
-                used.update(range(start, start + width))
-                hints[(span, match[0])] = f'- 용어: "{span}" → "{match[0]}"'
-        for index, word in enumerate(words):
-            if index in used:
-                continue
-            stem, honorific = split_honorific(word)
-            next_word = words[index + 1] if index + 1 < len(words) else ""
-            addressed = honorific or next_word.startswith(HONORIFICS)
-            if not addressed or stem in vocabulary.names:
+        for _, start, end, spoken, term in sorted(term_candidates(words, vocabulary)):
+            if used.isdisjoint(range(start, end)):
+                used.update(range(start, end))
+                hints[(spoken, term)] = f'- 용어: "{spoken}" → "{term}"'
+        for index, stem, honorific in name_mentions(words):
+            if index in used or stem in vocabulary.names or syllables(stem) < 2:
                 continue
             match = best_match(stem, vocabulary.names, NAME_THRESHOLD)
             if match is None:
@@ -335,12 +418,22 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                 and not stem.endswith(HONORIFICS)
             ):
                 counts[stem] = counts.get(stem, 0) + 1
+    # Any word of a registered multi-word term is that term, said or
+    # misheard, never an unlisted word.
+    parts = {
+        part
+        for term in vocabulary.terms
+        if " " in term
+        for part in term.split()
+        if syllables(part) >= 2
+    }
     stems = [
         stem
         for stem in counts
         if not any(
             distance(stem, known) <= TERM_THRESHOLD for known in vocabulary.known
         )
+        and not any(distance(stem, part) <= CLUSTER_TERM_THRESHOLD for part in parts)
     ]
     groups: list[set[str]] = []
     for stem in stems:
@@ -355,11 +448,30 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                 break
         else:
             groups.append({stem})
-    return [
-        "- 같은 표현: " + " = ".join(f'"{member}"' for member in sorted(group))
-        for group in groups
-        if len(group) > 1
-    ]
+    hints: list[str] = []
+    for group in groups:
+        if len(group) < 2:
+            continue
+        # Several distinct misspellings around one registered term are
+        # stronger evidence than any single one: correct them all.
+        target = min(
+            (
+                term
+                for term in vocabulary.terms
+                if all(abs(syllables(term) - syllables(m)) <= 1 for m in group)
+            ),
+            key=lambda term: max(distance(member, term) for member in group),
+            default=None,
+        )
+        if target is not None and all(
+            distance(member, target) <= CLUSTER_TERM_THRESHOLD for member in group
+        ):
+            hints += [f'- 용어: "{member}" → "{target}"' for member in sorted(group)]
+        else:
+            hints.append(
+                "- 같은 표현: " + " = ".join(f'"{member}"' for member in sorted(group))
+            )
+    return hints
 
 
 def speaker_hints(
