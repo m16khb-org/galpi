@@ -149,6 +149,9 @@ LONG_TERM_THRESHOLD: Final = 0.25
 ONCE_THRESHOLD: Final = 0.12
 INTRO_SUFFIX: Final = re.compile(r"(입니다|이고요|이고|인데요|이에요)[.,]?$")
 NAME_THRESHOLD: Final = 0.17
+# Choosing which roster member was addressed only competes among the roster,
+# so it tolerates one more confusion than flagging a name as misheard.
+ADDRESS_THRESHOLD: Final = 0.25
 CLUSTER_THRESHOLD: Final = 0.2
 CLUSTER_TERM_THRESHOLD: Final = 0.25
 CLUSTER_TERM_MAX: Final = 0.35
@@ -885,7 +888,7 @@ def speaker_hints(
         stem, _ = split_honorific(word)
         if stem in vocabulary.names:
             return vocabulary.names[stem]
-        match = best_match(stem, vocabulary.names, NAME_THRESHOLD)
+        match = best_match(stem, vocabulary.names, ADDRESS_THRESHOLD)
         return vocabulary.names[match[0]] if match is not None else None
 
     for index, line in enumerate(lines):
@@ -915,9 +918,9 @@ def speaker_hints(
                 title, title_honorific = split_honorific(words[tail + 1].rstrip(",.?!"))
                 if title in HONORIFICS or (title in TITLES and title_honorific):
                     honorific, tail = title_honorific or title, tail + 1
-            closing = words[tail].endswith(",") or (
-                is_reply and words[tail].endswith((".", "!"))
-            )
+            # After a reply ("네, {이름}님") the address is plain even when the
+            # segment cut off its punctuation.
+            closing = is_reply or words[tail].endswith(",")
             if not (honorific and closing):
                 continue
             name = roster_name(stem)
