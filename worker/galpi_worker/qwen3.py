@@ -37,6 +37,7 @@ from .protocol import EventWriter
 from .runtime import (
     TorchDevice,
     configure_warnings,
+    failure_reason,
     ffmpeg_executable,
     select_torch_device,
 )
@@ -757,10 +758,12 @@ def diarize(
 
     try:
         pipeline = load(device)
-    except Exception:
+    except Exception as error:
         if device != "mps":
             raise
-        events.log("MPS 화자분리에 실패해 CPU로 다시 시도합니다.")
+        events.log(
+            f"MPS 화자분리에 실패해 CPU로 다시 시도합니다. ({failure_reason(error)})"
+        )
         device = "cpu"
         pipeline = load(device)
 

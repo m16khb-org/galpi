@@ -1,5 +1,6 @@
 """Shared runtime configuration for third-party audio libraries."""
 
+import gc
 import logging
 import sys
 import warnings
@@ -49,6 +50,30 @@ def needs_cpu_fallback(device: TorchDevice) -> bool:
     """True when a failed accelerator step should be retried once on CPU."""
 
     return device != "cpu"
+
+
+def failure_reason(error: BaseException) -> str:
+    """One short line naming why an accelerator step failed, for the log."""
+
+    lines = str(error).strip().splitlines()
+    detail = lines[0][:200] if lines else ""
+    return f"{type(error).__name__}: {detail}" if detail else type(error).__name__
+
+
+def release_torch_cache() -> None:
+    """Hand cached accelerator memory back before the next model loads.
+
+    PyTorch keeps freed MPS/CUDA blocks in its own pool. After WhisperX
+    alignment of a 40-minute meeting the MPS pool held about 12 GB, which on
+    a 16 GB Mac left too little for diarization and failed it over to CPU.
+    """
+
+    gc.collect()
+    torch = import_module("torch")
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def ffmpeg_link_name(platform: str = sys.platform) -> str:

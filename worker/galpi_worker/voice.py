@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from .artifacts import Segment
 from .protocol import EventWriter
-from .runtime import TorchDevice, needs_cpu_fallback
+from .runtime import TorchDevice, failure_reason, needs_cpu_fallback
 from .speakers import relabel_by_voice
 
 if TYPE_CHECKING:
@@ -106,10 +106,13 @@ def relabel_lines(
         return segments
     try:
         voices = line_voices(embedding, audio, segments, device)
-    except Exception:
+    except Exception as error:
         if not needs_cpu_fallback(device):
             raise
-        events.log(f"{device.upper()} 목소리 확인에 실패해 CPU로 다시 시도합니다.")
+        events.log(
+            f"{device.upper()} 목소리 확인에 실패해 CPU로 다시 시도합니다. "
+            f"({failure_reason(error)})"
+        )
         import torch
 
         embedding.to(torch.device("cpu"))

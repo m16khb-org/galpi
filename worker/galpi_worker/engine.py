@@ -21,7 +21,13 @@ from .core import (
     validate_speaker_hint,
 )
 from .protocol import EventWriter
-from .runtime import configure_warnings, detect_torch_device, needs_cpu_fallback
+from .runtime import (
+    configure_warnings,
+    detect_torch_device,
+    failure_reason,
+    needs_cpu_fallback,
+    release_torch_cache,
+)
 from .speakers import SpeakerTurn, label_segments
 from .voice import relabel_lines
 
@@ -161,10 +167,14 @@ def transcribe_whisperx(
                     result["segments"], align_model, metadata, audio, device
                 ),
             )
-        except Exception:
+        except Exception as error:
             if not needs_cpu_fallback(device):
                 raise
-            events.log(f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다.")
+            events.log(
+                f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다. "
+                f"({failure_reason(error)})"
+            )
+            release_torch_cache()
             align_model, metadata = whisperx.load_align_model(
                 language_code="ko", device="cpu"
             )
@@ -173,7 +183,7 @@ def transcribe_whisperx(
                 whisperx.align(result["segments"], align_model, metadata, audio, "cpu"),
             )
         del align_model
-        gc.collect()
+        release_torch_cache()
         result["engine"] = WHISPERX_ENGINE_TAG
         write_json_atomic(checkpoint_path, result)
         events.emit(
@@ -196,10 +206,14 @@ def transcribe_whisperx(
             device=device,
         )
         diarization_segments, centroids = _diarize(diarization, audio, speaker_hint)
-    except Exception:
+    except Exception as error:
         if not needs_cpu_fallback(device):
             raise
-        events.log(f"{device.upper()} 화자분리에 실패해 CPU로 다시 시도합니다.")
+        events.log(
+            f"{device.upper()} 화자분리에 실패해 CPU로 다시 시도합니다. "
+            f"({failure_reason(error)})"
+        )
+        release_torch_cache()
         diarization_device = "cpu"
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
