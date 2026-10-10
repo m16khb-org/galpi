@@ -89,6 +89,21 @@ describe("reduceAccess", () => {
     )
   })
 
+  test("a session the host closed sends an open app back to the login screen", () => {
+    // Given
+    const open = run([{ type: "loaded", access: signedIn }])
+
+    // When
+    const expired = reduceAccess(open, { type: "sessionExpired", message: "만료되었습니다." })
+
+    // Then
+    expect(expired).toEqual({ status: "signedOut", error: "만료되었습니다." })
+    expect(canSignIn(expired)).toBe(true)
+    expect(reduceAccess(initialAccess, { type: "sessionExpired", message: "늦음" })).toBe(
+      initialAccess,
+    )
+  })
+
   test("outcomes that answer no pending attempt are ignored", () => {
     const open = run([{ type: "loaded", access: signedIn }])
 

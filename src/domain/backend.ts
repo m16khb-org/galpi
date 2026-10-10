@@ -15,6 +15,7 @@ import type {
   ChatGptSignInPhase,
   ChatGptSignOutResult,
 } from "./chatgpt"
+import type { DriveImport, DriveStatus, DriveSyncResult } from "./drive"
 import type { SpeakerHint } from "./speaker"
 
 /**
@@ -68,6 +69,17 @@ export interface BackendPort {
   signInToGateway(): Promise<AppAccess>
   cancelGatewaySignIn(): Promise<void>
   signOutOfGateway(): Promise<void>
+  loadDriveStatus(): Promise<DriveStatus>
+  /** Resolves once the browser consent finished, failed, was cancelled, or timed out. */
+  connectDrive(): Promise<DriveStatus>
+  cancelDriveOperation(): Promise<void>
+  disconnectDrive(): Promise<DriveStatus>
+  dismissDriveOnboarding(): Promise<DriveStatus>
+  /** Opens the desktop Picker and downloads the pick as job `jobId`; `cancel(jobId)` stops it. */
+  importFromDrive(jobId: string): Promise<DriveImport>
+  /** `jobId` is the transcription or transcript-import job the results belong to. */
+  syncMeetingToDrive(jobId: string, overwrite: boolean): Promise<DriveSyncResult>
+  openDriveLink(url: string): Promise<void>
 }
 
 /** Whether the app may be used. Only the state and the e-mail cross the IPC border. */
@@ -90,6 +102,8 @@ export interface TranscriptionRequest {
   readonly inputPath: string
   readonly outputRoot: string
   readonly speakerHint: SpeakerHint
+  /** The Drive file `inputPath` was imported from; absent for local files. */
+  readonly driveSourceId?: string
 }
 
 export interface TranscriptImportRequest {

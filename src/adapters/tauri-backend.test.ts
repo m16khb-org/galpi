@@ -1,10 +1,15 @@
 import { describe, expect, mock, test } from "bun:test"
 
+import type { DriveSyncResult } from "../domain/drive"
+
 import {
   appAccessSchema,
   chatGptModelsSchema,
   chatGptSettingsSchema,
   chatGptSignOutSchema,
+  driveImportSchema,
+  driveStatusSchema,
+  driveSyncResultSchema,
   parseChatGptEvent,
   toJobEvent,
 } from "./tauri-backend"
@@ -195,5 +200,57 @@ describe("appAccessSchema", () => {
 
   test("rejects a signed-in answer without the offline flag", () => {
     expect(appAccessSchema.safeParse({ state: "signedIn", email: null }).success).toBe(false)
+  })
+})
+
+describe("Drive schemas", () => {
+  test("read both connection states and refuse a leaked token", () => {
+    expect(driveStatusSchema.parse({ state: "connected", email: "dev@example.com" })).toEqual({
+      state: "connected",
+      email: "dev@example.com",
+    })
+    expect(
+      driveStatusSchema.parse({ state: "disconnected", onboardingDismissed: true }),
+    ).toEqual({ state: "disconnected", onboardingDismissed: true })
+    expect(
+      driveStatusSchema.safeParse({
+        state: "connected",
+        email: "dev@example.com",
+        accessToken: "secret",
+      }).success,
+    ).toBe(false)
+  })
+
+  test("read an import and refuse one without the Drive file id", () => {
+    const imported = {
+      jobId: "job-1",
+      inputPath: "/cache/drive-imports/x/회의.m4a",
+      driveFileId: "file-1",
+      name: "회의.m4a",
+    }
+    expect(driveImportSchema.parse(imported)).toEqual(imported)
+    expect(driveImportSchema.safeParse({ ...imported, driveFileId: undefined }).success).toBe(false)
+  })
+
+  test("read every sync state and require a message only for failures", () => {
+    const result: DriveSyncResult = {
+      folderLink: "https://drive.google.com/drive/folders/m1",
+      files: [
+        { kind: "srt", state: "uploaded", webViewLink: null },
+        { kind: "speaker_text", state: "conflict", webViewLink: "https://drive.google.com/t" },
+        { kind: "minutes", state: "failed", message: "저장 공간 부족", webViewLink: null },
+      ],
+    }
+    const parsed: DriveSyncResult = driveSyncResultSchema.parse(result)
+    expect(parsed).toEqual(result)
+    expect(
+      driveSyncResultSchema.safeParse({
+        folderLink: null,
+        files: [{ kind: "srt", state: "failed", webViewLink: null }],
+      }).success,
+    ).toBe(false)
+    expect(
+      driveSyncResultSchema.safeParse({ ...result, refreshToken: "secret" }).success,
+    ).toBe(false)
   })
 })

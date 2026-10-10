@@ -85,6 +85,14 @@ function backendWith(overrides: Partial<BackendPort>, calls: string[]): BackendP
     signInToGateway: record("signInToGateway", signedIn),
     cancelGatewaySignIn: record("cancelGatewaySignIn", undefined),
     signOutOfGateway: record("signOutOfGateway", undefined),
+    loadDriveStatus: unused,
+    connectDrive: unused,
+    cancelDriveOperation: unused,
+    disconnectDrive: unused,
+    dismissDriveOnboarding: unused,
+    importFromDrive: unused,
+    syncMeetingToDrive: unused,
+    openDriveLink: unused,
     ...overrides,
   }
 }

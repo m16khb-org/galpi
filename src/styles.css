@@ -308,6 +308,19 @@ summary:focus-visible {
   color: var(--seed-color-fg-warning-contrast);
 }
 
+/* A long Drive address must not push the settings button off a narrow top bar. */
+.drive-chip {
+  min-width: 0;
+  max-width: 220px;
+  flex-shrink: 1;
+}
+
+.drive-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sign-out-button {
   flex: 0 0 auto;
   word-break: keep-all;
@@ -708,7 +721,8 @@ summary:focus-visible {
 #settings-assistant-help,
 #settings-background-help,
 #chatgpt-plan-line,
-#chatgpt-data-notice {
+#chatgpt-data-notice,
+#drive-settings-help {
   margin: var(--seed-dimension-x2) 0 0;
   color: var(--seed-color-fg-neutral-muted);
   font-size: var(--seed-font-size-t1);
@@ -1170,6 +1184,78 @@ button:disabled:not(.seed-action-button) {
 
 #assistant-chatgpt-panel .settings-message {
   margin-top: var(--seed-dimension-x3);
+}
+
+/* Drive status lines pair their color with text, like every other status. */
+.drive-status {
+  margin: var(--seed-dimension-x3) 0 0;
+  color: var(--seed-color-fg-warning-contrast);
+  font-size: var(--seed-font-size-t2);
+  font-weight: var(--seed-font-weight-bold);
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+/* An empty live region stays rendered so its first message is announced. */
+.drive-status:empty {
+  margin: 0;
+}
+
+.drive-status[data-state="ready"] {
+  color: var(--seed-color-fg-positive-contrast);
+}
+
+.drive-status[data-state="error"] {
+  color: var(--seed-color-fg-critical-contrast);
+}
+
+.drive-import {
+  margin-top: var(--seed-dimension-x2_5);
+}
+
+.drive-sync {
+  margin-top: var(--seed-dimension-x4);
+  padding: var(--seed-dimension-x3) var(--seed-dimension-x3_5);
+  background: var(--seed-color-bg-neutral-weak);
+  border: 1px solid var(--seed-color-stroke-neutral-muted);
+  border-radius: var(--seed-radius-r2_5);
+}
+
+.drive-sync .drive-status {
+  margin-top: 0;
+}
+
+.drive-sync-files {
+  display: grid;
+  gap: var(--seed-dimension-x1);
+  margin: var(--seed-dimension-x2) 0 0;
+  padding: 0;
+  color: var(--seed-color-fg-neutral-muted);
+  font-size: var(--seed-font-size-t1);
+  list-style: none;
+}
+
+.drive-sync-files:empty {
+  display: none;
+}
+
+.drive-sync-files li[data-state="conflict"] {
+  color: var(--seed-color-fg-warning-contrast);
+}
+
+.drive-sync-files li[data-state="failed"] {
+  color: var(--seed-color-fg-critical-contrast);
+}
+
+.drive-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--seed-dimension-x3);
+  margin-top: var(--seed-dimension-x3);
+}
+
+.drive-sync-actions:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 #chatgpt-welcome {

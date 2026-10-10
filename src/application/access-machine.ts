@@ -26,6 +26,8 @@ export type AccessEvent =
   | { readonly type: "signOutStarted" }
   | { readonly type: "signOutSucceeded" }
   | { readonly type: "signOutFailed"; readonly message: string }
+  /** The host refused a feature command with `AUTH_REQUIRED`: its session is gone. */
+  | { readonly type: "sessionExpired"; readonly message: string }
 
 export const initialAccess: AccessState = { status: "checking" }
 
@@ -66,5 +68,7 @@ export function reduceAccess(state: AccessState, event: AccessEvent): AccessStat
       return state.status === "signingOut" ? { status: "signedOut", error: null } : state
     case "signOutFailed":
       return state.status === "signingOut" ? { status: "signedOut", error: event.message } : state
+    case "sessionExpired":
+      return state.status === "signedIn" ? { status: "signedOut", error: event.message } : state
   }
 }

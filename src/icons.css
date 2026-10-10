@@ -2,7 +2,7 @@
  *
  * The upstream stylesheet declares more than 1,500 glyph classes and pulls in
  * four font formats. Only WOFF2 is needed for the WebView this app ships in,
- * and only the 27 icons below are actually used, so the rest is weight the
+ * and only the 29 icons below are actually used, so the rest is weight the
  * bundle would carry to no purpose. Adding an icon means adding its class here
  * with the codepoint from `@phosphor-icons/web/src/regular/style.css`.
  */
@@ -39,6 +39,12 @@
 }
 .ph-check::before {
   content: "\e182";
+}
+.ph-cloud::before {
+  content: "\e1aa";
+}
+.ph-cloud-arrow-down::before {
+  content: "\e1ac";
 }
 .ph-cpu::before {
   content: "\e610";
