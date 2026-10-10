@@ -2,9 +2,10 @@
 """Speaker attribution of Galpi's transcript lines against gold speakers.
 
 Replays the post-diarization step on cached engine output: for each meeting
-the aligned WhisperX checkpoint, the pyannote community-1 turns (regular and
-exclusive views), and gold utterance spans with speakers. Nothing here runs a
-model, so the score is deterministic.
+the aligned WhisperX checkpoint, the pyannote community-1 turns and speaker
+centroids, the voice of every kept line (`galpi_worker.voice.line_voices`),
+and gold utterance spans with speakers. Nothing here runs a model, so the
+score is deterministic.
 
 The data is licensed (AI Hub) and never committed; point
 `GALPI_DIARIZATION_DATA` at a directory holding
@@ -12,6 +13,7 @@ The data is licensed (AI Hub) and never committed; point
     meetings/<name>.gold.json        [{start, end, speaker, text}]
     runs/<name>/<name>.aligned.v2.json
     diar-cache/<name>.turns.json     {regular, exclusive, embeddings}
+    diar-cache/<name>.voices.json    {spans, voices}
 
 Metric: word diarization error rate (WDER). Every transcript word gets the
 speaker of the line it ends up in; system labels map one-to-one onto gold
@@ -31,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "worker"))
 
 from galpi_worker.artifacts import filter_segments
-from galpi_worker.speakers import TURN_VIEW, label_segments
+from galpi_worker.speakers import label_segments, relabel_by_voice
 
 DATA = Path(os.environ.get("GALPI_DIARIZATION_DATA", "/private/tmp/aihub-staging"))
 
@@ -89,12 +91,18 @@ def evaluate(name: str) -> tuple[int, int, int, int]:
     checkpoint = json.loads(
         (DATA / "runs" / name / f"{name}.aligned.v2.json").read_text(encoding="utf-8")
     )
-    turns = json.loads(
+    cached = json.loads(
         (DATA / "diar-cache" / f"{name}.turns.json").read_text(encoding="utf-8")
-    )[TURN_VIEW]
+    )
+    voices = json.loads(
+        (DATA / "diar-cache" / f"{name}.voices.json").read_text(encoding="utf-8")
+    )["voices"]
     duration = max(g["end"] for g in gold)
-    labelled = label_segments(checkpoint["segments"], turns)
+    # The engine's order: label from the regular turns, drop hallucinations,
+    # then relabel each kept line by its own voice.
+    labelled = label_segments(checkpoint["segments"], cached["regular"])
     kept, _ = filter_segments(labelled, duration)
+    kept = relabel_by_voice(kept, voices, cached["embeddings"])
     pairs: Counter = Counter()
     words: list[tuple[str, str]] = []
     for segment in kept:

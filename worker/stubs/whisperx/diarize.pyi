@@ -1,9 +1,12 @@
 from typing import Literal, overload
 
+from pyannote.audio import Pipeline
+
 class DiarizationSegments:
     def to_dict(self, orient: Literal["records"]) -> list[dict[str, object]]: ...
 
 class DiarizationPipeline:
+    model: Pipeline
     def __init__(
         self, *, model_name: str, device: str, token: str | None = ...
     ) -> None: ...

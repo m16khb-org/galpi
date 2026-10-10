@@ -19,7 +19,7 @@ import wave
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import NamedTuple, TypedDict, cast
 
 from .artifacts import (
     Segment,
@@ -34,7 +34,14 @@ from .preparation import (
     QWEN3_MLX_MODEL_DIR_NAME,
 )
 from .protocol import EventWriter
-from .runtime import configure_warnings, ffmpeg_executable, select_torch_device
+from .runtime import (
+    TorchDevice,
+    configure_warnings,
+    ffmpeg_executable,
+    select_torch_device,
+)
+from .speakers import SpeakerTurn
+from .voice import SpeakerEmbedding, relabel_lines
 
 # The aligner emits one entry per word; those words regroup into segments that
 # end at terminal punctuation, at a speaker change, after a breath-long pause,
@@ -81,14 +88,6 @@ class WordSpan(TypedDict):
     text: str
     start: float
     end: float
-
-
-class SpeakerTurn(TypedDict):
-    """One diarization turn: a speaker label holding a time span."""
-
-    start: float
-    end: float
-    speaker: str
 
 
 def transcribe_qwen3(
@@ -150,16 +149,29 @@ def transcribe_qwen3(
         import torch
 
         device = select_torch_device(mps_available=torch.backends.mps.is_available())
-        turns = diarize(working_audio, speaker_hint, device, events)
-        assigned = group_word_spans(spans, turns)
+        diarization = diarize(working_audio, speaker_hint, device, events)
+        assigned = group_word_spans(spans, diarization.turns)
+        kept, filtered = filter_segments(assigned, duration)
+        events.emit(
+            "phase",
+            phase="diarizing",
+            percent=80.0,
+            message="문장마다 목소리를 다시 확인합니다.",
+        )
+        kept = relabel_lines(
+            diarization.embedding,
+            diarization.waveform,
+            kept,
+            diarization.centroids,
+            diarization.device,
+            events,
+        )
         events.emit(
             "phase",
             phase="diarizing",
             percent=100.0,
             message="화자분리가 완료되었습니다.",
         )
-
-    kept, filtered = filter_segments(assigned, duration)
 
     events.emit(
         "phase",
@@ -712,14 +724,25 @@ def matchable_chars(text: str) -> list[str]:
     return [character for character in text if is_matchable(character)]
 
 
+class Diarization(NamedTuple):
+    """Turns, speaker centroids, and what it takes to embed more audio."""
+
+    turns: list[SpeakerTurn]
+    centroids: dict[str, list[float]]
+    embedding: SpeakerEmbedding
+    waveform: object
+    device: TorchDevice
+
+
 def diarize(
     audio_path: Path,
     hint: SpeakerHint,
-    device: str,
+    device: TorchDevice,
     events: EventWriter,
-) -> list[SpeakerTurn]:
+) -> Diarization:
     """Run pyannote community-1 with one MPS-to-CPU retry."""
 
+    import numpy as np
     import torch
     from pyannote.audio import Pipeline
 
@@ -738,7 +761,8 @@ def diarize(
         if device != "mps":
             raise
         events.log("MPS 화자분리에 실패해 CPU로 다시 시도합니다.")
-        pipeline = load("cpu")
+        device = "cpu"
+        pipeline = load(device)
 
     options: dict[str, int] = {}
     if hint.mode == "exact":
@@ -752,7 +776,7 @@ def diarize(
     # community-1 returns a DiarizeOutput dataclass; the *exclusive* variant
     # drops overlapping speech, which maps cleaner onto ASR segments.
     annotation = diarization_output.exclusive_speaker_diarization
-    return [
+    turns = [
         SpeakerTurn(
             start=turn.start,
             end=turn.end,
@@ -760,6 +784,21 @@ def diarize(
         )
         for turn, _track, speaker in annotation.itertracks(yield_label=True)
     ]
+    # Centroid rows follow the labels of the regular annotation, which the
+    # exclusive one shares.
+    centroids: dict[str, list[float]] = {}
+    if diarization_output.speaker_embeddings is not None:
+        rows = np.asarray(diarization_output.speaker_embeddings, dtype=np.float64)
+        for index, label in enumerate(diarization_output.speaker_diarization.labels()):
+            if index < len(rows):
+                centroids[str(label)] = [float(value) for value in rows[index]]
+    return Diarization(
+        turns=turns,
+        centroids=centroids,
+        embedding=pipeline._embedding,  # pyright: ignore[reportPrivateUsage]
+        waveform=waveform,
+        device=device,
+    )
 
 
 def load_waveform(audio_path: Path) -> tuple[object, int]:

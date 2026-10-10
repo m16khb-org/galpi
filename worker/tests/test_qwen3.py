@@ -8,7 +8,6 @@ from ..galpi_worker.qwen3 import (
     BIAS_CONTEXT_CHAR_BUDGET,
     CHUNK_MAX_SECONDS,
     QWEN3_ENGINE_TAG,
-    SpeakerTurn,
     TimestampEntry,
     WordSpan,
     build_bias_context,
@@ -23,6 +22,7 @@ from ..galpi_worker.qwen3 import (
     word_entries,
     write_word_checkpoint,
 )
+from ..galpi_worker.speakers import SpeakerTurn
 
 
 class Qwen3PipelineTests(unittest.TestCase):
