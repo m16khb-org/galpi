@@ -125,6 +125,20 @@ class SpeakerMappingTests(unittest.TestCase):
             "- 화자: SPEAKER_00 → 태오 (근거: 나머지 화자와 명단 대조)", block
         )
 
+    def test_a_topic_after_저는_is_not_a_self_introduction(self) -> None:
+        # Given a roster name one sound from a hobby the speaker mentions
+        transcript = (
+            "[SPEAKER_00] (0s) 주말에 뭐 하세요?\n"
+            "[SPEAKER_01] (3s) 저는 누리를 자주 가요.\n"
+            "[SPEAKER_01] (6s) 저는 노리입니다.\n"
+        )
+
+        # When
+        block = analyze(transcript, "", [person("누리"), person("태오")], []).block
+
+        # Then only the introduction proper counts as evidence
+        self.assertIn("- 화자: SPEAKER_01 → 누리 (근거: 6s 자기소개)", block)
+
     def test_leaves_a_label_unmapped_when_a_guest_may_hold_it(self) -> None:
         # Given three labels and a two-person roster
         transcript = (

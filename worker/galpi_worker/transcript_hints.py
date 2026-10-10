@@ -1054,7 +1054,12 @@ def speaker_hints(
     for index, line in enumerate(lines):
         for pattern in SELF_INTRO:
             for found in pattern.finditer(line.text + " "):
-                name = roster_name(found.group(1))
+                said = found.group(1).strip(",.?!")
+                # `저는 수영을` is a topic, not a name: a name in an
+                # introduction carries no case particle.
+                if split_particle(said)[1] and not said.endswith(("이", "가")):
+                    continue
+                name = roster_name(said)
                 if name is not None:
                     vote(line.label, name, f"{line.second}s 자기소개")
         words = line.text.split()
