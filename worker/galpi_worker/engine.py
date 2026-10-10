@@ -22,6 +22,7 @@ from .core import (
 )
 from .protocol import EventWriter
 from .runtime import configure_warnings, detect_torch_device, needs_cpu_fallback
+from .speakers import Turn, label_segments
 
 if TYPE_CHECKING:
     from whisperx.diarize import DiarizationPipeline, DiarizationSegments
@@ -84,7 +85,7 @@ def transcribe_whisperx(
     configure_warnings()
 
     import whisperx
-    from whisperx.diarize import DiarizationPipeline, assign_word_speakers
+    from whisperx.diarize import DiarizationPipeline
 
     device = detect_torch_device()
     base_name = audio_path.stem
@@ -206,18 +207,17 @@ def transcribe_whisperx(
         "phase", phase="diarizing", percent=100.0, message="화자분리가 완료되었습니다."
     )
 
-    from whisperx.schema import AlignedTranscriptionResult, TranscriptionResult
-
-    library_result = cast(
-        AlignedTranscriptionResult | TranscriptionResult,
-        cast(object, result),
-    )
-    assigned = cast(
-        Transcription,
-        cast(object, assign_word_speakers(diarization_segments, library_result)),
-    )
+    turns = [
+        Turn(
+            start=float(cast(float, row["start"])),
+            end=float(cast(float, row["end"])),
+            speaker=str(row["speaker"]),
+        )
+        for row in diarization_segments.to_dict("records")
+    ]
+    labelled = label_segments(result["segments"], turns)
     duration = len(audio) / 16000
-    kept, filtered = filter_segments(assigned["segments"], duration)
+    kept, filtered = filter_segments(labelled, duration)
     events.emit(
         "phase",
         phase="writing",

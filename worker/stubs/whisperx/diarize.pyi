@@ -1,8 +1,7 @@
 from typing import Literal, overload
 
-from .schema import AlignedTranscriptionResult, TranscriptionResult
-
-class DiarizationSegments: ...
+class DiarizationSegments:
+    def to_dict(self, orient: Literal["records"]) -> list[dict[str, object]]: ...
 
 class DiarizationPipeline:
     def __init__(
@@ -28,8 +27,3 @@ class DiarizationPipeline:
         max_speakers: int | None = ...,
         return_embeddings: Literal[True],
     ) -> tuple[DiarizationSegments, dict[str, list[float]] | None]: ...
-
-def assign_word_speakers(
-    diarize_df: DiarizationSegments,
-    transcript_result: AlignedTranscriptionResult | TranscriptionResult,
-) -> AlignedTranscriptionResult | TranscriptionResult: ...
