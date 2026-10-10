@@ -108,12 +108,17 @@ FILLERS: Final = frozenset(
     (
         *("음", "어", "응", "아", "에", "으", "뭐", "그", "저", "막", "좀", "이제"),
         *("그냥", "약간", "진짜", "근데", "그래서", "그리고", "그러니까", "그니까"),
-        *("아니", "또", "이렇게"),
+        *("아니", "또", "이렇게", "그럼", "그러면"),
     )
 )
 # Pronouns that open a new sentence (`그게 문제예요`) but, at the end of a
 # line, are a subject still waiting for its predicate.
-OPENERS: Final = frozenset(("그런", "그거", "이게", "그게", "이거", "저거"))
+OPENERS: Final = frozenset(
+    ("그런", "이런", "저런", "그거", "이게", "그게", "이거", "저거")
+)
+# Nouns that only follow another word (`할 것`, `이런 거`); a space before
+# them is grammar, not a split word.
+BOUND_NOUNS: Final = frozenset(("것", "거", "걸", "게", "수", "줄", "데", "때", "뿐"))
 # Agreement said as its own turn.
 BACKCHANNEL: Final = re.compile(
     r"^(그치|그렇지|그죠|맞아|맞어|그러니까|그니까)[,.!?\s]"
@@ -206,7 +211,10 @@ FRAGMENT_THRESHOLD: Final = 0.34
 # A sentence picked up within this many seconds is the same sentence.
 CONTINUATION_SECONDS: Final = 6
 # Korean numerals read out syllable by syllable.
-NUMERAL: Final = re.compile(r"[영일이삼사오육륙칠팔구십백천만억조공]+")
+NUMERAL: Final = re.compile(
+    r"제?[영일이삼사오육륙칠팔구십백천만억조공]+"
+    r"(년대|년도|년|월|일|달|초|분|시간|시|주|개|명|원|번|항|호|층|차|세|살|대|등|위|회|권|장)?"
+)
 # A stem followed by this many different syllables across a meeting conjugates.
 INFLECTION_ENDINGS: Final = 3
 
@@ -1061,7 +1069,7 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             size = syllables(joined)
             if size < 3 or not sizes & {size - 1, size, size + 1}:
                 continue
-            if joined in vocabulary.known:
+            if joined in vocabulary.known or NUMERAL.fullmatch(joined):
                 continue
             spaced = f"{first} {tail}"
             spaced_counts[spaced] = spaced_counts.get(spaced, 0) + 1
@@ -1072,7 +1080,9 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             # unless removing the space gives a spelling already in the group;
             # so is a half that is already a whole word with a particle or an
             # ending (`{명사}이 잘`, `들어 가고`).
-            spoken_aside = bool({first, tail} & (FILLERS | OPENERS)) or bool(
+            spoken_aside = bool(
+                {first, tail} & (FILLERS | OPENERS | BOUND_NOUNS)
+            ) or bool(
                 split_particle(first)[1]
                 or PREDICATE_END.search(first)
                 or PREDICATE_END.search(tail)
