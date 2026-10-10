@@ -189,6 +189,45 @@ class BoundaryHintTests(unittest.TestCase):
             hints.block,
         )
 
+    def test_a_reply_before_the_asker_resumes_goes_to_the_earlier_speaker(self) -> None:
+        # Given a question answered with the asker's label, after which the
+        # asker keeps talking
+        transcript = (
+            "[SPEAKER_01] (0s) 결산은 다 끝났어요.\n"
+            "[SPEAKER_00] (4s) 정산서도 보냈죠?\n"
+            "[SPEAKER_00] (6s) 네.\n"
+            "[SPEAKER_00] (7s) 그럼 쿠폰 쪽 볼게요.\n"
+        )
+
+        # When
+        hints = analyze(transcript, "", [], [])
+
+        # Then the person the question was put to is the candidate
+        self.assertIn(
+            "- 화자 경계: (6s) SPEAKER_00 → SPEAKER_01"
+            " (근거: 4s 질문자 라벨이 붙은 짧은 응답, 질문 직전 상대 화자(0s)로 추정)",
+            hints.block,
+        )
+
+    def test_a_reply_names_both_candidates_when_they_differ(self) -> None:
+        # Given the next speaker and the one before the question differ
+        transcript = (
+            "[SPEAKER_02] (0s) 결산은 다 끝났어요.\n"
+            "[SPEAKER_00] (4s) 정산서도 보냈죠?\n"
+            "[SPEAKER_00] (6s) 네.\n"
+            "[SPEAKER_01] (7s) 쿠폰 쪽은 제가 볼게요.\n"
+        )
+
+        # When
+        hints = analyze(transcript, "", [], [])
+
+        # Then
+        self.assertIn(
+            "- 화자 경계: (6s) SPEAKER_00 → SPEAKER_01"
+            " (근거: 4s 질문자 라벨이 붙은 짧은 응답, 질문 직전 상대 화자 SPEAKER_02일 수도 있음)",
+            hints.block,
+        )
+
     def test_flags_a_sentence_tail_cut_into_the_next_turn(self) -> None:
         # Given
         transcript = (

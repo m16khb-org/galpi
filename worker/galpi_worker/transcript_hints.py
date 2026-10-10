@@ -210,6 +210,8 @@ WORD_TAIL: Final = re.compile(
 FRAGMENT_THRESHOLD: Final = 0.34
 # A sentence picked up within this many seconds is the same sentence.
 CONTINUATION_SECONDS: Final = 6
+# How many lines before a question to look for the person it was asked of.
+ANSWERER_LOOKBACK: Final = 4
 # Korean numerals read out syllable by syllable.
 NUMERAL: Final = re.compile(
     r"제?[영일이삼사오육륙칠팔구십백천만억조공]+"
@@ -1270,22 +1272,15 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
             and line.text.split()[0].strip(",.?!") not in FILLERS
         ):
             asked = previous.text.endswith("?")
+            # A question whose own label is already in doubt (its tail was cut
+            # onto the replier) says nothing about who replied.
             misattributed = line.label == "UNKNOWN" or (
-                asked and line.label == previous.label
+                asked and line.label == previous.label and index - 1 not in flagged
             )
-            if (
-                misattributed
-                and following is not None
-                and following.label not in (line.label, "UNKNOWN")
-                and following.label != previous.label
-            ):
-                reason = (
-                    "라벨 없는 짧은 응답"
-                    if line.label == "UNKNOWN"
-                    else f"{previous.second}s 질문자 라벨이 붙은 짧은 응답"
-                )
+            replier, reason = answerer(lines, index)
+            if misattributed and replier is not None:
                 hints.append(
-                    f"- 화자 경계: ({line.second}s) {line.label} → {following.label}"
+                    f"- 화자 경계: ({line.second}s) {line.label} → {replier}"
                     f" (근거: {reason})"
                 )
                 flagged.add(index)
@@ -1297,6 +1292,43 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
             )
             flagged.add(index)
     return hints, flagged
+
+
+def answerer(lines: list[TranscriptLine], index: int) -> tuple[str | None, str]:
+    """Who most likely said the short reply at `index`, and why.
+
+    The next speaker usually answered. A question is also often put to
+    whoever spoke just before it, which on real meetings was about as often
+    right, so when the two differ the reason names the other candidate; when
+    the asker talks again right after the reply, the earlier speaker is the
+    only candidate.
+    """
+
+    line, previous = lines[index], lines[index - 1]
+    following = lines[index + 1] if index + 1 < len(lines) else None
+    asker = previous.label
+    if line.label == "UNKNOWN":
+        reason = "라벨 없는 짧은 응답"
+        earlier = None
+    else:
+        reason = f"{previous.second}s 질문자 라벨이 붙은 짧은 응답"
+        earlier = next(
+            (
+                other
+                for other in reversed(
+                    lines[max(0, index - 1 - ANSWERER_LOOKBACK) : index - 1]
+                )
+                if other.label not in (asker, "UNKNOWN")
+            ),
+            None,
+        )
+    if following is not None and following.label not in (line.label, "UNKNOWN", asker):
+        if earlier is not None and earlier.label != following.label:
+            reason += f", 질문 직전 상대 화자 {earlier.label}일 수도 있음"
+        return following.label, reason
+    if earlier is not None:
+        return earlier.label, f"{reason}, 질문 직전 상대 화자({earlier.second}s)로 추정"
+    return None, reason
 
 
 def cut_off_tail(
