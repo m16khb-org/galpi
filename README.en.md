@@ -173,6 +173,23 @@ You can sign in with a ChatGPT account instead of an API key to use it as the mi
 > [!WARNING]
 > Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on your computer. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API (the OpenAI API when ChatGPT sign-in is used). Review the provider's security and retention policy before using this feature with sensitive meetings.
 
+### Connect Google Drive (optional)
+
+You can import recordings stored in Drive and have the results uploaded to a `Galpi` folder in your Drive automatically. Everything else works without connecting.
+
+1. After signing in, select `Drive 연결` (Connect Drive) on the **Google Drive 연결** (Connect Google Drive) card. If you dismissed the card, connect from **Google Drive** in `설정` (Settings).
+2. Allow Drive access in the system browser. Galpi then creates a `Galpi` folder in your Drive (or reuses the existing one) and shows the connected account in the top bar.
+3. Select `Drive에서 가져오기` (Import from Drive) to open the Google Picker in the browser. Pick one recording; Galpi downloads it to this computer, and `전사 시작` (Start transcription) transcribes it. A file picked with a different account than the connected one is not imported.
+4. While Drive is connected, every finished transcription, transcript import, and AI augmentation uploads its results (`.srt`, `_화자별.txt`, `_회의록.md`) to `Galpi/<meeting name>`. Processing the same meeting again updates the same files instead of creating new ones.
+
+- The only scope is `drive.file`: Galpi can reach files it created and files you picked in the Picker, and nothing else in your Drive.
+- If a file changed in Drive since Galpi last uploaded it, Galpi does not overwrite it and reports a conflict. It overwrites only when you select `Drive 버전 덮어쓰기` (Overwrite the Drive version) in the results area.
+- A failed upload leaves the local results untouched and is shown separately in the results area. The app does not resend a failed upload.
+- The original file you picked is only read; it is never moved or deleted. The downloaded copy lives in the app cache's `drive-imports` folder and is removed on the next launch.
+- `설정` (Settings) → **Google Drive** → `연결 해제` (Disconnect) asks Google to revoke the token and removes the local connection. Files uploaded to Drive stay there.
+- The Galpi sign-in server (auth-gateway) performs the code exchange and token refresh. The app source contains no OAuth client secret.
+- Privacy policy: <https://m16khb.dev/galpi/privacy/>
+
 ## Processing stages and models
 
 Recording through transcription runs locally; the transcript leaves the machine only when you select `AI 증강 실행`. The stage order is the same on every OS; only the speech recognition engine and compute device differ. There is no Linux build.
@@ -229,6 +246,7 @@ The completion screen can open each artifact or reveal its output folder in Find
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
 - The Hugging Face token, the AI augmentation API key, the ChatGPT sign-in tokens, and the Google sign-in session (auth-gateway) are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens`, and `com.m16khb.galpi:gateway-session`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens and the Google sign-in session are kept in that file in plain text, so a leaked file can expose API access for the account or the Galpi sign-in. The signed-in Google account's email is kept in `settings.json` on both platforms.
+- The Google Drive tokens follow the same path: the `com.m16khb.galpi:drive-session` entry on Windows, and plain text in `settings.json` on macOS. The connected Drive account's email and the `Galpi` folder id are kept in `settings.json` on both platforms.
 - On macOS credentials are not encrypted with the Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The macOS move to the Keychain lands together with Developer ID signing.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.

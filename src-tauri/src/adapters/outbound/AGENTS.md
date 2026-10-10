@@ -12,8 +12,10 @@ cleanup, and stable error codes are the contract here.
 outbound/
 ├── browser_sign_in/  # Shared system-browser sign-in: TauriBrowser, loopback callback, PKCE; callers pass SignInCodes
 ├── chatgpt/          # ChatGptAuthPort: OAuth authorize/callback, ID-token, /v1/models; SystemClock
+├── drive/            # DriveAuthPort (consent, Picker, gateway-brokered exchange) and DriveFilesPort (Drive v3 REST, streamed download)
 ├── gateway/          # GatewayAuthPort: auth-gateway /auth/native Google sign-in, refresh, logout
 ├── settings/chatgpt.rs # ChatGptStore on LocalSettingsStore (tokens in 0600 settings.json)
+├── settings/drive.rs # DriveSessionStore on LocalSettingsStore (Secret::DriveSession)
 ├── settings/gateway.rs # GatewaySessionStore on LocalSettingsStore (Secret::GatewaySession)
 ├── desktop.rs        # EnginePort, TranscriptionPort, TranscriptImportPort, ArtifactPort facade
 ├── environment.rs    # Readiness probe and worker environment

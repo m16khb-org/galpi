@@ -173,6 +173,9 @@ steps themselves (details in the README sections of the same names):
    `설정`.
 3. **Prepare the local engine**: `설정` → `로컬 엔진 준비`. This downloads an
    app-managed Python environment and several GB of models.
+4. **Connect Google Drive** (optional): `Drive 연결` on the card shown after
+   sign-in, or `설정` → **Google Drive**. The system browser asks for the
+   `drive.file` permission only. Skipping it changes nothing else.
 
 ## Updating
 
