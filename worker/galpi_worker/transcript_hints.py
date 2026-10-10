@@ -444,7 +444,13 @@ DIGIT_WORDS: Final = [
     "nine",
 ]
 LATIN_RULES: Final[tuple[tuple[str, str], ...]] = (
+    # a silent final e lengthens the vowel before it (frame 프레임, side 사이드)
+    (r"a(?=[^aeiouy]e\b)", "ei"),
+    (r"i(?=[^aeiouy]e\b)", "ai"),
     (r"(?<=[^aeiouy])e\b", ""),
+    (r"a[iy]", "ei"),
+    (r"e[ae]", "i"),
+    (r"[eo]r\b", "o"),
     (r"ti(?=on)", "s"),
     (r"ph", "p"),
     (r"th", "s"),
@@ -454,7 +460,6 @@ LATIN_RULES: Final[tuple[tuple[str, str], ...]] = (
     (r"ck", "k"),
     (r"qu", "kw"),
     (r"ng", "n"),
-    (r"ee", "i"),
     (r"oo", "u"),
     (r"c(?=[eiy])", "s"),
     (r"x", "ks"),
@@ -733,6 +738,14 @@ class RegisteredTerm:
     spelling: str
     compact: str
     threshold: float
+    # the term's first words without spaces (`커넥션` for `커넥션 풀`)
+    leading_words: frozenset[str]
+
+    @classmethod
+    def of(cls, spelling: str, threshold: float) -> "RegisteredTerm":
+        words = spelling.split()
+        leading = frozenset(compact(" ".join(words[:k])) for k in range(1, len(words)))
+        return cls(spelling, compact(spelling), threshold, leading)
 
 
 class TermMatcher:
@@ -751,7 +764,7 @@ class TermMatcher:
             if HANGUL.search(term) is None:
                 self._latin.append(term)
             else:
-                entry = RegisteredTerm(term, compact(term), threshold)
+                entry = RegisteredTerm.of(term, threshold)
                 self._by_length.setdefault(len(entry.compact), []).append(entry)
         self._memo: dict[tuple[str, bool], tuple[tuple[float, str], ...]] = {}
 
@@ -781,10 +794,14 @@ class TermMatcher:
                     found.append((0.0, term.spelling))
                     continue
                 # The registered spelling already present, or a correct
-                # partial mention of it, is not a misrecognition.
+                # partial mention of it, is not a misrecognition; neither is
+                # its first words said with a particle (`{단어}을` for
+                # `{단어} 풀`).
+                bare = compact(split_particle(spoken)[0])
                 if (
                     term.compact in said
                     or term.compact.startswith(said)
+                    or bare in term.leading_words
                     or said in self._known
                     or (fragment and not fragment_fits(spoken, term.spelling))
                 ):
@@ -834,7 +851,10 @@ def term_candidates(
             # The last word may carry a suffix (`별`, `하는`, `은`) after the
             # misheard part. A one-syllable piece is too little to judge a
             # misspelling by, so it only counts for spacing-only differences.
-            spans = [(" ".join([*head, stem]), False)] + [
+            # The whole word is a span too: a term may end in a syllable
+            # that doubles as a particle (`{용어}이` read as `{용어}` + 이).
+            spans = [(" ".join([*head, stem]), False), (" ".join([*head, last]), False)]
+            spans += [
                 (" ".join([*head, last[:cut]]), cut < 2)
                 for cut in range(1, len(last))
                 # `으` belongs to the particle `으로` that follows it

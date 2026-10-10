@@ -38,6 +38,20 @@ class LexicalHintTests(unittest.TestCase):
         self.assertIn('- 용어: "웹 소켓" → "웹소켓"', block)
         self.assertIn('- 용어: "레디스" → "Redis"', block)
 
+    def test_terms_ending_in_a_particle_like_syllable_still_match(self) -> None:
+        # Given terms whose last syllable doubles as the particle 이
+        transcript = (
+            "[SPEAKER_00] (0s) 카카오패이 연동부터 볼게요.\n"
+            "[SPEAKER_01] (4s) 에이아이 요약도 같이 붙이죠.\n"
+        )
+
+        # When
+        block = analyze(transcript, "", [], glossary("카카오페이", "AI")).block
+
+        # Then
+        self.assertIn('- 용어: "카카오패이" → "카카오페이"', block)
+        self.assertIn('- 용어: "에이아이" → "AI"', block)
+
     def test_correct_and_partial_mentions_are_not_candidates(self) -> None:
         # Given the registered spelling, a suffixed form, and one word of a
         # multi-word term
