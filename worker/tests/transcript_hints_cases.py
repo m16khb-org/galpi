@@ -65,6 +65,23 @@ class LexicalHintTests(unittest.TestCase):
         # Then
         self.assertEqual(block.count('- 이름: "노리" → "누리"'), 1)
 
+    def test_groups_an_unlisted_word_only_on_repeated_evidence(self) -> None:
+        # Given two spellings of an unregistered word, each said once
+        once = (
+            "[SPEAKER_00] (0s) 오케스트레이터를 먼저 띄웁니다.\n"
+            "[SPEAKER_01] (4s) 오케스트레이타는 다음 주에 바꿔요.\n"
+        )
+        # and the same meeting where one spelling comes back
+        again = once + "[SPEAKER_00] (9s) 오케스트레이터 설정도 같이 볼게요.\n"
+
+        # When
+        sparse = analyze(once, "", [], []).block
+        repeated = analyze(again, "", [], []).block
+
+        # Then two one-off spellings may be two different words
+        self.assertNotIn("같은 표현", sparse)
+        self.assertIn('- 같은 표현: "오케스트레이타" = "오케스트레이터"', repeated)
+
     def test_compares_pronunciation_across_syllables(self) -> None:
         # A final consonant before ㅇ is heard as the next initial.
         self.assertEqual(distance("음악", "으막"), 0.0)

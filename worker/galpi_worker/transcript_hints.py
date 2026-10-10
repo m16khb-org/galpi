@@ -159,7 +159,8 @@ SENTENCE_END: Final = re.compile(
 # Inflected verbs and adjectives: their spellings differ only by ending and
 # are never one misheard word.
 PREDICATE_END: Final = re.compile(
-    r"(요|다|면|까|죠|데|며|니|게|야|고|서|가|간|할|된|한|난|던|은|는|을|지만|잖아)$"
+    r"(요|다|면|까|죠|데|며|니|게|야|고|서|가|간|할|된|한|난|던|은|는|을|지만|잖아"
+    r"|거든|더라|었어|았어|였어|겠어|느냐|구나)$"
 )
 SELF_INTRO: Final = (
     re.compile(r"(?:^|\s)저(?:는)?\s+(\S+?)(?:이|가)?\s"),
@@ -877,6 +878,7 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                 and not stem.endswith(HONORIFICS)
             ):
                 counts[stem] = counts.get(stem, 0) + 1
+    spaced_counts: dict[str, int] = {}
     # Any word of a registered multi-word term is that term, said or
     # misheard, never an unlisted word.
     parts = {
@@ -941,15 +943,26 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             if joined in vocabulary.known:
                 continue
             spaced = f"{first} {tail}"
+            spaced_counts[spaced] = spaced_counts.get(spaced, 0) + 1
             if spaced in placed:
                 continue
             placed.add(spaced)
+            # A filler or pronoun next to a word is speech, not a split word,
+            # unless removing the space gives a spelling already in the group;
+            # so is a half that is already a whole word with a particle or an
+            # ending (`{명사}이 잘`, `들어 가고`).
+            spoken_aside = bool({first, tail} & (FILLERS | OPENERS)) or bool(
+                split_particle(first)[1]
+                or PREDICATE_END.search(first)
+                or PREDICATE_END.search(tail)
+            )
             for group in groups:
                 if first in group or tail in group:
                     continue
                 if any(
                     close(joined, member, CLUSTER_THRESHOLD) is not None
                     and (len(group) > 1 or joined != member)
+                    and (not spoken_aside or joined == member)
                     for member in group
                 ):
                     group.add(spaced)
@@ -975,7 +988,11 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
             and sum(spread) / len(spread) <= CLUSTER_TERM_THRESHOLD
         ):
             hints += [f'- 용어: "{member}" → "{target}"' for member in sorted(group)]
-        else:
+        elif (
+            len(group) > 2
+            or sum(counts.get(m, 0) + spaced_counts.get(m, 0) for m in group) >= 3
+        ):
+            # Two spellings said once each are as likely two different words.
             hints.append(
                 "- 같은 표현: " + " = ".join(f'"{member}"' for member in sorted(group))
             )
