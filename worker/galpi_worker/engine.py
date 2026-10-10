@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from .alignment import align_words
 from .artifacts import (
     Transcription,
     filter_segments,
@@ -157,33 +158,22 @@ def transcribe_whisperx(
             percent=10.0,
             message=f"{device.upper()}에서 문장과 시간을 정렬합니다.",
         )
+        segments = result["segments"]
+        failed: str | None = None
         try:
-            align_model, metadata = whisperx.load_align_model(
-                language_code="ko", device=device
-            )
-            result = cast(
-                Transcription,
-                whisperx.align(
-                    result["segments"], align_model, metadata, audio, device
-                ),
-            )
+            result = align_words(segments, audio, device)
         except Exception as error:
             if not needs_cpu_fallback(device):
                 raise
+            failed = failure_reason(error)
+        if failed is not None:
+            # Retried outside the handler: the traceback holds the failed
+            # attempt's tensors until the except block ends.
             events.log(
-                f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다. "
-                f"({failure_reason(error)})"
+                f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다. ({failed})"
             )
             release_torch_cache()
-            align_model, metadata = whisperx.load_align_model(
-                language_code="ko", device="cpu"
-            )
-            result = cast(
-                Transcription,
-                whisperx.align(result["segments"], align_model, metadata, audio, "cpu"),
-            )
-        del align_model
-        release_torch_cache()
+            result = align_words(segments, audio, "cpu")
         result["engine"] = WHISPERX_ENGINE_TAG
         write_json_atomic(checkpoint_path, result)
         events.emit(

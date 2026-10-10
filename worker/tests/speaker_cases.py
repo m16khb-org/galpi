@@ -2,6 +2,7 @@
 
 import unittest
 
+from ..galpi_worker.alignment import output_frames
 from ..galpi_worker.artifacts import Segment
 from ..galpi_worker.speakers import SpeakerTurn, label_segments, relabel_by_voice
 
@@ -67,3 +68,21 @@ class VoiceRelabelTests(unittest.TestCase):
             [segment.get("speaker") for segment in relabelled],
             ["SPEAKER_00", None, "SPEAKER_02"],
         )
+
+
+class Wav2Vec2Config:
+    def __init__(self) -> None:
+        # kresnik/wav2vec2-large-xlsr-korean, the WhisperX Korean aligner
+        self.conv_kernel = [10, 3, 3, 3, 3, 2, 2]
+        self.conv_stride = [5, 2, 2, 2, 2, 2, 2]
+
+
+class PaddedAlignmentTests(unittest.TestCase):
+    def test_keeps_exactly_the_frames_the_unpadded_audio_yields(self) -> None:
+        # wav2vec2 emits one frame per 20 ms; the shortest input WhisperX
+        # sends (400 samples) yields one frame
+        config = Wav2Vec2Config()
+
+        self.assertEqual(output_frames(config, 400), 1)
+        self.assertEqual(output_frames(config, 16000), 49)
+        self.assertEqual(output_frames(config, 16000 * 30), 1499)
