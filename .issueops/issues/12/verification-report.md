@@ -106,3 +106,9 @@ SNR이 0.004 낮아진 것은 회귀 테스트 2개·application 테스트 2개�
 - 50MB 이상 다운로드 중 메모리 측정: 실행하지 않음(증거 파일 참고).
 - 실제 앱 창(`bun run dev`)에서의 전 과정: 이 컴퓨터에 엔진·모델·HF 토큰이 없어 실행하지 않음.
 - auth-gateway#10 PR #11은 아직 열려 있으나 엔드포인트는 배포되어 응답한다.
+
+## 게시
+
+- Draft PR: https://github.com/m16khb-org/galpi/pull/13 (base `main`, head `12-google-drive-sync`, 라벨 `enhancement`, 담당자 m16khb, Closes #12). `remote verify-artifact`로 확인했다.
+- 커밋 4개: Rust 호스트(`feat(drive)`), 화면(`feat(drive)`), 제품 문서(`docs(drive)`), IssueOps 기록(`docs(issueops)`), 그리고 이 게시 기록 커밋.
+- 머지, 배포, 워크트리 정리는 이 사이클 범위 밖이다.
