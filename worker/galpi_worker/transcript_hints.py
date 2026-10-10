@@ -101,6 +101,22 @@ PARTICLES: Final = (
     "만",
 )
 HONORIFICS: Final = ("님", "씨")
+# Hesitations and discourse markers: a line that ends or starts with one is
+# a speaker trailing off or taking a turn, not a sentence cut in half.
+FILLERS: Final = frozenset(
+    (
+        *("음", "어", "응", "아", "에", "으", "뭐", "그", "저", "막", "좀", "이제"),
+        *("그냥", "약간", "진짜", "근데", "그래서", "그리고", "그러니까", "그니까"),
+        *("아니", "또", "이렇게"),
+    )
+)
+# Pronouns that open a new sentence (`그게 문제예요`) but, at the end of a
+# line, are a subject still waiting for its predicate.
+OPENERS: Final = frozenset(("그런", "그거", "이게", "그게", "이거", "저거"))
+# Agreement said as its own turn.
+BACKCHANNEL: Final = re.compile(
+    r"^(그치|그렇지|그죠|맞아|맞어|그러니까|그니까)[,.!?\s]"
+)
 # Job titles said between a name and its honorific ("{이름} 매니저님").
 TITLES: Final = frozenset(
     [
@@ -1072,7 +1088,12 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
     for index in range(1, len(lines)):
         line, previous = lines[index], lines[index - 1]
         following = lines[index + 1] if index + 1 < len(lines) else None
-        if REPLY.match(line.text) and len(line.text) <= 12:
+        if (
+            REPLY.match(line.text)
+            and len(line.text) <= 12
+            # A hesitation (음, 어) after one's own question is not an answer.
+            and line.text.split()[0].strip(",.?!") not in FILLERS
+        ):
             asked = previous.text.endswith("?")
             misattributed = line.label == "UNKNOWN" or (
                 asked and line.label == previous.label
@@ -1094,21 +1115,44 @@ def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
                 )
                 flagged.add(index)
             continue
-        cut_off = SENTENCE_END.search(previous.text) is None
-        if (
-            cut_off
-            and line.label != previous.label
-            and previous.label != "UNKNOWN"
-            and line.second - previous.second <= CONTINUATION_SECONDS
-        ):
-            # The model must still check that the line finishes the cut
-            # sentence rather than starting a new one.
+        if cut_off_tail(previous, line, following):
             hints.append(
                 f"- 화자 경계: ({line.second}s) {line.label} → {previous.label}"
                 f" (근거: {previous.second}s 줄이 문장 중간에서 끊김)"
             )
             flagged.add(index)
     return hints, flagged
+
+
+def cut_off_tail(
+    previous: TranscriptLine, line: TranscriptLine, following: TranscriptLine | None
+) -> bool:
+    """Whether `line` reads as the end of `previous`'s sentence under the wrong label.
+
+    Conversation is full of unfinished lines that are not diarization errors:
+    a speaker trails off on a filler (`그`, `이제`), or the other person
+    interjects and the first speaker takes the floor back. A misattributed
+    tail instead finishes the cut sentence, and the label it got keeps the
+    floor afterwards.
+    """
+
+    if (
+        line.label == previous.label
+        or previous.label == "UNKNOWN"
+        or line.second - previous.second > CONTINUATION_SECONDS
+        or SENTENCE_END.search(previous.text) is not None
+        or SENTENCE_END.search(line.text) is None
+    ):
+        return False
+    cut, tail = previous.text.split(), line.text.split()
+    if len(cut) < 2 or not tail or cut[-1].endswith(("-", "…")):
+        return False
+    opening = tail[0].strip(",.?!")
+    if cut[-1].strip(",.?!") in FILLERS or opening in FILLERS or opening in OPENERS:
+        return False
+    if REPLY.match(line.text) or BACKCHANNEL.match(line.text):
+        return False
+    return following is None or following.label != previous.label
 
 
 def merge_lines(lines: list[TranscriptLine], keep: set[int]) -> list[TranscriptLine]:

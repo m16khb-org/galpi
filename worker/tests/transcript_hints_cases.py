@@ -154,6 +154,30 @@ class BoundaryHintTests(unittest.TestCase):
             hints.transcript,
         )
 
+    def test_conversation_trailing_off_is_not_a_diarization_error(self) -> None:
+        # Given lines that end unfinished for ordinary conversational reasons:
+        # a filler, an interjection after which the first speaker resumes,
+        # a hesitation after one's own question, and a backchannel.
+        transcript = (
+            "[SPEAKER_00] (0s) 정산서는 내일 그\n"
+            "[SPEAKER_01] (1s) 쿠폰 쪽도 같이 봐야 해요.\n"
+            "[SPEAKER_00] (5s) 결산이 늦어진 이유는\n"
+            "[SPEAKER_01] (6s) 시스템 문제예요?\n"
+            "[SPEAKER_00] (8s) 아니요, 입력이 늦었어요.\n"
+            "[SPEAKER_01] (12s) 다음 주에 배포하죠?\n"
+            "[SPEAKER_01] (14s) 음\n"
+            "[SPEAKER_00] (15s) 수요일 오후로 잡을게요.\n"
+            "[SPEAKER_00] (20s) 정산서 양식을 바꾸면\n"
+            "[SPEAKER_01] (21s) 맞아요, 그게 맞아요.\n"
+            "[SPEAKER_00] (23s) 검토가 빨라질 거예요.\n"
+        )
+
+        # When
+        hints = analyze(transcript, "", [], [])
+
+        # Then
+        self.assertNotIn("화자 경계", hints.block)
+
     def test_merges_one_speakers_consecutive_lines_without_losing_words(self) -> None:
         # Given
         transcript = (
