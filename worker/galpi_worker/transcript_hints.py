@@ -9,6 +9,7 @@ user supplied (glossary, background, roster) and the transcript itself; it
 never edits the transcript's words. The model makes the final call.
 """
 
+import os
 import re
 from collections import Counter
 from collections.abc import Iterable
@@ -204,6 +205,10 @@ WORD_TAIL: Final = re.compile(
 FRAGMENT_THRESHOLD: Final = 0.34
 # A sentence picked up within this many seconds is the same sentence.
 CONTINUATION_SECONDS: Final = 6
+# Korean numerals read out syllable by syllable.
+NUMERAL: Final = re.compile(r"[영일이삼사오육륙칠팔구십백천만억조공]+")
+# A stem followed by this many different syllables across a meeting conjugates.
+INFLECTION_ENDINGS: Final = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -897,20 +902,99 @@ def noun_stem(word: str, shortest: int = 2) -> str:
     return stem
 
 
+@lru_cache(maxsize=65536)
+def syllable_keys(text: str) -> frozenset[tuple[str, str]] | None:
+    """(initial, vowel) of every syllable, as spelled and as pronounced.
+
+    Two spellings within `CLUSTER_THRESHOLD` share at least one: changing a
+    syllable's initial or vowel costs at least half an edit, and the budget
+    is under half an edit per syllable (three jamo × the threshold). Text
+    with anything but Hangul is outside that bound, so it has no keys.
+    """
+
+    characters = [c for c in text if not c.isspace()]
+    if not characters or any(not "가" <= c <= "힣" for c in characters):
+        return None
+    keys: set[tuple[str, str]] = set()
+    carried = ""
+    for character in characters:
+        code = ord(character) - HANGUL_BASE
+        initial, medial = INITIALS[code // 588], MEDIALS[(code % 588) // 28]
+        keys.add((initial, medial))
+        if carried and initial == "ㅇ":
+            keys.add((carried, medial))
+        final = FINALS[code % 28]
+        carried = final if final in INITIALS and final not in ("ㅇ", "ㅎ") else ""
+    return frozenset(keys)
+
+
+class GroupIndex:
+    """Which spelling groups can hold a word, by the syllables they share."""
+
+    def __init__(self) -> None:
+        self._groups: dict[tuple[str, str], set[int]] = {}
+        # groups with a member the bound does not cover are always compared
+        self._unkeyed: set[int] = set()
+
+    def add(self, member: str, number: int) -> None:
+        keys = syllable_keys(member)
+        if keys is None:
+            self._unkeyed.add(number)
+            return
+        for key in keys:
+            self._groups.setdefault(key, set()).add(number)
+
+    def candidates(self, word: str, count: int) -> list[int]:
+        """Group numbers in creation order; every group when the word has no keys."""
+
+        keys = syllable_keys(word)
+        if keys is None:
+            return list(range(count))
+        found = {n for key in keys for n in self._groups.get(key, ())}
+        return sorted(found | self._unkeyed)
+
+
+def inflections(group: set[str], word_types: set[str]) -> bool:
+    """Whether a group is one stem with different endings (`그렇기`, `그렇지`).
+
+    When the spellings differ only in their last syllable and the stem they
+    share takes three or more different next syllables across the meeting,
+    it is a word that conjugates, not a word that was misheard.
+    """
+
+    spellings = [compact(member) for member in group]
+    stem = os.path.commonprefix(spellings)
+    if len(stem) < 2 or any(len(s) - len(stem) > 1 for s in spellings):
+        return False
+    continuations = {
+        w[len(stem)] for w in word_types if w.startswith(stem) and len(w) > len(stem)
+    }
+    return len(continuations) >= INFLECTION_ENDINGS
+
+
 def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[str]:
     """Group spellings that are probably one unlisted word."""
 
     counts: dict[str, int] = {}
-    for line in lines:
-        for word in line.text.split():
-            stem = noun_stem(word)
-            if (
-                syllables(stem) >= 3
-                and re.fullmatch(r"[가-힣]+", stem)
-                and PREDICATE_END.search(stem) is None
-                and not stem.endswith(HONORIFICS)
-            ):
-                counts[stem] = counts.get(stem, 0) + 1
+    words = [word.strip(",.?!") for line in lines for word in line.text.split()]
+    for word in words:
+        stem = noun_stem(word)
+        if (
+            syllables(stem) >= 3
+            and re.fullmatch(r"[가-힣]+", stem)
+            and PREDICATE_END.search(stem) is None
+            and not stem.endswith(HONORIFICS)
+            # numbers said out loud (`이천십사`) differ by a digit, not a sound
+            and NUMERAL.fullmatch(stem) is None
+            # a one-syllable pronoun with a particle (`걔한테`) is not a word
+            and not any(
+                stem.endswith(p) and syllables(stem) - len(p) == 1
+                for p in PARTICLES
+                if len(p) >= 2
+            )
+        ):
+            counts[stem] = counts.get(stem, 0) + 1
+    word_types = {compact(word) for word in words}
     spaced_counts: dict[str, int] = {}
     # Any word of a registered multi-word term is that term, said or
     # misheard, never an unlisted word.
@@ -945,8 +1029,10 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
         and not any(latin_match(stem, term) is not None for term in latin_terms)
     ]
     groups: list[set[str]] = []
+    index = GroupIndex()
     for stem in stems:
-        for group in groups:
+        for number in index.candidates(stem, len(groups)):
+            group = groups[number]
             if any(
                 stem != member
                 and close(stem, member, CLUSTER_THRESHOLD) is not None
@@ -955,9 +1041,11 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                 for member in group
             ):
                 group.add(stem)
+                index.add(stem, number)
                 break
         else:
             groups.append({stem})
+            index.add(stem, len(groups) - 1)
     # An unlisted word split by a space joins the group its joined spelling
     # belongs to; neither half may be a spelling of its own (`그 {단어}`). A
     # word seen once needs a different spelling, not just a space, so an
@@ -989,7 +1077,8 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                 or PREDICATE_END.search(first)
                 or PREDICATE_END.search(tail)
             )
-            for group in groups:
+            for number in index.candidates(joined, len(groups)):
+                group = groups[number]
                 if first in group or tail in group:
                     continue
                 if any(
@@ -999,10 +1088,11 @@ def cluster_hints(lines: list[TranscriptLine], vocabulary: Vocabulary) -> list[s
                     for member in group
                 ):
                     group.add(spaced)
+                    index.add(spaced, number)
                     break
     hints: list[str] = []
     for group in groups:
-        if len(group) < 2:
+        if len(group) < 2 or inflections(group, word_types):
             continue
         # Several distinct misspellings around one registered term are
         # stronger evidence than any single one: correct them all.
