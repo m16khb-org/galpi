@@ -18,7 +18,7 @@ rule, with DDD tactical patterns — applied consistently across three runtimes:
 ```text
 TypeScript (WebView)   Rust (Tauri host)              Python (WhisperX sidecar)
 ui/          outer     adapters/inbound/tauri.rs      __main__.py  outer
-application/           application/ (15 ports)        engine/refine use cases
+application/           application/ (18 ports)        engine/refine use cases
 domain/      inner     domain/ (inner)                protocol.py (port: stdout)
 adapters/tauri-backend composition.rs (root)          domain pure modules
 ```
@@ -32,11 +32,14 @@ adapters/tauri-backend composition.rs (root)          domain pure modules
 - DDD tactical: value objects (`SpeakerHint`, `Participant`, `GlossaryEntry`,
   `AssistantSettings`), aggregate root `Artifacts::path_for(kind)`, domain
   services as pure functions, conceptual in-memory `JobRegistry`.
-- Inbound adapters: `tauri.rs` (28 `#[tauri::command]`s incl. `save_compute_device`, + event bridge),
+- Inbound adapters: `tauri.rs` (35 `#[tauri::command]`s incl. `save_compute_device` and
+  the 7 Drive commands, + event bridge),
   `tauri-backend.ts` (Zod boundary), worker `__main__.py`.
 - Outbound adapters: `process.rs` (worker supervision), `NativeRecorder`
-  (CPAL), settings/paths adapters, `ChatGptOAuthAdapter` and
-  `GatewayOAuthAdapter` over the shared `browser_sign_in/` loopback and PKCE,
+  (CPAL), settings/paths adapters, `ChatGptOAuthAdapter`, `GatewayOAuthAdapter`,
+  and `DriveOAuthAdapter` over the shared `browser_sign_in/` loopback and PKCE,
+  `DriveRestAdapter` (Drive v3; tokens exchanged by auth-gateway
+  `/drive/native/token`, see adr/2026-10-11-google-drive-auth-gateway-appproperties.md),
   worker `EventWriter` (stdout JSONL v1).
 - Platform branching lives only in outbound adapters and `composition.rs`:
   outbound code branches on `Os` (`platform.rs`, `Os::current()` is the single
