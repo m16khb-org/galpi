@@ -6,15 +6,19 @@
 //! gateway keeps the app usable with the stored one.
 
 use crate::application::error::AppError;
-use crate::application::ports::{GatewayAuthPort, GatewaySessionStore};
+use crate::application::ports::{ClockPort, GatewayAuthPort, GatewaySessionStore};
 use crate::domain::gateway::{AppAccess, GatewayRefreshFailure};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use tokio::sync::oneshot;
 
+/// Renew the gateway access token once less than this many seconds remain.
+const BEARER_REFRESH_MARGIN_SECONDS: u64 = 60;
+
 pub struct AppAccessGate {
     auth: Arc<dyn GatewayAuthPort>,
     store: Arc<dyn GatewaySessionStore>,
+    clock: Arc<dyn ClockPort>,
     /// Visible to the application tests, which open the gate without a sign-in.
     pub(super) access: Mutex<AppAccess>,
     /// Serializes every session write so a rotated refresh token is spent
@@ -28,6 +32,13 @@ fn sign_in_failed() -> AppError {
     AppError::new(
         "GATEWAY_SIGN_IN_FAILED",
         "로그인 상태를 확인하지 못했습니다.",
+    )
+}
+
+pub(super) fn auth_required() -> AppError {
+    AppError::new(
+        "AUTH_REQUIRED",
+        "Galpi를 사용하려면 Google로 로그인해 주세요.",
     )
 }
 
@@ -46,10 +57,15 @@ impl Drop for SignInSlot<'_> {
 }
 
 impl AppAccessGate {
-    pub fn new(auth: Arc<dyn GatewayAuthPort>, store: Arc<dyn GatewaySessionStore>) -> Self {
+    pub fn new(
+        auth: Arc<dyn GatewayAuthPort>,
+        store: Arc<dyn GatewaySessionStore>,
+        clock: Arc<dyn ClockPort>,
+    ) -> Self {
         Self {
             auth,
             store,
+            clock,
             access: Mutex::new(AppAccess::SignedOut),
             writes: tokio::sync::Mutex::new(()),
             sign_in_active: AtomicBool::new(false),
@@ -66,11 +82,57 @@ impl AppAccessGate {
     pub fn require(&self) -> Result<(), AppError> {
         match *self.access.lock().unwrap_or_else(PoisonError::into_inner) {
             AppAccess::SignedIn { .. } => Ok(()),
-            AppAccess::SignedOut => Err(AppError::new(
-                "AUTH_REQUIRED",
-                "Galpi를 사용하려면 Google로 로그인해 주세요.",
+            AppAccess::SignedOut => Err(auth_required()),
+        }
+    }
+
+    /// A gateway access token with at least a minute left, for a feature that
+    /// calls the gateway on the user's behalf.
+    ///
+    /// Renews under the write lock so a rotated refresh token is spent once.
+    /// A refusal ends the session like a failed restore does; an unreachable
+    /// gateway fails only this call and keeps the session.
+    pub async fn bearer(&self) -> Result<String, AppError> {
+        self.require()?;
+        let _writing = self.writes.lock().await;
+        let Some(tokens) = self.store.load_tokens().await? else {
+            self.set(AppAccess::SignedOut);
+            return Err(auth_required());
+        };
+        let now = self.clock.now_unix();
+        if tokens
+            .expires_at
+            .saturating_sub(BEARER_REFRESH_MARGIN_SECONDS)
+            > now
+        {
+            return Ok(tokens.access_token);
+        }
+        match self.auth.refresh(&tokens.refresh_token).await {
+            Ok(rotated) => {
+                let access_token = rotated.access_token.clone();
+                self.store.replace_tokens(rotated).await?;
+                Ok(access_token)
+            }
+            Err(GatewayRefreshFailure::Rejected) => {
+                self.set(AppAccess::SignedOut);
+                self.store.clear().await?;
+                Err(auth_required())
+            }
+            Err(GatewayRefreshFailure::Unavailable) => Err(AppError::new(
+                "GATEWAY_UNAVAILABLE",
+                "로그인 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
             )),
         }
+    }
+
+    /// The gateway refused a bearer this gate handed out: the session is gone
+    /// on the server, so close the app and forget it here too.
+    pub async fn expire(&self) {
+        self.set(AppAccess::SignedOut);
+        let _writing = self.writes.lock().await;
+        // Signed out either way; a store that cannot clear is retried at the
+        // next restore, which the gateway refuses the same way.
+        let _cleared = self.store.clear().await;
     }
 
     /// Renew the stored session once and open or close the app accordingly.

@@ -26,6 +26,10 @@ pub struct TranscriptionRequest {
     pub input_path: String,
     pub output_root: String,
     pub speaker_hint: SpeakerHint,
+    /// The Drive file id `input_path` was imported from, so the results are
+    /// synced into that recording's Drive folder. Absent for local files.
+    #[serde(default)]
+    pub drive_source_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -2,11 +2,15 @@ use crate::application::error::AppError;
 use crate::application::model::{
     CompletedTranscription, EnvironmentStatus, RecordingFailure, RecordingResult, RecordingStatus,
 };
-use crate::domain::artifact::Artifacts;
+use crate::domain::artifact::{ArtifactKind, Artifacts};
 use crate::domain::chatgpt::{
     AgentHostId, AssistantTransport, ChatGptModel, ChatGptPreferences, ChatGptRegistration,
     ChatGptSettings, ChatGptSignInEvent, ChatGptTokens, RefreshFailure, RevocationOutcome,
     SignInGrant, SignInRequest,
+};
+use crate::domain::drive::{
+    DriveAccount, DriveConnection, DriveFileId, DriveStatus, DriveTokenFailure, DriveTokens,
+    MeetingKey, RemoteFile,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::gateway::{GatewayGrant, GatewayRefreshFailure, GatewayTokens};
@@ -217,4 +221,149 @@ pub trait GatewaySessionStore: Send + Sync {
 
 pub trait ClockPort: Send + Sync {
     fn now_unix(&self) -> u64;
+}
+
+/// One browser consent: the plain `drive.file` grant, or the desktop Picker.
+pub struct DriveAuthorize {
+    pub picker: bool,
+    /// The connected account's email, so the Picker opens on that account.
+    pub login_hint: Option<String>,
+}
+
+/// A completed consent, ready to exchange. Holds the one-time code, so it has
+/// no `Debug`.
+pub struct DriveCallback {
+    pub code: String,
+    pub verifier: String,
+    pub redirect_uri: String,
+    /// The files chosen in the Picker; empty for the plain grant.
+    pub picked: Vec<DriveFileId>,
+}
+
+/// Google consent through the system browser, and the token exchange the
+/// auth-gateway performs for Galpi, which holds no client secret.
+#[async_trait]
+pub trait DriveAuthPort: Send + Sync {
+    /// Open the consent page and wait for the callback, the cancellation, or
+    /// the timeout.
+    async fn authorize(
+        &self,
+        request: &DriveAuthorize,
+        cancel: &mut oneshot::Receiver<()>,
+    ) -> Result<DriveCallback, AppError>;
+    /// `bearer` is the gateway access token that vouches for the request.
+    async fn exchange(
+        &self,
+        bearer: &str,
+        callback: &DriveCallback,
+    ) -> Result<DriveTokens, DriveTokenFailure>;
+    /// The result keeps `refresh_token` when Google does not rotate it.
+    async fn refresh(
+        &self,
+        bearer: &str,
+        refresh_token: &str,
+    ) -> Result<DriveTokens, DriveTokenFailure>;
+    /// Best-effort revocation at Google; never fails the caller.
+    async fn revoke(&self, refresh_token: &str);
+}
+
+/// A Drive folder Galpi created.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteFolder {
+    pub id: String,
+    pub link: Option<String>,
+}
+
+/// What the Picker chose, as Drive describes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickedFile {
+    pub name: String,
+    pub mime_type: String,
+    pub can_download: bool,
+    /// RFC 3339, kept for the downloaded file's modification time.
+    pub modified_time: Option<String>,
+}
+
+/// A local result file read for upload.
+pub struct LocalUpload {
+    pub name: String,
+    pub content: Vec<u8>,
+    pub sha256: String,
+}
+
+/// Drive v3 on behalf of the user. An access token Google refuses yields
+/// `DRIVE_TOKEN_REJECTED`, which the caller answers by renewing once.
+#[async_trait]
+pub trait DriveFilesPort: Send + Sync {
+    async fn whoami(&self, access_token: &str) -> Result<DriveAccount, AppError>;
+    /// The `Galpi` folder: `known` when it still exists, else found or created.
+    async fn ensure_root_folder(
+        &self,
+        access_token: &str,
+        known: Option<&str>,
+    ) -> Result<String, AppError>;
+    async fn ensure_meeting_folder(
+        &self,
+        access_token: &str,
+        root: &str,
+        key: &MeetingKey,
+        name: &str,
+    ) -> Result<RemoteFolder, AppError>;
+    async fn find_artifact(
+        &self,
+        access_token: &str,
+        folder: &str,
+        kind: ArtifactKind,
+    ) -> Result<Option<RemoteFile>, AppError>;
+    /// Read a result file, refusing one too large for a single upload.
+    async fn read_local(&self, path: &Path) -> Result<LocalUpload, AppError>;
+    async fn create_file(
+        &self,
+        access_token: &str,
+        folder: &str,
+        key: &MeetingKey,
+        kind: ArtifactKind,
+        upload: &LocalUpload,
+    ) -> Result<RemoteFile, AppError>;
+    async fn update_file(
+        &self,
+        access_token: &str,
+        file_id: &str,
+        key: &MeetingKey,
+        kind: ArtifactKind,
+        upload: &LocalUpload,
+    ) -> Result<RemoteFile, AppError>;
+    async fn file_metadata(
+        &self,
+        access_token: &str,
+        id: &DriveFileId,
+    ) -> Result<PickedFile, AppError>;
+    /// Stream the file into a fresh import folder and return its canonical
+    /// path. A failure or cancellation leaves no folder behind.
+    async fn download(
+        &self,
+        access_token: &str,
+        id: &DriveFileId,
+        file: &PickedFile,
+        cancel: &mut oneshot::Receiver<()>,
+    ) -> Result<PathBuf, AppError>;
+}
+
+/// The Drive connection on file. Only the token methods touch the secret store.
+#[async_trait]
+pub trait DriveSessionStore: Send + Sync {
+    async fn load_status(&self) -> Result<DriveStatus, AppError>;
+    async fn load_connection(&self) -> Result<Option<DriveConnection>, AppError>;
+    async fn load_tokens(&self) -> Result<Option<DriveTokens>, AppError>;
+    async fn save_connection(
+        &self,
+        connection: DriveConnection,
+        tokens: DriveTokens,
+    ) -> Result<(), AppError>;
+    async fn replace_tokens(&self, tokens: DriveTokens) -> Result<(), AppError>;
+    /// Change only the remembered `Galpi` folder.
+    async fn save_folder_id(&self, folder_id: String) -> Result<(), AppError>;
+    async fn dismiss_onboarding(&self) -> Result<(), AppError>;
+    /// Forget the tokens and the connection; the onboarding choice stays.
+    async fn clear(&self) -> Result<(), AppError>;
 }

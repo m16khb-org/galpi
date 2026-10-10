@@ -37,7 +37,8 @@ fn failed(message: &str) -> AppError {
 }
 
 /// The gateway base URL: the production one, or in a debug build the override.
-fn gateway_url() -> String {
+/// The Drive adapter shares it, so one override points both at a local gateway.
+pub(super) fn gateway_url() -> String {
     if cfg!(debug_assertions)
         && let Ok(url) = std::env::var(URL_OVERRIDE)
         && !url.trim().is_empty()

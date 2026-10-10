@@ -41,6 +41,8 @@ pub enum Secret {
     ChatGptTokens,
     /// The serialized auth-gateway session.
     GatewaySession,
+    /// The serialized Google Drive OAuth tokens.
+    DriveSession,
 }
 
 impl Secret {
@@ -54,6 +56,7 @@ impl Secret {
             Self::AssistantApiKey => "assistant-api-key",
             Self::ChatGptTokens => "chatgpt-tokens",
             Self::GatewaySession => "gateway-session",
+            Self::DriveSession => "drive-session",
         }
     }
 }
