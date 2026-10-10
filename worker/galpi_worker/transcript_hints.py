@@ -212,6 +212,8 @@ FRAGMENT_THRESHOLD: Final = 0.34
 CONTINUATION_SECONDS: Final = 6
 # How many lines before a question to look for the person it was asked of.
 ANSWERER_LOOKBACK: Final = 4
+# Lines shorter than this that end on a filler are a speaker trailing off.
+TRAILING_OFF_WORDS: Final = 6
 # Korean numerals read out syllable by syllable.
 NUMERAL: Final = re.compile(
     r"제?[영일이삼사오육륙칠팔구십백천만억조공]+"
@@ -1355,7 +1357,10 @@ def cut_off_tail(
     if len(cut) < 2 or not tail or cut[-1].endswith(("-", "…")):
         return False
     opening = tail[0].strip(",.?!")
-    if cut[-1].strip(",.?!") in FILLERS or opening in FILLERS or opening in OPENERS:
+    # A short line ending on a filler is someone trailing off; a long one
+    # that stops on `막` or `좀` mid-phrase was cut.
+    trailing_off = cut[-1].strip(",.?!") in FILLERS and len(cut) < TRAILING_OFF_WORDS
+    if trailing_off or opening in FILLERS or opening in OPENERS:
         return False
     if REPLY.match(line.text) or BACKCHANNEL.match(line.text):
         return False

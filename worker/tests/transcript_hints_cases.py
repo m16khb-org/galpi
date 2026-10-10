@@ -253,6 +253,20 @@ class BoundaryHintTests(unittest.TestCase):
             hints.transcript,
         )
 
+    def test_a_long_line_stopping_on_a_filler_was_cut(self) -> None:
+        # Given a full clause that stops mid-phrase on `좀`
+        transcript = (
+            "[SPEAKER_00] (10s) 정산서 양식이 바뀌어서 고객사 쪽 검토가 좀\n"
+            "[SPEAKER_01] (12s) 늦어질 것 같습니다.\n"
+            "[SPEAKER_01] (15s) 쿠폰 쪽은 제가 볼게요.\n"
+        )
+
+        # When
+        hints = analyze(transcript, "", [], [])
+
+        # Then
+        self.assertIn("- 화자 경계: (12s) SPEAKER_01 → SPEAKER_00", hints.block)
+
     def test_conversation_trailing_off_is_not_a_diarization_error(self) -> None:
         # Given lines that end unfinished for ordinary conversational reasons:
         # a filler, an interjection after which the first speaker resumes,
