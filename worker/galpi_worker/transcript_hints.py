@@ -671,17 +671,12 @@ def build_vocabulary(
             and re.search(r"[가-힣A-Za-z]", term) is not None
         ):
             named = count >= 2 or re.search(r"[가-힣]", term) is None
-            terms[term] = term_threshold(term) if named else ONCE_THRESHOLD
+            terms[term] = TERM_THRESHOLD if named else ONCE_THRESHOLD
     for entry in glossary:
         if syllables(entry.term) >= 2:
-            terms[entry.term] = term_threshold(entry.term)
+            terms[entry.term] = TERM_THRESHOLD
     known = frozenset([*terms, *names, *background_terms])
     return Vocabulary(terms, names, known)
-
-
-def term_threshold(term: str) -> float:
-    del term  # every registered term gets the same tolerance
-    return TERM_THRESHOLD
 
 
 def spoken_words(spoken: str) -> list[str]:
