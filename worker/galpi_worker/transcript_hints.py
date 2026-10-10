@@ -167,7 +167,9 @@ SELF_INTRO: Final = (
     re.compile(r"(\S+?)(?:입니다|이고요|이고|인데요|이에요)(?:[.,\s]|$)"),
 )
 TERM_THRESHOLD: Final = 0.2
-LONG_TERM_THRESHOLD: Final = 0.25
+# A span of as many words as the term with one word exactly right may differ
+# more in the other (`{오인식} 차트` for `{용어} 차트`).
+ALIGNED_TERM_THRESHOLD: Final = 0.25
 ONCE_THRESHOLD: Final = 0.12
 INTRO_SUFFIX: Final = re.compile(r"(입니다|이고요|이고|인데요|이에요)[.,]?$")
 NAME_THRESHOLD: Final = 0.17
@@ -457,7 +459,7 @@ LATIN_RULES: Final[tuple[tuple[str, str], ...]] = (
     (r"([^aeiou])\1+", r"\1"),
 )
 VOWELS: Final = frozenset("aeiou")
-LATIN_THRESHOLD: Final = 0.2
+LATIN_THRESHOLD: Final = 0.15
 
 
 def spell_digit(match: re.Match[str]) -> str:
@@ -469,6 +471,13 @@ def latin_sound(text: str) -> str:
     for pattern, replacement in LATIN_RULES:
         sound = re.sub(pattern, replacement, sound)
     return re.sub(r"[^a-z]", "", sound)
+
+
+def latin_sounds(text: str) -> set[str]:
+    """Readings of a Latin spelling; `au` is `아우` in some words (Tauri) and
+    `오` in others (Claude)."""
+
+    return {latin_sound(text), latin_sound(re.sub(r"au|aw", "o", text.lower()))}
 
 
 def hangul_sound(text: str) -> str:
@@ -486,12 +495,12 @@ def hangul_sound(text: str) -> str:
     return re.sub(r"([^aeiou])\1+", r"\1", "".join(parts))
 
 
-def term_sound(term: str) -> str:
+def term_sounds(term: str) -> set[str]:
     """How a Latin term sounds; short all-caps terms are spelled out."""
 
     if term.isupper() and term.isalpha() and len(term) <= 6:
-        return hangul_sound("".join(LETTER_NAMES[letter] for letter in term))
-    return latin_sound(term)
+        return {hangul_sound("".join(LETTER_NAMES[letter] for letter in term))}
+    return latin_sounds(term)
 
 
 def sound_distance(a: str, b: str) -> float:
@@ -523,16 +532,20 @@ def latin_match(spoken: str, term: str) -> float | None:
 
     if syllables(spoken) < 2:
         return None
-    said, target = hangul_sound(spoken), term_sound(term)
-    longest = max(len(said), len(target))
-    if not target or abs(len(said) - len(target)) > longest * 0.4:
-        return None
-    score = sound_distance(said, target)
-    consonants = sum(1 for sound in target if sound not in VOWELS)
-    # Short words collide with ordinary Korean too easily to allow slack.
-    if score == 0 or (consonants >= 3 and score <= LATIN_THRESHOLD):
-        return score
-    return None
+    said = hangul_sound(spoken)
+    best: float | None = None
+    for target in term_sounds(term):
+        longest = max(len(said), len(target))
+        if not target or abs(len(said) - len(target)) > longest * 0.4:
+            continue
+        score = sound_distance(said, target)
+        consonants = sum(1 for sound in target if sound not in VOWELS)
+        # Short words collide with ordinary Korean too easily to allow slack.
+        if (score == 0 or (consonants >= 3 and score <= LATIN_THRESHOLD)) and (
+            best is None or score < best
+        ):
+            best = score
+    return best
 
 
 @lru_cache(maxsize=65536)
@@ -667,7 +680,27 @@ def build_vocabulary(
 
 
 def term_threshold(term: str) -> float:
-    return LONG_TERM_THRESHOLD if syllables(term) >= 4 else TERM_THRESHOLD
+    del term  # every registered term gets the same tolerance
+    return TERM_THRESHOLD
+
+
+def spoken_words(spoken: str) -> list[str]:
+    return [word.strip(",.?!") for word in spoken.split()]
+
+
+def plausible_span(spoken: str) -> bool:
+    """Whether a span can be a misheard term at all: a filler, a pronoun, or
+    a conjugated verb inside it means it is ordinary speech."""
+
+    words = spoken_words(spoken)
+    return not any(word in FILLERS or word in OPENERS for word in words)
+
+
+def aligned_threshold(spoken: str, term: str, threshold: float) -> float:
+    said, registered = spoken_words(spoken), term.split()
+    if len(said) == len(registered) > 1 and set(said) & set(registered):
+        return max(threshold, ALIGNED_TERM_THRESHOLD)
+    return threshold
 
 
 def best_match(
@@ -723,7 +756,10 @@ class TermMatcher:
 
     def _match(self, spoken: str, fragment: bool) -> list[tuple[float, str]]:
         found: list[tuple[float, str]] = []
-        if HANGUL.search(spoken) is not None:
+        if not plausible_span(spoken):
+            return found
+        verbal = any(PREDICATE_END.search(word) for word in spoken_words(spoken))
+        if HANGUL.search(spoken) is not None and not verbal:
             for term in self._latin:
                 score = latin_match(spoken, term)
                 if score is not None:
@@ -745,7 +781,8 @@ class TermMatcher:
                     or (fragment and not fragment_fits(spoken, term.spelling))
                 ):
                     continue
-                score = close(spoken, term.spelling, term.threshold)
+                limit = aligned_threshold(spoken, term.spelling, term.threshold)
+                score = close(spoken, term.spelling, limit)
                 if score is not None:
                     found.append((score, term.spelling))
         return found
@@ -792,7 +829,8 @@ def term_candidates(
             spans = [(" ".join([*head, stem]), False)] + [
                 (" ".join([*head, last[:cut]]), cut < 2)
                 for cut in range(1, len(last))
-                if WORD_TAIL.fullmatch(last[cut:])
+                # `으` belongs to the particle `으로` that follows it
+                if WORD_TAIL.fullmatch(last[cut:]) and not last[:cut].endswith("으")
             ]
             for spoken, fragment in spans:
                 if fragment and width == 1:

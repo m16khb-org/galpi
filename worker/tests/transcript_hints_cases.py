@@ -65,6 +65,21 @@ class LexicalHintTests(unittest.TestCase):
         # Then
         self.assertEqual(block.count('- 이름: "노리" → "누리"'), 1)
 
+    def test_ordinary_speech_does_not_match_terms(self) -> None:
+        # Given a conjugated verb that sounds like a Latin term, a filler
+        # next to a word, and a native word one sound from a Latin term
+        transcript = (
+            "[SPEAKER_00] (0s) 빚을 다 갚고 나서 바로 그 얘기를 했어요.\n"
+            "[SPEAKER_01] (4s) 실력이 늘었네요.\n"
+            "[SPEAKER_00] (8s) 카프카 설정은 제가 볼게요.\n"
+        )
+
+        # When
+        block = analyze(transcript, "", [], glossary("Kafka", "Slack", "백로그")).block
+
+        # Then only the term actually said is pointed at its registered spelling
+        self.assertEqual(block, '- 용어: "카프카" → "Kafka"')
+
     def test_groups_an_unlisted_word_only_on_repeated_evidence(self) -> None:
         # Given two spellings of an unregistered word, each said once
         once = (
