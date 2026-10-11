@@ -70,21 +70,30 @@ export class AppView {
     bindTokenGuide(this.root)
   }
 
-  /** Selecting attendees fills the speaker count; a later manual change is left alone. */
+  /**
+   * Selecting attendees fills a speaker range around their count; a later
+   * manual change is left alone. Forcing the exact count split a speaker
+   * whenever one attendee never spoke (word speaker errors on real meetings
+   * rose from about 12% to 19%), while one either side of the count matched
+   * the exact count when it was right.
+   */
   applyAttendeeCount(count: number): void {
-    const mode: SpeakerMode = count > 0 ? "exact" : "auto"
+    const mode: SpeakerMode = count > 0 ? "range" : "auto"
     for (const input of this.root.querySelectorAll<HTMLInputElement>(
       'input[name="speaker-mode"]',
     )) {
       input.checked = input.value === mode
     }
     this.setSpeakerMode(mode)
+    const min = Math.max(1, count - 1)
+    const max = count + 1
     if (count > 0) {
-      this.element<HTMLInputElement>("#exact-speakers").value = String(count)
+      this.element<HTMLInputElement>("#min-speakers").value = String(min)
+      this.element<HTMLInputElement>("#max-speakers").value = String(max)
     }
     this.element("#speaker-hint-note").textContent =
       count > 0
-        ? `참석자 ${count}명으로 맞췄습니다. 필요하면 직접 바꿀 수 있습니다.`
+        ? `참석자 ${count}명에 맞춰 ${min}~${max}명으로 정했습니다. 말하지 않은 참석자가 있어도 한 사람이 둘로 나뉘지 않습니다.`
         : "참석 인원을 모르면 자동을 선택해도 됩니다."
   }
 

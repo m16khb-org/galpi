@@ -92,10 +92,11 @@ describe("ParticipantPickerView (real DOM)", () => {
     expect(counts).toEqual([1, 2])
     expect(root.querySelector("#attendee-count")?.textContent).toBe("2명 선택")
     expect(
-      (root.querySelector('input[name="speaker-mode"][value="exact"]') as HTMLInputElement).checked,
+      (root.querySelector('input[name="speaker-mode"][value="range"]') as HTMLInputElement).checked,
     ).toBe(true)
-    expect((root.querySelector("#exact-speakers") as HTMLInputElement).value).toBe("2")
-    expect(root.querySelector("#speaker-hint-note")?.textContent).toContain("2명으로 맞췄습니다")
+    expect((root.querySelector("#min-speakers") as HTMLInputElement).value).toBe("1")
+    expect((root.querySelector("#max-speakers") as HTMLInputElement).value).toBe("3")
+    expect(root.querySelector("#speaker-hint-note")?.textContent).toContain("1~3명으로 정했습니다")
   })
 
   test("clearing the selection returns the hint to auto", () => {
