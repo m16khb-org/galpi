@@ -168,6 +168,7 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 480px lo
 - **Structure**: `LOCAL AUDIO WORKSPACE` eyebrow, the Display heading, and one 13px secondary status line.
 - **Content**: the heading names the task, not a slogan — `로컬 엔진을 준비해 주세요` before setup, `새 회의 전사` when idle, then the meeting name (the chosen audio or imported transcript file name without its extension). The status line follows the work: `녹음 중`, `전사 중 · 정렬 단계`, `전사 완료 · 회의록 작성 대기`, `회의록 작성 중`, `회의록 완료`.
 - **Layout**: long names wrap with `overflow-wrap: anywhere`; the engine chip and settings button keep their place.
+- **Action order**: left to right, the engine chip, the Drive chip, the account chip, `로그아웃`, and the settings button — service status first, then the signed-in account with its own sign-out right beside it, so `로그아웃` never sits between unrelated chips.
 
 ### Panel Heading
 

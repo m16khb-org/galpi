@@ -42,10 +42,10 @@ export const appTemplate = `
       <header class="topbar">
         <div><span class="eyebrow">LOCAL AUDIO WORKSPACE</span><h1 id="task-title">새 회의 전사</h1><p id="task-status" class="task-status">로컬 환경을 확인하는 중입니다.</p></div>
         <div class="topbar-actions">
-          <div id="account-chip" class="engine-chip account-chip" hidden><span id="account-email" data-state="ready">Google 계정</span><small id="account-mode">온라인</small></div>
-          <div id="drive-chip" class="engine-chip drive-chip" hidden><span id="drive-email" data-state="ready">Google Drive</span><small>Drive 연결됨</small></div>
-          <button id="sign-out-button" class="sign-out-button ${secondary}" type="button" data-action="sign-out-gateway" hidden>로그아웃</button>
           <div class="engine-chip"><span id="setup-state" data-state="pending">확인 중</span><small id="engine-version">확인 중</small></div>
+          <div id="drive-chip" class="engine-chip drive-chip" hidden><span id="drive-email" data-state="ready">Google Drive</span><small>Drive 연결됨</small></div>
+          <div id="account-chip" class="engine-chip account-chip" hidden><span id="account-email" data-state="ready">Google 계정</span><small id="account-mode">온라인</small></div>
+          <button id="sign-out-button" class="sign-out-button ${secondary}" type="button" data-action="sign-out-gateway" hidden>로그아웃</button>
           <button class="settings-button ${iconOutline}" type="button" data-action="open-settings" aria-label="설정 열기"><i class="ph ph-gear" aria-hidden="true"></i></button>
         </div>
       </header>
