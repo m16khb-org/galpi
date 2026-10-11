@@ -73,6 +73,19 @@ export class AccessController {
     }
   }
 
+  /**
+   * The host already closed the session (a feature command answered
+   * `AUTH_REQUIRED`), so the window follows without asking it again.
+   */
+  expire(): void {
+    if (this.state.status !== "signedIn") return
+    this.dispatch({
+      type: "sessionExpired",
+      message: "로그인이 만료되었습니다. 다시 로그인해 주세요.",
+    })
+    this.onClosed()
+  }
+
   async signOut(): Promise<void> {
     if (this.state.status !== "signedIn") return
     this.dispatch({ type: "signOutStarted" })

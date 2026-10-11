@@ -1,4 +1,5 @@
 use crate::application::chatgpt::ChatGptAccounts;
+use crate::application::drive::DriveAccounts;
 use crate::application::error::AppError;
 use crate::application::gateway::AppAccessGate;
 use crate::application::jobs::JobRegistry;
@@ -15,6 +16,9 @@ use crate::domain::chatgpt::{
     AssistantAuthMode, AssistantTransport, ChatGptModel, ChatGptPreferences, ChatGptSettings,
     SignOutResult,
 };
+use crate::domain::drive::{
+    DriveFileId, DriveImport, DriveMeeting, DriveStatus, DriveSyncResult, MeetingKey,
+};
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
@@ -22,8 +26,9 @@ use crate::domain::job::{
 };
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use crate::domain::worker::AsrContext;
-use std::path::Path;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 use uuid::Uuid;
 
 /// The credential and endpoint settings one refinement runs with.
@@ -45,8 +50,16 @@ pub struct Application {
     refinement: Arc<dyn RefinementPort>,
     chatgpt: ChatGptAccounts,
     access: AppAccessGate,
+    drive: DriveAccounts,
     jobs: JobRegistry,
     active_recording: tokio::sync::Mutex<Option<Uuid>>,
+    /// Where each finished meeting goes on Drive, by its transcription or
+    /// transcript-import job id. Refinement registers its minutes under that
+    /// same id, so a sync after refinement finds them here too.
+    drive_meetings: Mutex<HashMap<Uuid, DriveMeeting>>,
+    /// Every recording downloaded from Drive, so a transcription that claims
+    /// a Drive source is checked against what was actually imported.
+    drive_imports: Mutex<HashMap<PathBuf, DriveFileId>>,
 }
 
 impl Application {
@@ -62,6 +75,7 @@ impl Application {
         refinement: Arc<dyn RefinementPort>,
         chatgpt: ChatGptAccounts,
         access: AppAccessGate,
+        drive: DriveAccounts,
     ) -> Self {
         Self {
             engine,
@@ -73,8 +87,11 @@ impl Application {
             refinement,
             chatgpt,
             access,
+            drive,
             jobs: JobRegistry::default(),
             active_recording: tokio::sync::Mutex::new(None),
+            drive_meetings: Mutex::new(HashMap::new()),
+            drive_imports: Mutex::new(HashMap::new()),
         }
     }
 
@@ -289,6 +306,96 @@ impl Application {
         self.chatgpt.sign_out().await
     }
 
+    pub async fn load_drive_status(&self) -> Result<DriveStatus, AppError> {
+        self.drive.status().await
+    }
+
+    pub async fn dismiss_drive_onboarding(&self) -> Result<DriveStatus, AppError> {
+        self.drive.dismiss_onboarding().await
+    }
+
+    /// Resolves when the browser consent finishes, is cancelled, or times out.
+    pub async fn connect_drive(&self) -> Result<DriveStatus, AppError> {
+        self.access.require()?;
+        self.drive.connect(&self.access).await
+    }
+
+    pub fn cancel_drive_operation(&self) -> Result<(), AppError> {
+        self.drive.cancel()
+    }
+
+    pub async fn disconnect_drive(&self) -> Result<DriveStatus, AppError> {
+        self.drive.disconnect().await
+    }
+
+    /// Pick one recording in the desktop Picker and download it as job `job_id`,
+    /// so the job's cancel stops both the consent wait and the download.
+    pub async fn import_from_drive(&self, job_id: Uuid) -> Result<DriveImport, AppError> {
+        self.access.require()?;
+        let (job, mut cancel) = self.jobs.claim_with_id(job_id)?;
+        let job_id = job.id();
+        let imported = self.drive.import(&self.access, &mut cancel).await?;
+        self.drive_imports
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(imported.path.clone(), imported.id.clone());
+        Ok(DriveImport {
+            job_id,
+            input_path: imported.path.to_string_lossy().into_owned(),
+            drive_file_id: imported.id,
+            name: imported.name,
+        })
+    }
+
+    /// Upload or update a finished meeting's results on Drive. `job_id` is the
+    /// transcription or transcript-import job; refinement adds its minutes there.
+    pub async fn sync_meeting_to_drive(
+        &self,
+        job_id: Uuid,
+        overwrite: bool,
+    ) -> Result<DriveSyncResult, AppError> {
+        self.access.require()?;
+        let artifacts = self.jobs.artifacts(job_id)?;
+        let meeting = self
+            .drive_meetings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&job_id)
+            .cloned()
+            .ok_or_else(|| AppError::new("ARTIFACT_NOT_FOUND", "완료된 결과를 찾지 못했습니다."))?;
+        self.drive
+            .sync(&self.access, &artifacts, &meeting, overwrite)
+            .await
+    }
+
+    fn remember_meeting(&self, job_id: Uuid, key: MeetingKey, source: &Path) {
+        self.drive_meetings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(job_id, DriveMeeting::new(key, source));
+    }
+
+    /// The Drive id a transcription claims, accepted only for the very file
+    /// that id was imported to.
+    fn imported_drive_source(&self, input_path: &str, id: &str) -> Result<DriveFileId, AppError> {
+        let mismatch = || {
+            AppError::new(
+                "DRIVE_SOURCE_MISMATCH",
+                "Drive에서 가져온 녹음 정보가 맞지 않습니다. 다시 가져와 주세요.",
+            )
+        };
+        let id = DriveFileId::parse(id).map_err(|_| mismatch())?;
+        let imports = self
+            .drive_imports
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if imports.get(Path::new(input_path)) == Some(&id) {
+            Ok(id)
+        } else {
+            Err(mismatch())
+        }
+    }
+
     pub async fn transcribe(
         &self,
         request: TranscriptionRequest,
@@ -296,9 +403,23 @@ impl Application {
         self.access.require()?;
         validate_speaker_hint(&request.speaker_hint)
             .map_err(|error| AppError::new("INVALID_SPEAKER_HINT", error.to_string()))?;
+        let drive_source = request
+            .drive_source_id
+            .as_deref()
+            .map(|id| self.imported_drive_source(&request.input_path, id))
+            .transpose()?;
         let (job, mut cancel) = self.jobs.claim_with_id(request.job_id)?;
-        self.run_transcription(job.id(), &mut cancel, &request)
-            .await
+        let job_id = job.id();
+        let result = self
+            .run_transcription(job_id, &mut cancel, &request)
+            .await?;
+        if let Some(source) = self.jobs.artifacts(job_id)?.source_audio {
+            let key = drive_source
+                .as_ref()
+                .map_or_else(|| MeetingKey::local(&source), MeetingKey::drive);
+            self.remember_meeting(job_id, key, &source);
+        }
+        Ok(result)
     }
 
     /// Register an existing transcript file as a finished meeting so it can be
@@ -319,6 +440,9 @@ impl Application {
             .await;
         let artifacts = result?;
         self.jobs.register(job_id, artifacts.clone())?;
+        if let Some(source) = &artifacts.source_transcript {
+            self.remember_meeting(job_id, MeetingKey::local(source), source);
+        }
         Ok(TranscriptImportResult {
             job_id,
             txt: artifacts.txt.to_string_lossy().into_owned(),

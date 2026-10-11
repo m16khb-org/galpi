@@ -117,6 +117,20 @@ function createBackend(
     },
     cancelGatewaySignIn: async () => undefined,
     signOutOfGateway: async () => undefined,
+    loadDriveStatus: async () => ({ state: "disconnected", onboardingDismissed: true }),
+    connectDrive: async () => {
+      throw new Error("unused Drive connect")
+    },
+    cancelDriveOperation: async () => undefined,
+    disconnectDrive: async () => ({ state: "disconnected", onboardingDismissed: true }),
+    dismissDriveOnboarding: async () => ({ state: "disconnected", onboardingDismissed: true }),
+    importFromDrive: async () => {
+      throw new Error("unused Drive import")
+    },
+    syncMeetingToDrive: async () => {
+      throw new Error("unused Drive sync")
+    },
+    openDriveLink: async () => undefined,
   }
 }
 

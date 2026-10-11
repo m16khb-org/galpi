@@ -15,11 +15,12 @@ import { ChatGptSettingsView } from "./chatgpt-settings"
 import { GlossarySettingsView } from "./glossary-settings"
 import { ParticipantPickerView } from "./participant-picker"
 import { ParticipantSettingsView } from "./participant-settings"
+import { DriveView } from "./drive-view"
 import { setActionButtonVariant } from "./seed"
 import { bindTokenGuide } from "./token-guide"
 import { TokenSettingsView } from "./token-settings"
 
-export type BusyKind = "setup" | "transcription" | "refinement" | null
+export type BusyKind = "setup" | "transcription" | "refinement" | "driveImport" | null
 
 export class AppView {
   readonly root: HTMLElement
@@ -30,10 +31,12 @@ export class AppView {
   readonly participantSettings: ParticipantSettingsView
   readonly glossarySettings: GlossarySettingsView
   readonly attendees: ParticipantPickerView
+  readonly drive: DriveView
   private environmentChecked = false
   private engineReady = false
   private jobBusy = false
   private jobKind: BusyKind = null
+  private driveConnected = false
   /// Selector lookups for the static template, resolved once each.
   private readonly elements = new Map<string, HTMLElement>()
   /// What the log and phase slots were last rendered from. A worker under load
@@ -67,6 +70,7 @@ export class AppView {
     })
     this.glossarySettings = new GlossarySettingsView(root, () => this.settingsChangeHandler?.())
     this.attendees = new ParticipantPickerView(root, (count) => this.applyAttendeeCount(count))
+    this.drive = new DriveView(root)
     bindTokenGuide(this.root)
   }
 
@@ -231,19 +235,22 @@ export class AppView {
     this.jobBusy = busy
     if (kind !== null) {
       this.jobKind = kind
-      if (kind === "transcription") {
+      if (usesJobPanel(kind)) {
         this.transcriptionSummary = false
         this.element("#job-panel").dataset["status"] = "running"
       }
       this.element("#setup-progress-panel").hidden = kind !== "setup"
       // Each stage renders its own progress card in place: refinement inside
-      // the augment panel, transcription inside the transcription panel.
-      this.element("#job-panel").hidden = kind !== "transcription" && !this.transcriptionSummary
+      // the augment panel, transcription and Drive import inside the
+      // transcription panel.
+      this.element("#job-panel").hidden = !usesJobPanel(kind) && !this.transcriptionSummary
       this.element("#job-phase-list").hidden = kind !== "transcription"
+      // A Drive import reports no progress, so it shows no percentage either.
+      this.element("#job-progress").hidden = kind === "driveImport"
+      this.element("#job-percent").hidden = kind === "driveImport"
       this.element("#augment-progress").hidden = kind !== "refinement"
     }
-    this.element<HTMLButtonElement>("#cancel-button").hidden =
-      !busy || this.jobKind !== "transcription"
+    this.element<HTMLButtonElement>("#cancel-button").hidden = !busy || !usesJobPanel(this.jobKind)
     this.element<HTMLButtonElement>("#setup-cancel-button").hidden =
       !busy || this.jobKind !== "setup"
     this.element<HTMLButtonElement>("#augment-cancel-button").hidden =
@@ -287,10 +294,10 @@ export class AppView {
     this.element("#setup-progress-panel").hidden =
       state.status === "idle" || this.jobKind !== "setup"
     this.element("#job-panel").hidden =
-      (state.status === "idle" || this.jobKind !== "transcription") && !this.transcriptionSummary
+      (state.status === "idle" || !usesJobPanel(this.jobKind)) && !this.transcriptionSummary
     this.element("#augment-progress").hidden =
       state.status === "idle" || this.jobKind !== "refinement"
-    if (!this.transcriptionSummary && this.jobKind === "transcription") {
+    if (!this.transcriptionSummary && usesJobPanel(this.jobKind)) {
       this.element("#job-panel").dataset["status"] = state.status
     }
     this.jobPhase = state.phase
@@ -361,6 +368,24 @@ export class AppView {
     this.transcriptionSummary = false
     this.element("#job-panel").hidden = true
     this.startMeeting(true)
+  }
+
+  /**
+   * A recording downloaded from Drive is chosen audio, not a result: the
+   * progress card folds away and the picker names the Drive file.
+   */
+  renderDriveImported(name: string): void {
+    this.transcriptionSummary = false
+    this.element("#job-panel").hidden = true
+    this.path("#audio-path", name)
+    this.meetingName = meetingName(name)
+    this.refreshStages()
+  }
+
+  /** The import button exists only while Drive is connected. */
+  setDriveConnected(connected: boolean): void {
+    this.driveConnected = connected
+    this.refreshActions()
   }
 
   renderMinutes(minutes: string): void {
@@ -462,6 +487,8 @@ export class AppView {
       this.element("#job-title").textContent = transcriptionTitles[status]
     } else if (this.jobKind === "refinement") {
       this.element("#augment-job-title").textContent = refinementTitles[status]
+    } else if (this.jobKind === "driveImport") {
+      this.element("#job-title").textContent = driveImportTitles[status]
     }
   }
 
@@ -517,6 +544,7 @@ export class AppView {
       return [title, phase === undefined ? "전사 중" : `전사 중 · ${phase} 단계`]
     }
     if (this.jobBusy && this.jobKind === "refinement") return [title, "회의록 작성 중"]
+    if (this.jobBusy && this.jobKind === "driveImport") return [title, "Drive에서 녹음을 가져오는 중"]
     if (this.hasResult && !this.audioSinceResult) {
       if (this.minutesReady) return [title, "회의록 완료"]
       return [title, this.importedResult ? "전사문 가져옴 · 회의록 작성 대기" : "전사 완료 · 회의록 작성 대기"]
@@ -563,6 +591,10 @@ export class AppView {
       this.jobBusy || this.recordingActive
     this.element<HTMLButtonElement>("#output-button").disabled =
       this.jobBusy || this.recordingActive
+    // Same rule as the other ways to start: never over a running job or recording.
+    this.element<HTMLButtonElement>("#drive-import-button").hidden = !this.driveConnected
+    this.element<HTMLButtonElement>("#drive-import-button").disabled =
+      !this.driveConnected || this.jobBusy || this.recordingActive
     this.element<HTMLButtonElement>("#refine-button").disabled =
       !this.hasResult || !this.assistantKeyReady || this.jobBusy || this.recordingActive
     this.access.setSignOutBlocked(this.jobBusy || this.recordingActive)
@@ -608,6 +640,19 @@ const refinementTitles: JobTitles = {
   cancelled: "회의록 작성을 취소했습니다",
 }
 
+const driveImportTitles: JobTitles = {
+  idle: "Drive에서 녹음을 가져오고 있습니다",
+  running: "Drive에서 녹음을 가져오고 있습니다",
+  completed: "Drive에서 녹음을 가져왔습니다",
+  failed: "Drive에서 녹음을 가져오지 못했습니다",
+  cancelled: "Drive 가져오기를 취소했습니다",
+}
+
+/** Transcription and Drive import both run in the transcription panel's progress card. */
+function usesJobPanel(kind: BusyKind): boolean {
+  return kind === "transcription" || kind === "driveImport"
+}
+
 function setPrimary(button: HTMLElement, primary: boolean): void {
   button.classList.toggle("primary-button", primary)
   button.classList.toggle("secondary-button", !primary)
@@ -624,6 +669,7 @@ function meetingName(path: string): string {
 function busyLabel(kind: BusyKind): string {
   if (kind === "setup") return "로컬 환경 준비 중"
   if (kind === "transcription") return "회의 전사 중"
+  if (kind === "driveImport") return "Drive 가져오기"
   return kind === "refinement" ? "회의록 만드는 중" : ""
 }
 

@@ -56,6 +56,14 @@ function unavailableBackend(): BackendPort {
     signInToGateway: unavailable,
     cancelGatewaySignIn: unavailable,
     signOutOfGateway: unavailable,
+    loadDriveStatus: unavailable,
+    connectDrive: unavailable,
+    cancelDriveOperation: unavailable,
+    disconnectDrive: unavailable,
+    dismissDriveOnboarding: unavailable,
+    importFromDrive: unavailable,
+    syncMeetingToDrive: unavailable,
+    openDriveLink: unavailable,
   }
 }
 

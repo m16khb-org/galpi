@@ -59,6 +59,7 @@ pub async fn import_transcript(input: &Path, output_root: &Path) -> Result<Artif
         minutes: None,
         output_directory: directory,
         source_audio: None,
+        source_transcript: Some(input),
     })
 }
 

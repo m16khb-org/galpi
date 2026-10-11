@@ -9,6 +9,7 @@ pub struct Recorded {
     pub method: String,
     pub path: String,
     pub authorization: Option<String>,
+    pub content_type: Option<String>,
     pub body: String,
 }
 
@@ -16,6 +17,19 @@ impl Recorded {
     /// A form field of a urlencoded body.
     pub fn field(&self, name: &str) -> Option<String> {
         let url = reqwest::Url::parse(&format!("http://x/?{}", self.body)).ok()?;
+        url.query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+    }
+
+    /// The request path without its query.
+    pub fn route(&self) -> &str {
+        self.path.split('?').next().unwrap_or_default()
+    }
+
+    /// A decoded query parameter of the request target.
+    pub fn query(&self, name: &str) -> Option<String> {
+        let url = reqwest::Url::parse(&format!("http://x{}", self.path)).ok()?;
         url.query_pairs()
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.into_owned())
@@ -101,6 +115,11 @@ async fn serve(mut stream: TcpStream, handler: Handler, log: Arc<Mutex<Vec<Recor
             line.to_lowercase()
                 .starts_with("authorization:")
                 .then(|| line[14..].trim().to_owned())
+        }),
+        content_type: head.lines().find_map(|line| {
+            line.to_lowercase()
+                .starts_with("content-type:")
+                .then(|| line[13..].trim().to_owned())
         }),
         body: String::from_utf8_lossy(&buffer[head_end..head_end + length]).into_owned(),
     };

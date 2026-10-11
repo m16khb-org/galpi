@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -14,9 +14,14 @@ pub struct Artifacts {
     /// whose timestamp is the day the meeting happened rather than the day the
     /// transcript was written. An imported transcript has no audio.
     pub source_audio: Option<PathBuf>,
+    /// The transcript file an import copied from, when the meeting was imported.
+    ///
+    /// Together with `source_audio` it names the meeting's original file, which
+    /// stays the same however many output folders the meeting is written to.
+    pub source_transcript: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
     Srt,
@@ -86,6 +91,7 @@ mod tests {
             minutes: None,
             output_directory: PathBuf::from("/tmp/job"),
             source_audio: None,
+            source_transcript: Some(PathBuf::from("/tmp/notes.txt")),
         };
 
         // When / Then: only the transcript itself is addressable

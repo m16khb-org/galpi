@@ -182,12 +182,22 @@ pub async fn prepare_output_root(output_root: &Path) -> Result<PathBuf, AppError
 
 /// Sanitized meeting name shared by the meeting folder and every artifact in it.
 pub fn meeting_stem(input: &Path) -> String {
-    input
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .map(sanitize_name)
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "meeting".to_owned())
+    sanitized_stem(
+        input
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default(),
+    )
+}
+
+/// `stem` made safe for a file name, or `meeting` when nothing usable remains.
+pub fn sanitized_stem(stem: &str) -> String {
+    let name = sanitize_name(stem);
+    if name.is_empty() {
+        "meeting".to_owned()
+    } else {
+        name
+    }
 }
 
 /// Meeting folder rule: the folder is named after the recording, so a Galpi

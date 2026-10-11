@@ -108,6 +108,14 @@ function backendWith(overrides: Partial<BackendPort>): BackendPort {
     signInToGateway: unused,
     cancelGatewaySignIn: async () => undefined,
     signOutOfGateway: async () => undefined,
+    loadDriveStatus: unused,
+    connectDrive: unused,
+    cancelDriveOperation: unused,
+    disconnectDrive: unused,
+    dismissDriveOnboarding: unused,
+    importFromDrive: unused,
+    syncMeetingToDrive: unused,
+    openDriveLink: unused,
     ...overrides,
   }
 }

@@ -9,6 +9,7 @@ use crate::domain::artifact::ArtifactKind;
 use crate::domain::chatgpt::{
     ChatGptModel, ChatGptPreferences, ChatGptSettings, ChatGptSignInEvent, SignOutResult,
 };
+use crate::domain::drive::{DriveImport, DriveStatus, DriveSyncResult};
 use crate::domain::engine::{ComputeDevice, EnginePreset};
 use crate::domain::gateway::AppAccess;
 use crate::domain::job::{SetupRequest, TranscriptImportRequest, TranscriptionRequest};
@@ -234,6 +235,59 @@ pub async fn cancel_gateway_sign_in(application: State<'_, Application>) -> Resu
 #[tauri::command]
 pub async fn sign_out_of_gateway(application: State<'_, Application>) -> Result<(), AppError> {
     application.sign_out_of_gateway().await
+}
+
+/// Whether Drive is connected and, if not, whether the onboarding card was dismissed.
+#[tauri::command]
+pub async fn load_drive_status(
+    application: State<'_, Application>,
+) -> Result<DriveStatus, AppError> {
+    application.load_drive_status().await
+}
+
+/// Opens the system browser for the `drive.file` consent and resolves once
+/// the connection is stored, fails, is cancelled, or times out.
+#[tauri::command]
+pub async fn connect_drive(application: State<'_, Application>) -> Result<DriveStatus, AppError> {
+    application.connect_drive().await
+}
+
+#[tauri::command]
+pub async fn cancel_drive_operation(application: State<'_, Application>) -> Result<(), AppError> {
+    application.cancel_drive_operation()
+}
+
+#[tauri::command]
+pub async fn disconnect_drive(
+    application: State<'_, Application>,
+) -> Result<DriveStatus, AppError> {
+    application.disconnect_drive().await
+}
+
+#[tauri::command]
+pub async fn dismiss_drive_onboarding(
+    application: State<'_, Application>,
+) -> Result<DriveStatus, AppError> {
+    application.dismiss_drive_onboarding().await
+}
+
+/// Opens the desktop Picker and resolves once the chosen recording is on disk.
+/// `cancel_job` with the same id stops the wait or the download.
+#[tauri::command]
+pub async fn import_from_drive(
+    application: State<'_, Application>,
+    job_id: Uuid,
+) -> Result<DriveImport, AppError> {
+    application.import_from_drive(job_id).await
+}
+
+#[tauri::command]
+pub async fn sync_meeting_to_drive(
+    application: State<'_, Application>,
+    job_id: Uuid,
+    overwrite: bool,
+) -> Result<DriveSyncResult, AppError> {
+    application.sync_meeting_to_drive(job_id, overwrite).await
 }
 
 #[derive(Debug, Clone)]

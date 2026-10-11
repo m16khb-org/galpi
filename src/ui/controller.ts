@@ -10,26 +10,38 @@ import {
 import {
   type ArtifactKind,
   type BackendPort,
+  errorCode,
   errorDetail,
   errorMessage,
 } from "../domain/backend"
 import type { ComputeDevice, EnginePreset, ImportedTranscript, TranscriptionResult } from "../domain/job"
 import { buildSpeakerHint, type SpeakerHint } from "../domain/speaker"
 import { AccessController } from "./access-controller"
-import type { AppView } from "./app-view"
+import type { AppView, BusyKind } from "./app-view"
 import { ChatGptController } from "./chatgpt-controller"
+import { DriveController } from "./drive-controller"
 import { RecordingController } from "./recording-controller"
+
+/**
+ * The audio a transcription starts from. Replaced as a whole whenever the
+ * audio changes, so a Drive id never outlives the file it came with.
+ */
+interface AudioSelection {
+  readonly path: string
+  readonly driveSourceId: string | null
+}
 
 export class AppController {
   private readonly backend: BackendPort
   private readonly view: AppView
-  private audioPath: string | null = null
+  private audio: AudioSelection | null = null
   private outputRoot: string | null = null
   private job: JobViewState = initialJobState
   private lastResult: TranscriptionResult | ImportedTranscript | null = null
   private readonly recording: RecordingController
   private readonly chatgpt: ChatGptController
   private readonly access: AccessController
+  private readonly drive: DriveController
   private unlisten: (() => void) | null = null
   private unlistenRecording: (() => void) | null = null
   private settingsSavePending = false
@@ -39,7 +51,7 @@ export class AppController {
     this.backend = backend
     this.view = view
     this.recording = new RecordingController(backend, view, (path) => {
-      this.audioPath = path
+      this.audio = { path, driveSourceId: null }
       this.view.setAudio(path)
     })
     this.chatgpt = new ChatGptController(backend, view, () => this.requestSettingsSave())
@@ -47,8 +59,34 @@ export class AppController {
       backend,
       view.access,
       () => this.loadWorkspace(),
-      () => this.view.tokenSettings.close(),
+      () => {
+        this.view.tokenSettings.close()
+        this.drive.reset()
+      },
     )
+    this.drive = new DriveController(backend, view, {
+      onImportStarted: (jobId) =>
+        this.begin("driveImport", "Drive에서 녹음을 고르고 내려받는 중입니다.", jobId),
+      onImported: (imported) => {
+        this.audio = { path: imported.inputPath, driveSourceId: imported.driveFileId }
+        // Not a transcription result: the job simply ends and the audio is chosen.
+        this.job = initialJobState
+        this.view.setAudio(imported.inputPath)
+        this.view.renderDriveImported(imported.name)
+      },
+      onImportFailed: (error) => {
+        // Declining consent or closing the Picker is a user decision, not a failure.
+        if (errorCode(error) === "CANCELLED" && this.job.status !== "cancelled") {
+          this.job = cancelJob(this.job, errorMessage(error))
+          this.view.renderJob(this.job)
+          return
+        }
+        this.handleFailure(error)
+      },
+      onImportFinished: () => this.view.setBusy(null),
+      onSessionExpired: () => this.access.expire(),
+      onError: (message) => this.view.showError(message),
+    })
   }
 
   async start(): Promise<void> {
@@ -95,6 +133,8 @@ export class AppController {
     } catch (error) {
       this.view.showError(errorMessage(error))
     }
+    // Separate from the rest: Drive is optional and handles its own failure.
+    await this.drive.load()
   }
 
   stop(): void {
@@ -146,6 +186,13 @@ export class AppController {
     this.view.on("open-txt", () => void this.openArtifact("speaker_text"))
     this.view.on("open-checkpoint", () => void this.openArtifact("checkpoint"))
     this.view.on("reveal-output", () => void this.revealOutput())
+    this.view.on("connect-drive", () => void this.drive.connect())
+    this.view.on("cancel-drive-operation", () => void this.drive.cancel())
+    this.view.on("disconnect-drive", () => void this.drive.disconnect())
+    this.view.on("dismiss-drive-onboarding", () => void this.drive.dismiss())
+    this.view.on("import-from-drive", () => void this.drive.importFromDrive())
+    this.view.on("overwrite-drive", () => void this.drive.overwrite())
+    this.view.on("open-drive-folder", () => void this.drive.openFolder())
     this.view.onSpeakerMode((mode) => this.view.setSpeakerMode(mode))
   }
 
@@ -322,7 +369,7 @@ export class AppController {
     try {
       const selected = await this.backend.chooseAudio()
       if (selected !== null) {
-        this.audioPath = selected
+        this.audio = { path: selected, driveSourceId: null }
         this.view.setAudio(selected)
         this.view.clearError()
       }
@@ -353,6 +400,8 @@ export class AppController {
       this.lastResult = imported
       this.view.setTranscript(selected)
       this.view.renderImportedTranscript(imported)
+      this.drive.clearSync()
+      this.drive.syncAfter(imported.jobId)
     } catch (error) {
       this.view.showError(errorMessage(error))
     }
@@ -371,7 +420,8 @@ export class AppController {
   }
 
   private async transcribe(): Promise<void> {
-    if (this.audioPath === null) {
+    const audio = this.audio
+    if (audio === null) {
       this.view.showError("먼저 전사할 오디오 파일을 선택해 주세요.")
       return
     }
@@ -393,14 +443,16 @@ export class AppController {
     try {
       const result = await this.backend.transcribe({
         jobId,
-        inputPath: this.audioPath,
+        inputPath: audio.path,
         outputRoot: this.outputRoot,
         speakerHint,
+        ...(audio.driveSourceId === null ? {} : { driveSourceId: audio.driveSourceId }),
       })
       this.lastResult = result
       this.job = completeJob(this.job, result)
       this.view.renderJob(this.job)
       this.view.renderResult(result)
+      this.drive.syncAfter(result.jobId)
     } catch (error) {
       this.handleFailure(error)
     } finally {
@@ -446,6 +498,8 @@ export class AppController {
       }
       this.view.renderJob(this.job)
       this.view.renderMinutes(refined.minutes)
+      // The minutes belong to the meeting the refinement targeted.
+      this.drive.syncAfter(result.jobId)
     } catch (error) {
       this.handleFailure(error)
     } finally {
@@ -474,15 +528,19 @@ export class AppController {
   }
 
   private begin(
-    kind: "setup" | "transcription" | "refinement",
+    kind: Exclude<BusyKind, null>,
     message: string,
     jobId: string | null = null,
   ): void {
     this.view.clearError()
     this.chatgpt.clearLimitHint()
+    // A new recording or transcription is a new meeting; the old sync row goes.
+    if (kind === "transcription" || kind === "driveImport") this.drive.clearSync()
     this.job = beginJob(message, jobId)
-    this.view.renderJob(this.job)
+    // The kind first: the card's title and visibility follow the job that is
+    // starting, not the one that ran before it.
     this.view.setBusy(kind)
+    this.view.renderJob(this.job)
   }
 
   private handleFailure(error: unknown): void {

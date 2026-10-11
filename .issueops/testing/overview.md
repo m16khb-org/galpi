@@ -45,6 +45,20 @@ Manual Windows gates (not automated):
 - Save the Hugging Face token and assistant API key, restart the app, and
   confirm they persist (Windows Credential Manager entries
   `com.m16khb.galpi:hugging-face-token` / `:assistant-api-key`).
+- Connect Google Drive, restart the app, and confirm the connection persists
+  (Windows Credential Manager entry `com.m16khb.galpi:drive-session`).
+
+Google Drive checks:
+
+- Adapter contracts (consent URL, gateway-brokered exchange, Drive v3 REST,
+  streamed download) run against `browser_sign_in/fake_server.rs` in
+  `cargo test --lib adapters::outbound::drive`; use cases run against the
+  in-memory Drive in `application/tests/drive.rs`. Neither touches the network.
+- A live check needs auth-gateway `POST /drive/native/token` deployed (without a
+  bearer it answers 401 `missing bearer token`; an undeployed route answers 404)
+  and drives the real consent and Picker in the default browser. Record it under
+  `.issueops/evidence/` like `task-12-drive-smoke.md`; never commit the harness,
+  tokens, or the client secret.
 
 Benchmarks (no network, no ML stack; not part of CI or `check:all`):
 

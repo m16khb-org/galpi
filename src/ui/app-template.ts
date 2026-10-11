@@ -43,6 +43,7 @@ export const appTemplate = `
         <div><span class="eyebrow">LOCAL AUDIO WORKSPACE</span><h1 id="task-title">새 회의 전사</h1><p id="task-status" class="task-status">로컬 환경을 확인하는 중입니다.</p></div>
         <div class="topbar-actions">
           <div id="account-chip" class="engine-chip account-chip" hidden><span id="account-email" data-state="ready">Google 계정</span><small id="account-mode">온라인</small></div>
+          <div id="drive-chip" class="engine-chip drive-chip" hidden><span id="drive-email" data-state="ready">Google Drive</span><small>Drive 연결됨</small></div>
           <button id="sign-out-button" class="sign-out-button ${secondary}" type="button" data-action="sign-out-gateway" hidden>로그아웃</button>
           <div class="engine-chip"><span id="setup-state" data-state="pending">확인 중</span><small id="engine-version">확인 중</small></div>
           <button class="settings-button ${iconOutline}" type="button" data-action="open-settings" aria-label="설정 열기"><i class="ph ph-gear" aria-hidden="true"></i></button>
@@ -89,6 +90,19 @@ export const appTemplate = `
           </div>
         </section>
 
+        <section id="drive-onboarding" class="panel drive-onboarding" aria-labelledby="drive-onboarding-title" hidden>
+          <div class="section-heading">
+            <div><span class="section-index">선택 / Google Drive</span><h2 id="drive-onboarding-title">Google Drive 연결</h2></div>
+            <p>Drive에 있는 녹음을 가져오고 전사 결과를 내 Drive의 Galpi 폴더에 자동으로 올립니다. Galpi는 직접 만든 파일과 직접 고른 파일에만 접근합니다.</p>
+          </div>
+          <p id="drive-onboarding-status" class="drive-status" role="status" aria-live="polite" data-state="pending"></p>
+          <div class="panel-actions">
+            <button id="drive-connect-button" class="primary-button ${primary}" type="button" data-action="connect-drive"><i class="ph ph-cloud" aria-hidden="true"></i><span>Drive 연결</span></button>
+            <button id="drive-onboarding-cancel-button" class="secondary-button ${secondary}" type="button" data-action="cancel-drive-operation" hidden>취소</button>
+            <button id="drive-dismiss-button" class="${ghost}" type="button" data-action="dismiss-drive-onboarding">나중에</button>
+          </div>
+        </section>
+
         <section id="transcription-panel" class="panel transcription-panel" aria-labelledby="transcription-title">
           <div class="section-heading">
             <div><span id="transcription-index" class="section-index">01 / 녹음·파일</span><h2 id="transcription-title">새 회의 전사</h2></div>
@@ -114,6 +128,11 @@ export const appTemplate = `
               <button id="audio-selection" class="file-picker" type="button" data-action="choose-audio" data-selected="false">
                 <span class="file-icon"><i class="ph ph-music-notes" aria-hidden="true"></i></span>
                 <span><strong>오디오 파일 선택</strong><small id="audio-path">m4a, mp3, wav, mp4, mov, flac</small></span>
+                <i class="ph ph-caret-right" aria-hidden="true"></i>
+              </button>
+              <button id="drive-import-button" class="file-picker drive-import" type="button" data-action="import-from-drive" hidden>
+                <span class="file-icon"><i class="ph ph-cloud-arrow-down" aria-hidden="true"></i></span>
+                <span><strong>Drive에서 가져오기</strong><small>Google Drive에서 녹음 파일을 고릅니다</small></span>
                 <i class="ph ph-caret-right" aria-hidden="true"></i>
               </button>
               <div class="field-block">
@@ -171,6 +190,14 @@ export const appTemplate = `
             <div id="result-srt-row" class="artifact-row"><i class="ph ph-subtitles" aria-hidden="true"></i><div><strong>자막 파일</strong><code id="result-srt"></code></div><button class="${ghost}" type="button" data-action="open-srt" aria-label="자막 파일 열기">열기</button></div>
             <div class="artifact-row"><i class="ph ph-users-three" aria-hidden="true"></i><div><strong>화자별 텍스트</strong><code id="result-txt"></code></div><button class="${ghost}" type="button" data-action="open-txt" aria-label="화자별 텍스트 열기">열기</button></div>
             <div id="result-checkpoint-row" class="artifact-row"><i class="ph ph-database" aria-hidden="true"></i><div><strong>정렬 체크포인트</strong><code id="result-checkpoint"></code></div><button class="${ghost}" type="button" data-action="open-checkpoint" aria-label="정렬 체크포인트 열기">열기</button></div>
+          </div>
+          <div id="drive-sync-row" class="drive-sync" hidden>
+            <p id="drive-sync-status" class="drive-status" role="status" aria-live="polite" data-state="pending"></p>
+            <ul id="drive-sync-files" class="drive-sync-files"></ul>
+            <div class="drive-sync-actions">
+              <button id="drive-open-folder-button" class="${ghost}" type="button" data-action="open-drive-folder" hidden><i class="ph ph-arrow-up-right" aria-hidden="true"></i> Drive 폴더 열기</button>
+              <button id="drive-overwrite-button" class="secondary-button danger ${secondary}" type="button" data-action="overwrite-drive" hidden>Drive 버전 덮어쓰기</button>
+            </div>
           </div>
           <div class="panel-actions">
             <button class="secondary-button ${secondary}" type="button" data-action="reveal-output"><i class="ph ph-folder-open" aria-hidden="true"></i>출력 폴더 열기</button>
@@ -356,6 +383,19 @@ export const appTemplate = `
           <label class="settings-field-label" for="settings-assistant-background">사전 정보</label>
           <textarea id="settings-assistant-background" class="settings-textarea" rows="8" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="settings-background-help" placeholder="제품/서비스: 갈피 (회의 녹음·전사 데스크톱 앱)&#10;팀: 하빈(팀리더), 지우(백엔드)&#10;별칭: 프로님 = 하빈&#10;도메인 용어: 화자분리, 정렬 체크포인트"></textarea>
           <p id="settings-background-help">참석자·제품명·약어·도메인 용어를 적어 두면 잘못 들린 단어와 화자를 보정합니다. 이 컴퓨터에만 저장되고 회의록을 만들 때 함께 전송됩니다.</p>
+        </section>
+        <section id="drive-settings" class="settings-section" aria-labelledby="drive-settings-title">
+          <div class="settings-section-heading">
+            <div><strong id="drive-settings-title">Google Drive</strong><span id="drive-settings-state">확인 중</span></div>
+            <p>Drive에서 녹음을 가져오고 전사 결과를 내 Drive의 Galpi 폴더에 자동으로 올립니다. Galpi는 직접 만든 파일과 직접 고른 파일에만 접근합니다(drive.file).</p>
+          </div>
+          <p id="drive-settings-account" class="drive-status" role="status" aria-live="polite" data-state="pending">Drive 연결 상태를 확인하는 중입니다.</p>
+          <div class="chatgpt-actions">
+            <button id="drive-settings-connect-button" class="primary-button ${primary}" type="button" data-action="connect-drive" hidden>Drive 연결</button>
+            <button id="drive-settings-cancel-button" class="secondary-button ${secondary}" type="button" data-action="cancel-drive-operation" hidden>취소</button>
+            <button id="drive-disconnect-button" class="secondary-button danger ${secondary}" type="button" data-action="disconnect-drive" hidden>연결 해제</button>
+          </div>
+          <p id="drive-settings-help">연결을 해제해도 Drive에 올린 파일은 지워지지 않습니다.</p>
         </section>
         <div class="settings-actions">
           <button class="secondary-button danger ${secondary}" type="button" data-action="clear-token">Hugging Face 토큰 지우기</button>

@@ -1,4 +1,5 @@
 pub mod chatgpt;
+pub mod drive;
 pub mod error;
 pub mod gateway;
 pub mod jobs;

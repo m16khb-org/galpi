@@ -1,6 +1,6 @@
 use super::{FakePort, TranscriptionBehavior, request};
 use crate::application::error::AppError;
-use crate::application::ports::{GatewayAuthPort, GatewaySessionStore};
+use crate::application::ports::{ClockPort, GatewayAuthPort, GatewaySessionStore};
 use crate::application::use_cases::Application;
 use crate::domain::gateway::{AppAccess, GatewayGrant, GatewayRefreshFailure, GatewayTokens};
 use crate::domain::job::{SetupRequest, SpeakerHint, TranscriptImportRequest};
@@ -53,14 +53,14 @@ impl GatewayFake {
         lock(&self.calls)
     }
 
-    fn seed(&self, tokens: GatewayTokens, email: Option<&str>) -> Result<(), AppError> {
+    pub(super) fn seed(&self, tokens: GatewayTokens, email: Option<&str>) -> Result<(), AppError> {
         let mut stored = self.stored()?;
         stored.tokens = Some(tokens);
         stored.email = email.map(str::to_owned);
         Ok(())
     }
 
-    fn script_refresh(
+    pub(super) fn script_refresh(
         &self,
         result: Result<GatewayTokens, GatewayRefreshFailure>,
     ) -> Result<(), AppError> {
@@ -71,6 +71,10 @@ impl GatewayFake {
     fn script_sign_in(&self, result: Result<GatewayGrant, AppError>) -> Result<(), AppError> {
         *lock(&self.sign_in_result)? = Some(result);
         Ok(())
+    }
+
+    pub(super) fn stored_tokens(&self) -> Result<Option<GatewayTokens>, AppError> {
+        Ok(self.stored()?.tokens.clone())
     }
 }
 
@@ -151,6 +155,21 @@ fn tokens(refresh: &str) -> GatewayTokens {
         access_token: format!("galpi-test-access-{refresh}"),
         refresh_token: format!("galpi-test-refresh-{refresh}"),
         expires_at: 3_600,
+    }
+}
+
+/// Tokens that expire `seconds_left` after the fake clock's now.
+pub(super) fn tokens_expiring(port: &FakePort, refresh: &str, seconds_left: u64) -> GatewayTokens {
+    GatewayTokens {
+        expires_at: port.now_unix() + seconds_left,
+        ..tokens(refresh)
+    }
+}
+
+fn signed_in() -> AppAccess {
+    AppAccess::SignedIn {
+        email: None,
+        offline: false,
     }
 }
 
@@ -479,5 +498,102 @@ async fn gateway_cancelled_sign_in_keeps_the_stored_session() -> Result<(), AppE
         Some("user@example.com")
     );
     app.transcribe(request(SpeakerHint::Auto)).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_bearer_reuses_a_token_that_is_not_about_to_expire() -> Result<(), AppError> {
+    // Given
+    let port = port();
+    port.gateway
+        .seed(tokens_expiring(&port, "old", 3_600), None)?;
+    let gate = port.gate(signed_in());
+
+    // When
+    let bearer = gate.bearer().await?;
+
+    // Then
+    assert_eq!(bearer, "galpi-test-access-old");
+    assert_eq!(port.gateway.calls()?.refresh_tokens, Vec::<String>::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_bearer_renews_within_a_minute_of_expiry_and_stores_the_rotation()
+-> Result<(), AppError> {
+    // Given: a token with thirty seconds left
+    let port = port();
+    port.gateway.seed(tokens_expiring(&port, "old", 30), None)?;
+    let rotated = tokens_expiring(&port, "rotated", 3_600);
+    port.gateway.script_refresh(Ok(rotated.clone()))?;
+    let gate = port.gate(signed_in());
+
+    // When
+    let bearer = gate.bearer().await?;
+
+    // Then
+    assert_eq!(bearer, "galpi-test-access-rotated");
+    assert_eq!(
+        port.gateway.calls()?.refresh_tokens,
+        ["galpi-test-refresh-old"]
+    );
+    assert_eq!(port.gateway.stored()?.tokens, Some(rotated));
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_bearer_refusal_forgets_the_session_and_closes_the_app() -> Result<(), AppError> {
+    // Given
+    let port = port();
+    port.gateway.seed(tokens_expiring(&port, "old", 0), None)?;
+    port.gateway
+        .script_refresh(Err(GatewayRefreshFailure::Rejected))?;
+    let gate = port.gate(signed_in());
+
+    // When
+    let error = failure(gate.bearer().await)?;
+
+    // Then
+    assert_eq!(error.code, "AUTH_REQUIRED");
+    assert_eq!(port.gateway.stored()?.tokens, None);
+    assert_eq!(
+        gate.require().err().map(|error| error.code).as_deref(),
+        Some("AUTH_REQUIRED")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_bearer_unreachable_keeps_the_session_and_the_app_open() -> Result<(), AppError> {
+    // Given
+    let port = port();
+    let stored = tokens_expiring(&port, "old", 0);
+    port.gateway.seed(stored.clone(), None)?;
+    port.gateway
+        .script_refresh(Err(GatewayRefreshFailure::Unavailable))?;
+    let gate = port.gate(signed_in());
+
+    // When
+    let error = failure(gate.bearer().await)?;
+
+    // Then
+    assert_eq!(error.code, "GATEWAY_UNAVAILABLE");
+    assert_eq!(port.gateway.stored()?.tokens, Some(stored));
+    gate.require()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_bearer_without_a_stored_session_requires_sign_in() -> Result<(), AppError> {
+    // Given: an open gate whose session is gone from the store
+    let port = port();
+    let gate = port.gate(signed_in());
+
+    // When
+    let error = failure(gate.bearer().await)?;
+
+    // Then
+    assert_eq!(error.code, "AUTH_REQUIRED");
+    assert_eq!(port.gateway.calls()?.refresh_tokens, Vec::<String>::new());
     Ok(())
 }

@@ -2,6 +2,7 @@ use crate::adapters::inbound::tauri::TauriEvents;
 use crate::adapters::outbound::browser_sign_in::TauriBrowser;
 use crate::adapters::outbound::chatgpt::{ChatGptOAuthAdapter, SystemClock};
 use crate::adapters::outbound::desktop::DesktopAdapter;
+use crate::adapters::outbound::drive::{DriveOAuthAdapter, DriveRestAdapter};
 use crate::adapters::outbound::gateway::GatewayOAuthAdapter;
 use crate::adapters::outbound::recording::NativeRecorder;
 #[cfg(windows)]
@@ -11,11 +12,13 @@ use crate::adapters::outbound::secrets::SecretStore;
 use crate::adapters::outbound::secrets::SettingsFile;
 use crate::adapters::outbound::settings::LocalSettingsStore;
 use crate::application::chatgpt::ChatGptAccounts;
+use crate::application::drive::DriveAccounts;
 use crate::application::gateway::AppAccessGate;
 use crate::application::ports::{
-    ArtifactPort, ChatGptAuthPort, ChatGptEvents, ChatGptStore, ClockPort, EnginePort,
-    GatewayAuthPort, GatewaySessionStore, JobEvents, RecordingEvents, RecordingPort,
-    RefinementPort, SettingsPort, TranscriptImportPort, TranscriptionPort,
+    ArtifactPort, ChatGptAuthPort, ChatGptEvents, ChatGptStore, ClockPort, DriveAuthPort,
+    DriveFilesPort, DriveSessionStore, EnginePort, GatewayAuthPort, GatewaySessionStore, JobEvents,
+    RecordingEvents, RecordingPort, RefinementPort, SettingsPort, TranscriptImportPort,
+    TranscriptionPort,
 };
 use crate::application::use_cases::Application;
 use std::sync::Arc;
@@ -48,7 +51,8 @@ pub fn run() {
             let local_settings = Arc::new(LocalSettingsStore::new(app.handle(), secrets)?);
             let settings: Arc<dyn SettingsPort> = local_settings.clone();
             let chatgpt_store: Arc<dyn ChatGptStore> = local_settings.clone();
-            let gateway_store: Arc<dyn GatewaySessionStore> = local_settings;
+            let gateway_store: Arc<dyn GatewaySessionStore> = local_settings.clone();
+            let drive_store: Arc<dyn DriveSessionStore> = local_settings;
             let clock: Arc<dyn ClockPort> = Arc::new(SystemClock);
             let browser = Arc::new(TauriBrowser::new(app.handle().clone()));
             let chatgpt_auth: Arc<dyn ChatGptAuthPort> = Arc::new(ChatGptOAuthAdapter::new(
@@ -57,7 +61,15 @@ pub fn run() {
                 clock.clone(),
             )?);
             let gateway_auth: Arc<dyn GatewayAuthPort> =
-                Arc::new(GatewayOAuthAdapter::new(browser, clock.clone())?);
+                Arc::new(GatewayOAuthAdapter::new(browser.clone(), clock.clone())?);
+            let drive_auth: Arc<dyn DriveAuthPort> =
+                Arc::new(DriveOAuthAdapter::new(browser, clock.clone())?);
+            let drive_rest = DriveRestAdapter::new(app.handle())?;
+            // Downloads from an earlier run are never needed again.
+            if let Err(error) = drive_rest.clear_imports() {
+                eprintln!("failed to clear Drive imports: {error}");
+            }
+            let drive_files: Arc<dyn DriveFilesPort> = Arc::new(drive_rest);
             app.manage(Application::new(
                 engine,
                 transcription,
@@ -66,8 +78,9 @@ pub fn run() {
                 recording,
                 settings,
                 refinement,
-                ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock),
-                AppAccessGate::new(gateway_auth, gateway_store),
+                ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock.clone()),
+                AppAccessGate::new(gateway_auth, gateway_store, clock.clone()),
+                DriveAccounts::new(drive_auth, drive_files, drive_store, clock),
             ));
             Ok(())
         })
@@ -100,6 +113,13 @@ pub fn run() {
             crate::adapters::inbound::tauri::sign_in_to_gateway,
             crate::adapters::inbound::tauri::cancel_gateway_sign_in,
             crate::adapters::inbound::tauri::sign_out_of_gateway,
+            crate::adapters::inbound::tauri::load_drive_status,
+            crate::adapters::inbound::tauri::connect_drive,
+            crate::adapters::inbound::tauri::cancel_drive_operation,
+            crate::adapters::inbound::tauri::disconnect_drive,
+            crate::adapters::inbound::tauri::dismiss_drive_onboarding,
+            crate::adapters::inbound::tauri::import_from_drive,
+            crate::adapters::inbound::tauri::sync_meeting_to_drive,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| {

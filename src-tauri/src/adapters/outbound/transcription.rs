@@ -178,6 +178,7 @@ async fn validate_artifacts(
         minutes: None,
         output_directory: root,
         source_audio: Some(source_audio.to_path_buf()),
+        source_transcript: None,
     })
 }
 

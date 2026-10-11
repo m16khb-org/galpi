@@ -1,11 +1,12 @@
 use super::chatgpt::ChatGptAccounts;
+use super::drive::DriveAccounts;
 use super::error::AppError;
 use super::gateway::AppAccessGate;
 use super::model::{CompletedTranscription, EnvironmentStatus};
 use super::ports::{
-    ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, EnginePort, GatewayAuthPort,
-    GatewaySessionStore, RecordingPort, RefinementJob, RefinementPort, SettingsPort,
-    TranscriptImportPort, TranscriptionPort,
+    ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, DriveAuthPort, DriveFilesPort,
+    DriveSessionStore, EnginePort, GatewayAuthPort, GatewaySessionStore, RecordingPort,
+    RefinementJob, RefinementPort, SettingsPort, TranscriptImportPort, TranscriptionPort,
 };
 use super::use_cases::Application;
 use crate::domain::artifact::{ArtifactKind, Artifacts};
@@ -78,6 +79,7 @@ struct FakePort {
     behavior: TranscriptionBehavior,
     chatgpt: chatgpt::ChatGptFake,
     gateway: gateway::GatewayFake,
+    drive: drive::DriveFake,
 }
 
 impl FakePort {
@@ -99,6 +101,7 @@ impl FakePort {
             ready_presets: Mutex::new(vec![EnginePreset::Qwen3, EnginePreset::WhisperX]),
             chatgpt: chatgpt::ChatGptFake::new(),
             gateway: gateway::GatewayFake::default(),
+            drive: drive::DriveFake::default(),
             behavior,
         }
     }
@@ -127,12 +130,10 @@ impl FakePort {
         let chatgpt_auth: Arc<dyn ChatGptAuthPort> = self.clone();
         let chatgpt_store: Arc<dyn ChatGptStore> = self.clone();
         let clock: Arc<dyn ClockPort> = self.clone();
-        let gateway_auth: Arc<dyn GatewayAuthPort> = self.clone();
-        let gateway_store: Arc<dyn GatewaySessionStore> = self.clone();
-        let gate = AppAccessGate::new(gateway_auth, gateway_store);
-        if let Ok(mut opened) = gate.access.lock() {
-            *opened = access;
-        }
+        let drive_auth: Arc<dyn DriveAuthPort> = self.clone();
+        let drive_files: Arc<dyn DriveFilesPort> = self.clone();
+        let drive_store: Arc<dyn DriveSessionStore> = self.clone();
+        let gate = self.gate(access);
         Application::new(
             engine,
             transcription,
@@ -141,9 +142,22 @@ impl FakePort {
             recording,
             settings,
             refinement,
-            ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock),
+            ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock.clone()),
             gate,
+            DriveAccounts::new(drive_auth, drive_files, drive_store, clock),
         )
+    }
+
+    /// The sign-in gate over this port's gateway fakes and clock, opened as given.
+    fn gate(self: &Arc<Self>, access: AppAccess) -> AppAccessGate {
+        let gateway_auth: Arc<dyn GatewayAuthPort> = self.clone();
+        let gateway_store: Arc<dyn GatewaySessionStore> = self.clone();
+        let clock: Arc<dyn ClockPort> = self.clone();
+        let gate = AppAccessGate::new(gateway_auth, gateway_store, clock);
+        if let Ok(mut opened) = gate.access.lock() {
+            *opened = access;
+        }
+        gate
     }
 }
 
@@ -325,15 +339,21 @@ impl TranscriptionPort for FakePort {
         input: &Path,
         output_root: &Path,
     ) -> Result<(PathBuf, PathBuf), AppError> {
-        self.prepare_calls.fetch_add(1, Ordering::SeqCst);
-        Ok((input.to_owned(), output_root.join("job")))
+        // Like the real meeting folder rule: a second run gets `job 2`, `job 3`, …
+        let run = self.prepare_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        let folder = if run == 1 {
+            "job".to_owned()
+        } else {
+            format!("job {run}")
+        };
+        Ok((input.to_owned(), output_root.join(folder)))
     }
 
     async fn transcribe(
         &self,
         job_id: Uuid,
         cancel: &mut oneshot::Receiver<()>,
-        _input: &Path,
+        input: &Path,
         output: &Path,
         _hint: &SpeakerHint,
         engine: EnginePreset,
@@ -350,7 +370,7 @@ impl TranscriptionPort for FakePort {
                 .push(context.to_owned());
         }
         match &self.behavior {
-            TranscriptionBehavior::Success => Ok(completion(output)),
+            TranscriptionBehavior::Success => Ok(completion(input, output)),
             TranscriptionBehavior::Failure => {
                 Err(AppError::new("TRANSCRIBE_FAILED", "expected test failure"))
             }
@@ -402,6 +422,7 @@ impl TranscriptImportPort for FakePort {
             minutes: None,
             output_directory: input.parent().unwrap_or(Path::new("/tmp")).to_owned(),
             source_audio: None,
+            source_transcript: Some(input.to_owned()),
         })
     }
 }
@@ -690,10 +711,11 @@ fn request(speaker_hint: SpeakerHint) -> TranscriptionRequest {
         input_path: "/tmp/input.m4a".to_owned(),
         output_root: "/tmp/output".to_owned(),
         speaker_hint,
+        drive_source_id: None,
     }
 }
 
-fn completion(output: &Path) -> CompletedTranscription {
+fn completion(input: &Path, output: &Path) -> CompletedTranscription {
     CompletedTranscription {
         artifacts: Artifacts {
             srt: Some(output.join("meeting.srt")),
@@ -701,7 +723,8 @@ fn completion(output: &Path) -> CompletedTranscription {
             checkpoint: Some(output.join("meeting.aligned.v2.json")),
             minutes: None,
             output_directory: output.to_owned(),
-            source_audio: Some(output.join("meeting.wav")),
+            source_audio: Some(input.to_owned()),
+            source_transcript: None,
         },
         segments: 8,
         filtered: 1,
@@ -877,5 +900,6 @@ async fn save_compute_device_is_delegated_to_the_settings_port() -> Result<(), A
 }
 
 mod chatgpt;
+mod drive;
 mod gateway;
 mod recording;

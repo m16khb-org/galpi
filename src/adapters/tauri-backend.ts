@@ -32,6 +32,7 @@ import type {
   ChatGptSignInPhase,
   ChatGptSignOutResult,
 } from "../domain/chatgpt"
+import type { DriveImport, DriveStatus, DriveSyncResult } from "../domain/drive"
 
 const enginePresetSchema = z.enum(["qwen3", "whisperx"])
 const computeDeviceSchema = z.enum(["cpu", "cuda"])
@@ -129,6 +130,43 @@ export const appAccessSchema = z.discriminatedUnion("state", [
     offline: z.boolean(),
   }),
 ])
+
+// Strict like the sign-in schemas: no Drive token may ever reach the window.
+export const driveStatusSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("disconnected"), onboardingDismissed: z.boolean() }),
+  z.strictObject({ state: z.literal("connected"), email: z.string() }),
+])
+
+export const driveImportSchema = z.strictObject({
+  jobId: z.string(),
+  inputPath: z.string(),
+  driveFileId: z.string(),
+  name: z.string(),
+})
+
+const artifactKindSchema = z.enum(["srt", "speaker_text", "checkpoint", "minutes"])
+
+export const driveSyncResultSchema = z.strictObject({
+  folderLink: z.string().nullable(),
+  files: z.array(
+    z.discriminatedUnion("state", [
+      z.strictObject({
+        kind: artifactKindSchema,
+        state: z.literal("failed"),
+        message: z.string(),
+        webViewLink: z.string().nullable(),
+      }),
+      z.strictObject({
+        kind: artifactKindSchema,
+        state: z.enum(["uploaded", "updated", "unchanged", "conflict"]),
+        webViewLink: z.string().nullable(),
+      }),
+    ]),
+  ),
+})
+
+/** Only Drive pages may be opened from a sync result. */
+const DRIVE_LINK_PREFIX = "https://drive.google.com/"
 
 const transcriptImportSchema = z.object({
   jobId: z.string(),
@@ -376,6 +414,43 @@ export class TauriBackend implements BackendPort {
 
   async signOutOfGateway(): Promise<void> {
     await invoke("sign_out_of_gateway")
+  }
+
+  async loadDriveStatus(): Promise<DriveStatus> {
+    return driveStatusSchema.parse(await invoke<unknown>("load_drive_status"))
+  }
+
+  async connectDrive(): Promise<DriveStatus> {
+    return driveStatusSchema.parse(await invoke<unknown>("connect_drive"))
+  }
+
+  async cancelDriveOperation(): Promise<void> {
+    await invoke("cancel_drive_operation")
+  }
+
+  async disconnectDrive(): Promise<DriveStatus> {
+    return driveStatusSchema.parse(await invoke<unknown>("disconnect_drive"))
+  }
+
+  async dismissDriveOnboarding(): Promise<DriveStatus> {
+    return driveStatusSchema.parse(await invoke<unknown>("dismiss_drive_onboarding"))
+  }
+
+  async importFromDrive(jobId: string): Promise<DriveImport> {
+    return driveImportSchema.parse(await invoke<unknown>("import_from_drive", { jobId }))
+  }
+
+  async syncMeetingToDrive(jobId: string, overwrite: boolean): Promise<DriveSyncResult> {
+    return driveSyncResultSchema.parse(
+      await invoke<unknown>("sync_meeting_to_drive", { jobId, overwrite }),
+    )
+  }
+
+  async openDriveLink(url: string): Promise<void> {
+    if (!url.startsWith(DRIVE_LINK_PREFIX)) {
+      throw new Error("Drive 주소가 아닌 링크는 열지 않습니다.")
+    }
+    await openUrl(url)
   }
 }
 
