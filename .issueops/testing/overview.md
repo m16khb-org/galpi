@@ -65,7 +65,9 @@ Benchmarks (no network, no ML stack; not part of CI or `check:all`):
 ```bash
 python3 scripts/bench/worker_bench.py          # post-processing timing on a seeded 3-hour fixture
 python3 scripts/bench/minutes_prompt_eval.py   # static rubric for the minutes prompts (0-100)
-bash autoresearch.sh                           # worker unittest + ruff, then the prompt rubric
+python3 scripts/bench/correction_eval.py       # correction evidence in refinement requests (0-100)
+python3 scripts/bench/diarization_eval.py -v   # speaker attribution on cached real meetings (WDER %)
+bash autoresearch.sh                           # worker unittest + ruff, WDER, correction score, prompt rubric
 ```
 
 - `worker_bench.py` prints `postprocess_ms` plus output-shape metrics and exits
@@ -75,6 +77,25 @@ bash autoresearch.sh                           # worker unittest + ruff, then th
   4,400 characters). A full score does not prove minutes quality: confirm prompt
   changes by generating minutes from a real transcript and comparing them with
   the previous prompt's output.
+- `correction_eval.py` builds the refinement requests (`plan_refinement`, single
+  and map paths) for a seeded synthetic corpus (`correction_corpus.py`: 7 meeting
+  domains × 3 noise seeds, half the misspellings generated from jamo confusions)
+  and scores the `<보정후보>` block against known gold: term/name/grouping F1,
+  speaker mapping (guests must stay unmapped), boundary F1, line compaction with
+  the text preserved, and the usage instruction. It scores 0 when worker source
+  gains corpus-specific words (`correction_guard_baseline.json`), so improve the
+  detectors in `transcript_hints.py`, never the vocabulary. The corpus is
+  synthetic; never commit real meeting transcripts to it.
+- `diarization_eval.py` replays the step after diarization (line labels from
+  pyannote turns, hallucination filter, voice relabelling in `speakers.py`) on
+  cached engine output and scores word diarization error rate against gold
+  speakers (labels mapped one-to-one). Inputs live outside the repo under
+  `GALPI_DIARIZATION_DATA`: stitched AI Hub `회의 음성` (dataSetSn=132)
+  validation meetings with gold JSON, the `.aligned.v2.json` checkpoint, cached
+  turns and centroids, and per-line voices from `voice.line_voices`. The data is
+  licensed; never commit it. Keep a separate held-out directory and check every
+  change there too. Rebuild caches with the same model after changing
+  `voice.py`, since cached voices freeze its output.
 
 ## Test structure in this repo
 

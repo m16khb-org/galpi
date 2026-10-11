@@ -6,8 +6,18 @@ from pathlib import Path
 from typing import cast
 
 from .core import InvalidInput
-from .minutes_pipeline import ChatMessage
+from .minutes_pipeline import (
+    ChatMessage,
+    MinutesContext,
+    RefinementStrategy,
+    TranscriptChunk,
+    build_map_messages,
+    refinement_strategy,
+    split_transcript,
+)
 from .minutes_template import SYSTEM_PROMPT
+from .transcript_hints import analyze as analyze_transcript
+from .transcript_hints import render_corrections
 
 NO_BACKGROUND = "(등록된 사전 정보가 없습니다. 전사본에 있는 근거만 사용하세요.)"
 NO_PARTICIPANTS = "(선택된 참석자가 없습니다. 전사본에 있는 근거만 사용하세요.)"
@@ -147,8 +157,12 @@ def build_messages(
     participants: list[Participant],
     glossary: list[GlossaryEntry],
     meeting_date: str | None = None,
+    corrections: str = "",
 ) -> list[ChatMessage]:
-    """Build the chat messages for one refinement request."""
+    """Build the chat messages for one refinement request.
+
+    `corrections` is the raw candidate block from `transcript_hints.analyze`.
+    """
 
     if not transcript.strip():
         raise InvalidInput("transcript is empty")
@@ -171,7 +185,8 @@ def build_messages(
         "<단어집>\n"
         f"{render_glossary(glossary)}\n"
         "</단어집>\n\n"
-        "다음은 화자분리된 회의 전사본입니다.\n"
+        + render_corrections(corrections, trailing="\n")
+        + "다음은 화자분리된 회의 전사본입니다.\n"
         "<전사본>\n"
         f"{transcript.strip()}\n"
         "</전사본>\n\n"
@@ -181,3 +196,67 @@ def build_messages(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class RefinementPlan:
+    """Every request a refinement sends before the reduce pass."""
+
+    strategy: RefinementStrategy
+    context: MinutesContext
+    single: list[ChatMessage] | None
+    chunks: list[TranscriptChunk]
+
+    def requests(self) -> list[list[ChatMessage]]:
+        """The single-pass request, or one map request per chunk."""
+
+        if self.single is not None:
+            return [self.single]
+        return [build_map_messages(chunk, self.context) for chunk in self.chunks]
+
+
+def plan_refinement(
+    transcript: str,
+    background: str,
+    participants: list[Participant],
+    glossary: list[GlossaryEntry],
+    meeting_date: str | None = None,
+    strategy: RefinementStrategy | None = None,
+) -> RefinementPlan:
+    """Decide single-pass or map/reduce and build the transcript requests.
+
+    `strategy` overrides the length-based routing so both paths can be
+    exercised on short transcripts.
+    """
+
+    if not transcript.strip():
+        raise InvalidInput("transcript is empty")
+    hints = analyze_transcript(transcript, background, participants, glossary)
+    context = MinutesContext(
+        background=background.strip() or NO_BACKGROUND,
+        participants=render_participants(participants),
+        glossary=render_glossary(glossary),
+        meeting_date=meeting_date,
+        corrections=hints.block,
+    )
+    chosen = strategy or refinement_strategy(transcript)
+    if chosen == "single":
+        return RefinementPlan(
+            strategy="single",
+            context=context,
+            single=build_messages(
+                hints.transcript,
+                background,
+                participants,
+                glossary,
+                meeting_date,
+                hints.block,
+            ),
+            chunks=[],
+        )
+    return RefinementPlan(
+        strategy="map_reduce",
+        context=context,
+        single=None,
+        chunks=split_transcript(hints.transcript),
+    )

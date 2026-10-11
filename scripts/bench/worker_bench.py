@@ -38,11 +38,11 @@ from galpi_worker.minutes_pipeline import (
 )
 from galpi_worker.minutes_template import SYSTEM_PROMPT
 from galpi_worker.qwen3 import (
-    SpeakerTurn,
     TimestampEntry,
     build_word_spans,
     group_word_spans,
 )
+from galpi_worker.speakers import SpeakerTurn
 
 SEED = 20261009
 MEETING_SECONDS = 3 * 60 * 60

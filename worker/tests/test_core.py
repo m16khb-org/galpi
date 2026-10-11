@@ -20,15 +20,33 @@ from ..galpi_worker.protocol import EventWriter
 from ..galpi_worker.runtime import configure_warnings, select_torch_device
 from .minutes_prompt_cases import GlossaryTests, MapReduceTests, ParticipantTests
 from .refine_stream_cases import RefinementTests
+from .speaker_cases import (
+    LabelSegmentTests,
+    PaddedAlignmentTests,
+    VoiceRelabelTests,
+)
+from .transcript_hints_cases import (
+    BoundaryHintTests,
+    LexicalHintTests,
+    RequestEvidenceTests,
+    SpeakerMappingTests,
+)
 
 __all__ = [
     "AsrContextTests",
+    "BoundaryHintTests",
     "GlossaryTests",
     "HallucinationFilterTests",
+    "LabelSegmentTests",
+    "LexicalHintTests",
     "MapReduceTests",
+    "PaddedAlignmentTests",
     "ParticipantTests",
     "RefinementTests",
+    "RequestEvidenceTests",
     "SpeakerHintTests",
+    "SpeakerMappingTests",
+    "VoiceRelabelTests",
 ]
 
 

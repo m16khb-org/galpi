@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal, TypedDict
 
+from .transcript_hints import relevant_hints, render_corrections
+
 SINGLE_PASS_CHAR_LIMIT: Final = 48_000
 CHUNK_CHAR_BUDGET: Final = 16_000
 MAP_PROGRESS_START: Final = 35.0
@@ -36,6 +38,8 @@ class MinutesContext:
     participants: str
     glossary: str
     meeting_date: str | None
+    # Correction candidates for the whole transcript, one per line.
+    corrections: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +61,7 @@ MAP_SYSTEM_PROMPT: Final = """당신은 긴 한국어 회의 전사본의 한 �
 - 구간에 없는 내용, 담당, 날짜, 실명을 추정하지 않습니다. `목요일까지` 같은 상대적인 기한은 원래 표현대로 남깁니다.
 - 참석자 명단 밖의 실명을 만들지 않습니다.
 - 앞뒤 구간이 있어야 확정할 수 있는 내용은 `확인 필요`로 표시합니다.
+- `<보정후보>`는 전사본에서 자동으로 찾은 오인식·화자 후보입니다. 이 구간의 문맥과 맞을 때만 용어·화자 보정 후보에 옮깁니다.
 - 민감정보는 `[민감정보 생략]`으로 가립니다.
 - 정보가 없는 항목은 `해당 없음`으로 둡니다.
 """
@@ -126,6 +131,7 @@ def build_map_messages(
         f"<사전정보>\n{context.background}\n</사전정보>\n"
         f"<참석자>\n{context.participants}\n</참석자>\n"
         f"<단어집>\n{context.glossary}\n</단어집>\n"
+        f"{render_corrections(relevant_hints(context.corrections, chunk.text))}"
         f"</회의정보>\n\n"
         f"{preamble}"
         f'<전사구간 번호="{chunk.number}" 전체="{chunk.total}">\n'
@@ -154,7 +160,8 @@ def build_reduce_messages(
         f"<사전정보>\n{context.background}\n</사전정보>\n\n"
         f"<참석자>\n{context.participants}\n</참석자>\n\n"
         f"<단어집>\n{context.glossary}\n</단어집>\n\n"
-        "아래 부분 노트들은 긴 전사본의 시간순 구간에서 추출한 사실 후보입니다. "
+        + render_corrections(context.corrections, trailing="\n")
+        + "아래 부분 노트들은 긴 전사본의 시간순 구간에서 추출한 사실 후보입니다. "
         "중복을 합치고, 뒤 구간에서 수정·철회된 앞 구간 결정을 최신 상태로 정리하세요. "
         "부분 노트에 없는 사실을 만들지 마세요.\n\n"
         f"{notes}\n\n"

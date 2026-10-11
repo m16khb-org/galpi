@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from .alignment import align_words
 from .artifacts import (
     Transcription,
     filter_segments,
@@ -21,7 +22,15 @@ from .core import (
     validate_speaker_hint,
 )
 from .protocol import EventWriter
-from .runtime import configure_warnings, detect_torch_device, needs_cpu_fallback
+from .runtime import (
+    configure_warnings,
+    detect_torch_device,
+    failure_reason,
+    needs_cpu_fallback,
+    release_torch_cache,
+)
+from .speakers import SpeakerTurn, label_segments
+from .voice import relabel_lines
 
 if TYPE_CHECKING:
     from whisperx.diarize import DiarizationPipeline, DiarizationSegments
@@ -84,7 +93,7 @@ def transcribe_whisperx(
     configure_warnings()
 
     import whisperx
-    from whisperx.diarize import DiarizationPipeline, assign_word_speakers
+    from whisperx.diarize import DiarizationPipeline
 
     device = detect_torch_device()
     base_name = audio_path.stem
@@ -149,29 +158,22 @@ def transcribe_whisperx(
             percent=10.0,
             message=f"{device.upper()}에서 문장과 시간을 정렬합니다.",
         )
+        segments = result["segments"]
+        failed: str | None = None
         try:
-            align_model, metadata = whisperx.load_align_model(
-                language_code="ko", device=device
-            )
-            result = cast(
-                Transcription,
-                whisperx.align(
-                    result["segments"], align_model, metadata, audio, device
-                ),
-            )
-        except Exception:
+            result = align_words(segments, audio, device)
+        except Exception as error:
             if not needs_cpu_fallback(device):
                 raise
-            events.log(f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다.")
-            align_model, metadata = whisperx.load_align_model(
-                language_code="ko", device="cpu"
+            failed = failure_reason(error)
+        if failed is not None:
+            # Retried outside the handler: the traceback holds the failed
+            # attempt's tensors until the except block ends.
+            events.log(
+                f"{device.upper()} 문장 정렬에 실패해 CPU로 다시 시도합니다. ({failed})"
             )
-            result = cast(
-                Transcription,
-                whisperx.align(result["segments"], align_model, metadata, audio, "cpu"),
-            )
-        del align_model
-        gc.collect()
+            release_torch_cache()
+            result = align_words(segments, audio, "cpu")
         result["engine"] = WHISPERX_ENGINE_TAG
         write_json_atomic(checkpoint_path, result)
         events.emit(
@@ -187,37 +189,58 @@ def transcribe_whisperx(
         percent=10.0,
         message=f"{device.upper()}에서 화자를 분리합니다.",
     )
+    diarization_device = device
     try:
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
             device=device,
         )
-        diarization_segments = _diarize(diarization, audio, speaker_hint)
-    except Exception:
+        diarization_segments, centroids = _diarize(diarization, audio, speaker_hint)
+    except Exception as error:
         if not needs_cpu_fallback(device):
             raise
-        events.log(f"{device.upper()} 화자분리에 실패해 CPU로 다시 시도합니다.")
+        events.log(
+            f"{device.upper()} 화자분리에 실패해 CPU로 다시 시도합니다. "
+            f"({failure_reason(error)})"
+        )
+        release_torch_cache()
+        diarization_device = "cpu"
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
             device="cpu",
         )
-        diarization_segments = _diarize(diarization, audio, speaker_hint)
+        diarization_segments, centroids = _diarize(diarization, audio, speaker_hint)
+    events.emit(
+        "phase",
+        phase="diarizing",
+        percent=80.0,
+        message="문장마다 목소리를 다시 확인합니다.",
+    )
+
+    turns = [
+        SpeakerTurn(
+            start=float(cast(float, row["start"])),
+            end=float(cast(float, row["end"])),
+            speaker=str(row["speaker"]),
+        )
+        for row in diarization_segments.to_dict("records")
+    ]
+    labelled = label_segments(result["segments"], turns)
+    duration = len(audio) / 16000
+    kept, filtered = filter_segments(labelled, duration)
+    # The embedding model the diarization already loaded, so line voices live
+    # in the same space as the speaker centroids.
+    kept = relabel_lines(
+        diarization.model._embedding,  # pyright: ignore[reportPrivateUsage]
+        audio,
+        kept,
+        centroids,
+        diarization_device,
+        events,
+    )
     events.emit(
         "phase", phase="diarizing", percent=100.0, message="화자분리가 완료되었습니다."
     )
-
-    from whisperx.schema import AlignedTranscriptionResult, TranscriptionResult
-
-    library_result = cast(
-        AlignedTranscriptionResult | TranscriptionResult,
-        cast(object, result),
-    )
-    assigned = cast(
-        Transcription,
-        cast(object, assign_word_speakers(diarization_segments, library_result)),
-    )
-    duration = len(audio) / 16000
-    kept, filtered = filter_segments(assigned["segments"], duration)
     events.emit(
         "phase",
         phase="writing",
@@ -244,18 +267,22 @@ def _diarize(
     pipeline: DiarizationPipeline,
     audio: object,
     hint: SpeakerHint,
-) -> DiarizationSegments:
+) -> tuple[DiarizationSegments, dict[str, list[float]]]:
+    """Speaker turns plus one centroid embedding per speaker label."""
+
     if hint.mode == "exact":
-        return pipeline(
+        segments, centroids = pipeline(
             audio,
             num_speakers=hint.exact,
-            return_embeddings=False,
+            return_embeddings=True,
         )
-    if hint.mode == "range":
-        return pipeline(
+    elif hint.mode == "range":
+        segments, centroids = pipeline(
             audio,
             min_speakers=hint.minimum,
             max_speakers=hint.maximum,
-            return_embeddings=False,
+            return_embeddings=True,
         )
-    return pipeline(audio, return_embeddings=False)
+    else:
+        segments, centroids = pipeline(audio, return_embeddings=True)
+    return segments, centroids or {}
