@@ -1,8 +1,8 @@
 # galpi#12 구현 검증 보고
 
-- Lifecycle: `io-21fd3b1e1f06`, generation 2, branch `12-google-drive-sync`, base `4c24a2479fc4bf294ffeecc81fd06ea7438894fe`
+- Lifecycle: `io-21fd3b1e1f06`, generation 2(최초 구현), generation 3(Windows CI 실패 수정, 아래 절), branch `12-google-drive-sync`, base `4c24a2479fc4bf294ffeecc81fd06ea7438894fe`
 - 계획: `.issueops/issues/12/plan.md` (sha256 `50c8de3550ebb0db6083592620d5c73c88224cbb8f6e01d1469fb421a07fcacb`)
-- 게이트 원장: `.issueops/issues/12/gates.md` (G1~G12 충족)
+- 게이트 원장: `.issueops/issues/12/gates.md` (G1~G13 충족)
 
 ## 게이트 결과
 
@@ -20,6 +20,7 @@
 | G10 프런트 테스트 | `bun test` | 233 통과 |
 | G11 비밀번호 없음 | `git grep --untracked -E` (Google 클라이언트 비밀번호 모양: 접두어-20자 이상) | 일치 없음. 계획의 접두어 단독 검색은 추적 파일만 보고 계획 문서의 설명 문구에도 걸려, 미추적 파일까지 보고 실제 값 모양만 찾도록 바꿨다(가짜 값 탐침 파일로 탐지 확인 후 삭제) |
 | G12 실제 스모크 | `.issueops/evidence/task-12-drive-smoke.md` | 실제 Google·auth-gateway·Drive로 연결→Picker→업로드→Unchanged→Updated→Conflict→덮어쓰기→회의록→해제 확인 |
+| G13 이름 정리 OS 독립 | `cargo test --lib downloaded_names_are_sanitized_and_keep_the_extension` | 1개 통과(Windows 경로 사례 4개 추가, generation 3) |
 
 ## 계획과 다르게 구현한 점
 
@@ -112,3 +113,15 @@ SNR이 0.004 낮아진 것은 회귀 테스트 2개·application 테스트 2개�
 - Draft PR: https://github.com/m16khb-org/galpi/pull/13 (base `main`, head `12-google-drive-sync`, 라벨 `enhancement`, 담당자 m16khb, Closes #12). `remote verify-artifact`로 확인했다.
 - 커밋 4개: Rust 호스트(`feat(drive)`), 화면(`feat(drive)`), 제품 문서(`docs(drive)`), IssueOps 기록(`docs(issueops)`), 그리고 이 게시 기록 커밋.
 - 머지, 배포, 워크트리 정리는 이 사이클 범위 밖이다.
+
+## generation 3: Windows CI 실패 수정
+
+- 원인: PR #13 CI run 38081588654의 `rust (windows-latest)`에서 `downloaded_names_are_sanitized_and_keep_the_extension`이 실패했다. `local_name`이 Drive 파일 이름을 `Path`로 해석했기 때문에, Windows는 `a:b?.WAV`의 `a:`를 드라이브 접두어로 보고 버려 `b.WAV`를 냈다. macOS는 `\`를 일반 문자로 보아 `C:\x\y.m4a`가 `C--x-y.m4a`가 되는 등 두 OS의 결과가 달랐다.
+- 수정: `local_name`(`drive/rest.rs`)이 OS 경로 해석 없이 문자열을 직접 나눈다. `/`와 `\`를 모든 OS에서 구분자로 보고, 빈 조각과 `.`을 건너뛴 마지막 조각을 쓰며 `..`이면 `meeting`이 된다. 확장자 분리는 `Path::file_stem`과 같은 규칙(점으로 시작하는 이름은 확장자 없음)이다. 이름 정리는 `paths.rs`의 `meeting_stem`에서 문자열용 `sanitized_stem`을 분리해 재사용한다. `meeting_stem`의 동작은 그대로다.
+- RED: 테스트에 Windows 경로 사례 4개(`C:\x\y.m4a`, `..\..\boot.ini`, `C:`, `c:.wav`)를 더하자 macOS에서 `left: "C--x-y.m4a", right: "y.m4a"`로 실패했다.
+- GREEN: `cargo test --lib adapters::outbound` 167 통과(1 무시, 기존), `cargo fmt --check` 통과. G13으로 원장에 기록했다. Windows 결과는 push 뒤 PR #13 CI로 확인한다.
+- side effect: 다운로드 캐시 파일 이름이 바뀌고, 그 경로가 전사 입력이 되므로 거기서 나오는 로컬 회의 폴더·결과 파일 stem(`meeting_stem`)과 새로 만드는 Drive 회의 폴더 이름(`DriveMeeting::new`)도 바뀐다. 해당하는 이름은 macOS·Linux에서 `\`가 든 Drive 이름(`1팀\주간 회의.m4a`: `1팀-주간 회의` → `주간 회의`), Windows에서 드라이브 접두어가 든 이름(`a:b?.WAV`: `b` → `a-b`)이다. 결과 파일 접미사, 회의 식별 키(`drive:<id>`), 원격·설정·IPC 계약은 바뀌지 않는다.
+- ai-slop-clean: 여섯 분류(쓰지 않는 코드, 중복, 불필요한 추상화, 경계 위반, 약한 산출물, 근거 없는 주장)를 diff에서 검사했고 제거할 항목은 없었다. `sanitized_stem`은 `meeting_stem`과 `local_name`이 함께 쓰는 정리 규칙을 한 곳에 두기 위한 분리이며, `meeting_stem`의 UTF-8이 아닌 이름 처리(`meeting`)도 그대로다. 측정(`git diff -U0 -- src-tauri`의 추가 줄): 비어 있지 않은 줄 38, 주석 5, SNR 0.868. `git diff --check` 통과.
+- 성능: 다운로드 한 번에 이름 문자열 하나를 나누는 비용뿐이고 전사 핫패스는 바꾸지 않았다. 측정하지 않았다.
+- 화면 QA: Not Run. generation 3 diff에는 프런트엔드(`src/`)나 스타일 변경이 없고 Rust 어댑터 두 파일과 IssueOps 기록만 바뀌었다. generation 2의 aside-web-qa 결과(위 절)가 그대로 유효하다.
+- 운영 문서: `.issueops/cautions/2026-10-11-drive-path-windows.md`를 추가하고 `cautions/overview.md`에 연결했다.

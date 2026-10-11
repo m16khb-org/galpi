@@ -48,3 +48,7 @@
   CHECK: python3 -c "import pathlib;print(pathlib.Path(\".issueops/evidence/task-12-drive-smoke.md\").read_text().splitlines()[0])"
   EXPECT: /Drive 스모크/
   EVIDENCE: # galpi#12 Drive 스모크 (2026-10-10, 실제 Google·auth-gateway·Drive)
+- [x] G13: 내려받은 Drive 파일 이름이 OS 경로 해석 없이 정리되어 Windows와 macOS에서 같은 결과를 낸다(`/`·`\` 구분자, 드라이브 접두어, 예약 문자)
+  EVIDENCE: Finished `test` profile [unoptimized + debuginfo] target(s) in 7.07s | Running unittests src/lib.rs (src-tauri/target/debug/deps/galpi_lib-8b8b8ffe811d62b8)
+  CHECK: cargo test --manifest-path src-tauri/Cargo.toml --lib downloaded_names_are_sanitized_and_keep_the_extension
+  EXPECT: /test result: ok\. 1 passed; 0 failed/
