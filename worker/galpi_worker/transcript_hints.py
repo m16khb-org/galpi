@@ -182,6 +182,12 @@ NAME_THRESHOLD: Final = 0.17
 # Choosing which roster member was addressed only competes among the roster,
 # so it tolerates one more confusion than flagging a name as misheard.
 ADDRESS_THRESHOLD: Final = 0.25
+# Two listed names this close can be written for each other by recognition
+# biased toward the roster (one syllable apart, or two near-homophones).
+SIMILAR_NAME_THRESHOLD: Final = 0.34
+# Handovers to the shared label each name needs before the pair is reported;
+# one mention apiece is often a passing reference followed by the same reply.
+SIMILAR_NAME_EVIDENCE: Final = 2
 # Grouping has no registered spelling to anchor it, and two ordinary
 # compounds can sit one consonant apart, so it is stricter than matching.
 CLUSTER_THRESHOLD: Final = 0.15
@@ -1261,6 +1267,65 @@ def speaker_hints(
     ]
 
 
+def similar_name_hints(
+    lines: list[TranscriptLine], vocabulary: Vocabulary
+) -> list[str]:
+    """Two listed names that hand the floor to the same speaker.
+
+    Recognition biased toward the roster writes a name as its listed
+    look-alike: in a real meeting with a near-namesake on the roster, half the
+    mentions of one attendee came out as the other name. A roster name is
+    never "misheard" for the lexical check, so the evidence is who speaks
+    next: in a moderated meeting, naming someone with a title hands them the
+    floor, and both names kept handing it to the same label.
+    """
+
+    pointed: dict[str, Counter[str]] = {}
+    for index, line in enumerate(lines):
+        following = next(
+            (l.label for l in lines[index + 1 :] if l.label != line.label), None
+        )
+        if following is None or following == "UNKNOWN":
+            continue
+        named = {
+            vocabulary.names[stem]
+            for _, stem, _ in name_mentions(spoken_words(line.text))
+            if stem in vocabulary.names
+        }
+        # A line naming several people (introductions, summaries) hands the
+        # floor to at most one of them.
+        if len(named) == 1:
+            pointed.setdefault(named.pop(), Counter())[following] += 1
+    text = " ".join(line.text for line in lines)
+    dominant = {name: tally.most_common(1)[0][0] for name, tally in pointed.items()}
+    found: list[str] = []
+    names = sorted(pointed, key=lambda name: (-sum(pointed[name].values()), name))
+    for index, first in enumerate(names):
+        for second in names[index + 1 :]:
+            if close(first, second, SIMILAR_NAME_THRESHOLD) is None:
+                continue
+            label = dominant[first]
+            # A label most names hand over to is a host or chair answering
+            # everyone, not evidence about who either name is.
+            if (
+                dominant[second] != label
+                or min(pointed[first][label], pointed[second][label])
+                < SIMILAR_NAME_EVIDENCE
+                or any(
+                    owner == label and name not in (first, second)
+                    for name, owner in dominant.items()
+                )
+            ):
+                continue
+            found.append(
+                f'- 비슷한 이름: "{first}"({text.count(first)}회) ↔ '
+                f'"{second}"({text.count(second)}회) (근거: 두 이름 모두 부른 뒤 '
+                f"{label}이 말함. 한 사람을 다른 이름으로 적었거나 화자분리가 두 "
+                "사람을 한 화자로 묶었을 수 있음)"
+            )
+    return found
+
+
 def boundary_hints(lines: list[TranscriptLine]) -> tuple[list[str], set[int]]:
     hints: list[str] = []
     flagged: set[int] = set()
@@ -1428,7 +1493,7 @@ def relevant_hints(block: str, text: str) -> str:
             second = TIMESTAMP.search(line)
             if second is not None and f"({second.group(1)}s)" in text:
                 kept.append(line)
-        elif line.startswith("- 같은 표현:"):
+        elif line.startswith(("- 같은 표현:", "- 비슷한 이름:")):
             if any(all(part in text for part in word.split()) for word in quoted):
                 kept.append(line)
         elif quoted and all(part in text for part in quoted[0].split()):
@@ -1468,6 +1533,7 @@ def analyze(
         *lexical_hints(sentences, vocabulary),
         *cluster_hints(sentences, vocabulary),
         *speaker_hints(lines, vocabulary, len(participants)),
+        *similar_name_hints(lines, vocabulary),
         *boundaries,
     ]
     block = "\n".join(entries)

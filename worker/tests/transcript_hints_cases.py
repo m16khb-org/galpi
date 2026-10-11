@@ -169,6 +169,57 @@ class SpeakerMappingTests(unittest.TestCase):
         self.assertNotIn("SPEAKER_00 →", block)
         self.assertNotIn("SPEAKER_02 →", block)
 
+    def test_flags_two_listed_look_alike_names_that_hand_over_to_one_speaker(
+        self,
+    ) -> None:
+        # Given a roster with near-namesakes, and the chair handing the floor to
+        # the same speaker under both names
+        transcript = (
+            "[SPEAKER_00] (0s) 한결 님, 일정 어떻게 돼요?\n"
+            "[SPEAKER_01] (3s) 다음 주에 끝납니다.\n"
+            "[SPEAKER_00] (6s) 한겸 님, 검수는요?\n"
+            "[SPEAKER_01] (9s) 수요일에 받습니다.\n"
+            "[SPEAKER_00] (12s) 다온 님, 예산은요?\n"
+            "[SPEAKER_02] (15s) 확보했습니다.\n"
+            "[SPEAKER_00] (18s) 한겸 님, 대안도 있나요?\n"
+            "[SPEAKER_01] (21s) 셋째 주로 미루는 안이 있습니다.\n"
+            "[SPEAKER_00] (24s) 한결 님이 정리해 주세요.\n"
+            "[SPEAKER_01] (27s) 네.\n"
+        )
+        roster = [person("한결"), person("한겸"), person("다온"), person("재우")]
+
+        # When
+        block = analyze(transcript, "", roster, []).block
+
+        # Then the pair is reported with the label both names reached
+        self.assertIn(
+            '- 비슷한 이름: "한결"(2회) ↔ "한겸"(2회) (근거: 두 이름 모두 부른 뒤 '
+            "SPEAKER_01이 말함.",
+            block,
+        )
+
+    def test_look_alike_names_of_two_answering_people_are_not_flagged(
+        self,
+    ) -> None:
+        # Given near-namesakes who each answer under their own name
+        transcript = (
+            "[SPEAKER_00] (0s) 한결 님, 일정 어떻게 돼요?\n"
+            "[SPEAKER_01] (3s) 다음 주에 끝납니다.\n"
+            "[SPEAKER_00] (6s) 한겸 님, 검수는요?\n"
+            "[SPEAKER_02] (9s) 수요일에 받습니다.\n"
+            "[SPEAKER_00] (12s) 한결 님, 대안도 있나요?\n"
+            "[SPEAKER_01] (15s) 셋째 주로 미루는 안이 있습니다.\n"
+            "[SPEAKER_00] (18s) 한겸 님, 비용은요?\n"
+            "[SPEAKER_02] (21s) 그대로입니다.\n"
+        )
+        roster = [person("한결"), person("한겸"), person("다온")]
+
+        # When
+        block = analyze(transcript, "", roster, []).block
+
+        # Then
+        self.assertNotIn("비슷한 이름", block)
+
 
 class BoundaryHintTests(unittest.TestCase):
     def test_flags_a_reply_stamped_with_the_askers_label(self) -> None:
