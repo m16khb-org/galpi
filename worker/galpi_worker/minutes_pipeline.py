@@ -156,7 +156,7 @@ def build_reduce_messages(
         for index, note in enumerate(partial_notes, start=1)
     )
     user = (
-        f"회의 추정일: {date}\n"
+        f"회의일: {date}\n"
         f"<사전정보>\n{context.background}\n</사전정보>\n\n"
         f"<참석자>\n{context.participants}\n</참석자>\n\n"
         f"<단어집>\n{context.glossary}\n</단어집>\n\n"

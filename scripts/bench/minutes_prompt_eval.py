@@ -312,7 +312,7 @@ def main() -> int:
         for line in text.splitlines()
         if line
         and not line.startswith(("<", "-", "[", "("))
-        and "회의 추정일" not in line
+        and "회의일:" not in line
         and "노트" != line
     )
     lint_prose("user", user_tails, prose_quality, 4)
