@@ -9,7 +9,7 @@ use std::thread::JoinHandle;
 
 pub(super) const FRAMES_PER_CHUNK: usize = 4_096;
 const QUEUE_SECONDS: usize = 30;
-const RIFF_DATA_LIMIT: u64 = u32::MAX as u64 - 44;
+pub(super) const RIFF_DATA_LIMIT: u64 = u32::MAX as u64 - 44;
 
 pub enum WriterCommand {
     Samples {
@@ -35,10 +35,17 @@ pub struct WriterHandle {
     thread: JoinHandle<()>,
 }
 
+/// Start a writer thread for one track.
+///
+/// `channels` is how many interleaved channels the capture callback delivers.
+/// With `mono`, the writer averages each frame down to one sample before it
+/// stores it, so the file (and its 4 GB RIFF limit) is sized by frames rather
+/// than by a multichannel output device's speaker count.
 pub fn spawn(
     path: &Path,
     sample_rate: u32,
     channels: u16,
+    mono: bool,
     failure: SharedFailure,
 ) -> Result<WriterHandle, AppError> {
     let file = OpenOptions::new()
@@ -49,7 +56,7 @@ pub fn spawn(
     let writer = match WavWriter::new(
         BufWriter::new(file),
         WavSpec {
-            channels,
+            channels: if mono { 1 } else { channels },
             sample_rate,
             bits_per_sample: 16,
             sample_format: SampleFormat::Int,
@@ -74,6 +81,7 @@ pub fn spawn(
                 &recycle_sender,
                 sample_rate,
                 channels,
+                mono,
                 &failure,
             );
         }) {
@@ -197,24 +205,54 @@ fn write_chunk(
     Ok(())
 }
 
+/// Replace interleaved frames with one averaged sample each, in place.
+///
+/// Writing index `frame` never passes reading index `frame * channels`, so the
+/// buffer the callback allocated is reused instead of copied. A trailing
+/// partial frame, which a device never delivers, is discarded.
+fn downmix_to_mono(chunk: &mut Vec<i16>, channels: u16) {
+    let divisor = i32::from(channels.max(1));
+    let width = usize::from(channels.max(1));
+    let frames = chunk.len() / width;
+    for frame in 0..frames {
+        let sum: i32 = chunk[frame * width..(frame + 1) * width]
+            .iter()
+            .map(|sample| i32::from(*sample))
+            .sum();
+        // The mean of i16 samples always fits in an i16.
+        chunk[frame] = i16::try_from(sum / divisor).unwrap_or_default();
+    }
+    chunk.truncate(frames);
+}
+
 fn run_writer(
     mut writer: WavWriter<BufWriter<File>>,
     receiver: &Receiver<WriterCommand>,
     recycle: &Sender<Vec<i16>>,
     sample_rate: u32,
     channels: u16,
+    mono: bool,
     failure: &SharedFailure,
 ) {
-    let flush_every = u64::from(sample_rate) * u64::from(channels) * 5;
+    let stored_channels = if mono { 1 } else { channels };
+    let flush_every = u64::from(sample_rate) * u64::from(stored_channels) * 5;
     let mut samples = 0_u64;
     let mut dropped_samples = 0_u64;
     let mut next_flush = flush_every;
     while let Ok(command) = receiver.recv() {
         match command {
             WriterCommand::Samples {
-                samples: chunk,
+                samples: mut chunk,
                 dropped_before,
             } => {
+                // `chunk` and `dropped_before` arrive in captured interleaved
+                // samples; a mono track stores one sample per frame instead.
+                let dropped_before = if mono {
+                    downmix_to_mono(&mut chunk, channels);
+                    dropped_before / u64::from(channels)
+                } else {
+                    dropped_before
+                };
                 let additional = dropped_before.saturating_add(chunk.len() as u64);
                 if samples.saturating_add(additional) * 2 > RIFF_DATA_LIMIT {
                     set_failure(
@@ -245,6 +283,11 @@ fn run_writer(
                 trailing_dropped,
                 reply,
             } => {
+                let trailing_dropped = if mono {
+                    trailing_dropped / u64::from(channels)
+                } else {
+                    trailing_dropped
+                };
                 if samples.saturating_add(trailing_dropped) * 2 > RIFF_DATA_LIMIT {
                     set_failure(
                         failure,

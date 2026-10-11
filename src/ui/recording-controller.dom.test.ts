@@ -104,6 +104,49 @@ describe("RecordingController elapsed time", () => {
   })
 })
 
+describe("RecordingController start with a source", () => {
+  test("records with the chosen source only after that choice has been saved", async () => {
+    // Given: the user picked the combined source and the host is still saving it
+    const calls: string[] = []
+    let finishSave!: () => void
+    const saving = new Promise<void>((resolve) => {
+      finishSave = resolve
+    })
+    const backend = {
+      saveRecordingSource: async (source: string) => {
+        calls.push(`save:${source}`)
+        await saving
+        calls.push("saved")
+      },
+      startRecording: async (_outputRoot: string, source: string) => {
+        calls.push(`start:${source}`)
+        return started
+      },
+      cancelRecording: async () => undefined,
+    } as unknown as BackendPort
+    const view = {
+      setRecording: () => undefined,
+      setRecordingSource: () => undefined,
+      setRecordingTime: () => undefined,
+      showError: () => undefined,
+    } as unknown as AppView
+    const controller = new RecordingController(backend, view, () => undefined)
+    const choosing = controller.chooseSource("microphoneAndSystem")
+
+    // When: recording starts before the save finishes
+    const starting = controller.start("/tmp")
+    await Promise.resolve()
+
+    // Then: it waits, and starts with the combined source once the save is done
+    expect(calls).toEqual(["save:microphoneAndSystem"])
+    finishSave()
+    await choosing
+    await starting
+    expect(calls).toEqual(["save:microphoneAndSystem", "saved", "start:microphoneAndSystem"])
+    await controller.cancel()
+  })
+})
+
 describe("RecordingController after a recording", () => {
   const finished: RecordingResult = {
     ...started,

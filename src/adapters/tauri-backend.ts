@@ -33,9 +33,11 @@ import type {
   ChatGptSignOutResult,
 } from "../domain/chatgpt"
 import type { DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult } from "../domain/drive"
+import type { RecordingSource } from "../domain/recording"
 
 const enginePresetSchema = z.enum(["qwen3", "whisperx"])
 const computeDeviceSchema = z.enum(["cpu", "cuda"])
+const recordingSourceSchema = z.enum(["microphone", "microphoneAndSystem"])
 
 const environmentSchema = z.object({
   enginePreset: enginePresetSchema,
@@ -323,8 +325,18 @@ export class TauriBackend implements BackendPort {
     await invoke("reveal_output_directory", { jobId })
   }
 
-  async startRecording(outputRoot: string): Promise<RecordingStatus> {
-    return recordingStatusSchema.parse(await invoke<unknown>("start_recording", { outputRoot }))
+  async loadRecordingSource(): Promise<RecordingSource> {
+    return recordingSourceSchema.parse(await invoke<unknown>("load_recording_source"))
+  }
+
+  async saveRecordingSource(source: RecordingSource): Promise<void> {
+    await invoke("save_recording_source", { source })
+  }
+
+  async startRecording(outputRoot: string, source: RecordingSource): Promise<RecordingStatus> {
+    return recordingStatusSchema.parse(
+      await invoke<unknown>("start_recording", { outputRoot, source }),
+    )
   }
 
   async stopRecording(recordingId: string): Promise<RecordingResult> {

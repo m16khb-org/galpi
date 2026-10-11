@@ -13,6 +13,7 @@ use crate::adapters::outbound::secrets::SettingsFile;
 use crate::adapters::outbound::settings::LocalSettingsStore;
 use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::drive::DriveAccounts;
+use crate::application::error::AppError;
 use crate::application::gateway::AppAccessGate;
 use crate::application::ports::{
     ArtifactPort, ChatGptAuthPort, ChatGptEvents, ChatGptStore, ClockPort, DriveAuthPort,
@@ -23,6 +24,15 @@ use crate::application::ports::{
 use crate::application::use_cases::Application;
 use std::sync::Arc;
 use tauri::Manager;
+
+/// The Drive REST adapter, after clearing the downloads an earlier run left.
+fn drive_files(app: &tauri::AppHandle) -> Result<Arc<dyn DriveFilesPort>, AppError> {
+    let drive_rest = DriveRestAdapter::new(app)?;
+    if let Err(error) = drive_rest.clear_imports() {
+        eprintln!("failed to clear Drive imports: {error}");
+    }
+    Ok(Arc::new(drive_rest))
+}
 
 pub fn run() {
     tauri::Builder::default()
@@ -64,12 +74,7 @@ pub fn run() {
                 Arc::new(GatewayOAuthAdapter::new(browser.clone(), clock.clone())?);
             let drive_auth: Arc<dyn DriveAuthPort> =
                 Arc::new(DriveOAuthAdapter::new(browser, clock.clone())?);
-            let drive_rest = DriveRestAdapter::new(app.handle())?;
-            // Downloads from an earlier run are never needed again.
-            if let Err(error) = drive_rest.clear_imports() {
-                eprintln!("failed to clear Drive imports: {error}");
-            }
-            let drive_files: Arc<dyn DriveFilesPort> = Arc::new(drive_rest);
+            let drive_files = drive_files(app.handle())?;
             app.manage(Application::new(
                 engine,
                 transcription,
@@ -94,6 +99,8 @@ pub fn run() {
             crate::adapters::inbound::tauri::save_assistant_settings,
             crate::adapters::inbound::tauri::save_engine_preset,
             crate::adapters::inbound::tauri::save_compute_device,
+            crate::adapters::inbound::tauri::load_recording_source,
+            crate::adapters::inbound::tauri::save_recording_source,
             crate::adapters::inbound::tauri::refine_transcript,
             crate::adapters::inbound::tauri::start_transcription,
             crate::adapters::inbound::tauri::import_transcript,

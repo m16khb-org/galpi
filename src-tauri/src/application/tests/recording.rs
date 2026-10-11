@@ -2,6 +2,7 @@ use super::{FakePort, TranscriptionBehavior};
 use crate::application::error::AppError;
 use crate::application::model::{RecordingResult, RecordingStatus};
 use crate::application::ports::RecordingPort;
+use crate::domain::recording::RecordingSource;
 use async_trait::async_trait;
 use std::path::Path;
 use uuid::Uuid;
@@ -12,7 +13,12 @@ impl RecordingPort for FakePort {
         &self,
         recording_id: Uuid,
         output_root: &Path,
+        source: RecordingSource,
     ) -> Result<RecordingStatus, AppError> {
+        self.started_recording_sources
+            .lock()
+            .map_err(|_| AppError::new("TEST_ERROR", "started sources lock poisoned"))?
+            .push(source);
         Ok(RecordingStatus {
             recording_id,
             path: output_root
@@ -44,9 +50,13 @@ impl RecordingPort for FakePort {
 #[tokio::test]
 async fn recording_lifecycle_rejects_reentry_and_wrong_session() -> Result<(), AppError> {
     let app = std::sync::Arc::new(FakePort::new(TranscriptionBehavior::Success)).application();
-    let started = app.start_recording("/tmp".to_owned()).await?;
+    let started = app
+        .start_recording("/tmp".to_owned(), RecordingSource::Microphone)
+        .await?;
 
-    let busy = app.start_recording("/tmp".to_owned()).await;
+    let busy = app
+        .start_recording("/tmp".to_owned(), RecordingSource::Microphone)
+        .await;
     let Err(busy) = busy else {
         return Err(AppError::new(
             "TEST_ERROR",
@@ -66,6 +76,37 @@ async fn recording_lifecycle_rejects_reentry_and_wrong_session() -> Result<(), A
 
     let stopped = app.stop_recording(started.recording_id).await?;
     assert_eq!(stopped.recording_id, started.recording_id);
-    let restarted = app.start_recording("/tmp".to_owned()).await?;
+    let restarted = app
+        .start_recording("/tmp".to_owned(), RecordingSource::Microphone)
+        .await?;
     app.cancel_recording(restarted.recording_id).await
+}
+
+#[tokio::test]
+async fn the_chosen_recording_source_reaches_the_recorder_and_is_remembered() -> Result<(), AppError>
+{
+    // Given
+    let port = std::sync::Arc::new(FakePort::new(TranscriptionBehavior::Success));
+    let app = port.application();
+    assert_eq!(
+        app.load_recording_source().await?,
+        RecordingSource::Microphone
+    );
+
+    // When: the user picks the combined source and starts recording
+    app.save_recording_source(RecordingSource::MicrophoneAndSystem)
+        .await?;
+    let source = app.load_recording_source().await?;
+    let started = app.start_recording("/tmp".to_owned(), source).await?;
+
+    // Then
+    assert_eq!(source, RecordingSource::MicrophoneAndSystem);
+    assert_eq!(
+        port.started_recording_sources
+            .lock()
+            .map_err(|_| AppError::new("TEST_ERROR", "started sources lock poisoned"))?
+            .as_slice(),
+        [RecordingSource::MicrophoneAndSystem]
+    );
+    app.cancel_recording(started.recording_id).await
 }

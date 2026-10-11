@@ -5,6 +5,7 @@ use crate::application::error::AppError;
 use crate::application::ports::SettingsPort;
 use crate::domain::chatgpt::AssistantAuthMode;
 use crate::domain::engine::{ComputeDevice, EnginePreset};
+use crate::domain::recording::RecordingSource;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -291,6 +292,8 @@ struct LocalSettings {
     engine_preset: Option<EnginePreset>,
     #[serde(skip_serializing_if = "Option::is_none")]
     compute_device: Option<ComputeDevice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recording_source: Option<RecordingSource>,
     hugging_face_token: Option<String>,
     assistant_api_key: Option<String>,
     hugging_face_token_stored: bool,
@@ -328,6 +331,7 @@ impl LocalSettings {
     fn is_empty(&self) -> bool {
         self.engine_preset.is_none()
             && self.compute_device.is_none()
+            && self.recording_source.is_none()
             && self.hugging_face_token.is_none()
             && self.assistant_api_key.is_none()
             && !self.hugging_face_token_stored
@@ -421,6 +425,20 @@ impl SettingsPort for LocalSettingsStore {
             ));
         }
         self.update(|settings| settings.compute_device = Some(device))
+            .await
+    }
+
+    async fn load_recording_source(&self) -> Result<RecordingSource, AppError> {
+        Ok(self
+            .load()
+            .await?
+            .as_ref()
+            .and_then(|settings| settings.recording_source)
+            .unwrap_or_default())
+    }
+
+    async fn save_recording_source(&self, source: RecordingSource) -> Result<(), AppError> {
+        self.update(|settings| settings.recording_source = Some(source))
             .await
     }
 
@@ -536,6 +554,7 @@ mod tests {
     use crate::application::error::AppError;
     use crate::application::ports::SettingsPort;
     use crate::domain::engine::{ComputeDevice, EnginePreset};
+    use crate::domain::recording::RecordingSource;
     use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
     use uuid::Uuid;
 
@@ -1068,6 +1087,63 @@ mod tests {
             document.contains(r#""enginePreset":"whisperx""#),
             "{document}"
         );
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recording_source_defaults_to_the_microphone_and_survives_a_relaunch()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: a settings file that predates the recording source
+        let directory = temp_settings("recording-source");
+        tokio::fs::create_dir_all(&directory).await?;
+        let path = directory.join("settings.json");
+        tokio::fs::write(&path, r#"{"assistantModel":"glm"}"#).await?;
+        let store = LocalSettingsStore::for_os(path.clone(), Os::Windows);
+        assert_eq!(
+            store.load_recording_source().await?,
+            RecordingSource::Microphone
+        );
+
+        // When
+        store
+            .save_recording_source(RecordingSource::MicrophoneAndSystem)
+            .await?;
+
+        // Then: the same process and a relaunch both see it, under its wire name
+        assert_eq!(
+            store.load_recording_source().await?,
+            RecordingSource::MicrophoneAndSystem
+        );
+        let document = tokio::fs::read_to_string(&path).await?;
+        assert!(
+            document.contains(r#""recordingSource":"microphoneAndSystem""#),
+            "{document}"
+        );
+        let relaunched = LocalSettingsStore::for_os(path, Os::Windows);
+        assert_eq!(
+            relaunched.load_recording_source().await?,
+            RecordingSource::MicrophoneAndSystem
+        );
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recording_source_alone_keeps_the_settings_file_alive()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: an installation whose only saved setting is the recording source
+        let directory = temp_settings("recording-source-only");
+        let path = directory.join("settings.json");
+        let store = LocalSettingsStore::for_os(path.clone(), Os::MacOs);
+
+        // When
+        store
+            .save_recording_source(RecordingSource::MicrophoneAndSystem)
+            .await?;
+
+        // Then: an empty-looking document would have been deleted instead
+        assert!(path.exists(), "settings.json was removed");
         tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }

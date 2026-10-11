@@ -7,6 +7,7 @@ import type {
   ImportedTranscript,
   TranscriptionResult,
 } from "../domain/job"
+import { defaultRecordingSource, type RecordingSource } from "../domain/recording"
 import type { SpeakerForm, SpeakerMode } from "../domain/speaker"
 import { AccessScreenView } from "./access-screen"
 import { appTemplate } from "./app-template"
@@ -52,6 +53,7 @@ export class AppView {
   private renderedLogs: readonly string[] | null = null
   private renderedPhase: string | null = null
   private recordingActive = false
+  private recordingSource: RecordingSource = defaultRecordingSource
   private hasResult = false
   private importedResult = false
   private minutesReady = false
@@ -167,6 +169,33 @@ export class AppView {
         if (input.checked) handler(input.value as ComputeDevice)
       })
     }
+  }
+
+  /** Source switching saves immediately like the engine choices; it applies to the next recording. */
+  onRecordingSourceChange(handler: (source: RecordingSource) => void): void {
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="recording-source"]',
+    )) {
+      input.addEventListener("change", () => {
+        if (input.checked) handler(input.value as RecordingSource)
+      })
+    }
+  }
+
+  setRecordingSource(source: RecordingSource): void {
+    this.recordingSource = source
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="recording-source"]',
+    )) {
+      input.checked = input.value === source
+    }
+    this.element("#record-button-detail").textContent = recordingSourceCopy[source].detail
+    const help = this.element("#recording-source-help")
+    help.hidden = source !== "microphoneAndSystem"
+    // A hidden note would still be read aloud as the group's description.
+    const group = this.element(".recording-source-segmented")
+    if (help.hidden) group.removeAttribute("aria-describedby")
+    else group.setAttribute("aria-describedby", "recording-source-help")
   }
 
   /** The switch saves immediately; the handler learns the value the user chose. */
@@ -306,7 +335,13 @@ export class AppView {
         : state.status === "stopping"
           ? "저장 중"
           : "녹음 중"
-    this.element("#recording-path").textContent = state.path ?? "마이크 입력을 저장합니다."
+    this.element("#recording-path").textContent =
+      state.path ?? recordingSourceCopy[this.recordingSource].saving
+    for (const input of this.root.querySelectorAll<HTMLInputElement>(
+      'input[name="recording-source"]',
+    )) {
+      input.disabled = this.recordingActive
+    }
     this.setRecordingTime(state.elapsedSeconds)
     this.element<HTMLButtonElement>("#stop-recording-button").disabled =
       state.status === "starting" || state.status === "stopping"
@@ -663,6 +698,20 @@ export class AppView {
       !this.hasResult || !this.assistantKeyReady || this.jobBusy || this.recordingActive
     this.access.setSignOutBlocked(this.jobBusy || this.recordingActive)
   }
+}
+
+/** What the record button and the running recording say about each source. */
+const recordingSourceCopy: Readonly<
+  Record<RecordingSource, { readonly detail: string; readonly saving: string }>
+> = {
+  microphone: {
+    detail: "시스템 마이크 · 16-bit PCM WAV",
+    saving: "마이크 입력을 저장하고 있습니다.",
+  },
+  microphoneAndSystem: {
+    detail: "마이크와 회의 소리 · 16-bit PCM WAV",
+    saving: "마이크와 회의 소리를 저장하고 있습니다.",
+  },
 }
 
 const stageLabels: Readonly<Record<string, string>> = {

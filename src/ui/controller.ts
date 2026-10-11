@@ -135,6 +135,7 @@ export class AppController {
   /** Runs each time someone signs in, including a stored sign-in at startup. */
   private async loadWorkspace(): Promise<void> {
     try {
+      await this.recording.loadSource()
       const environment = await this.backend.diagnose()
       this.outputRoot = environment.defaultOutputDirectory
       this.view.setOutput(environment.defaultOutputDirectory)
@@ -177,6 +178,7 @@ export class AppController {
     this.view.on("clear-attendees", () => this.view.attendees.clear())
     this.view.onEnginePresetChange((preset) => void this.switchEngine(preset))
     this.view.onComputeDeviceChange((device) => void this.switchComputeDevice(device))
+    this.view.onRecordingSourceChange((source) => void this.recording.chooseSource(source))
     this.view.on("clear-token", () => void this.clearToken())
     this.view.on("clear-assistant-key", () => void this.clearAssistantKey())
     this.view.on("refine", () => void this.refine())

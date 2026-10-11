@@ -16,6 +16,7 @@ use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
     SetupRequest, SpeakerHint, TranscriptImportRequest, TranscriptionRequest,
 };
+use crate::domain::recording::RecordingSource;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
@@ -72,6 +73,8 @@ struct FakePort {
     asr_contexts: Mutex<Vec<String>>,
     engine_preset: Mutex<EnginePreset>,
     compute_device: Mutex<ComputeDevice>,
+    recording_source: Mutex<RecordingSource>,
+    started_recording_sources: Mutex<Vec<RecordingSource>>,
     seen_selections: Mutex<Vec<EngineSelection>>,
     seen_engines: Mutex<Vec<EnginePreset>>,
     seen_prepare_engines: Mutex<Vec<EnginePreset>>,
@@ -95,6 +98,8 @@ impl FakePort {
             asr_contexts: Mutex::new(Vec::new()),
             engine_preset: Mutex::new(EnginePreset::default()),
             compute_device: Mutex::new(ComputeDevice::default()),
+            recording_source: Mutex::new(RecordingSource::default()),
+            started_recording_sources: Mutex::new(Vec::new()),
             seen_selections: Mutex::new(Vec::new()),
             seen_engines: Mutex::new(Vec::new()),
             seen_prepare_engines: Mutex::new(Vec::new()),
@@ -328,6 +333,21 @@ impl SettingsPort for FakePort {
             .compute_device
             .lock()
             .map_err(|_| AppError::new("TEST_ERROR", "compute device lock poisoned"))? = device;
+        Ok(())
+    }
+
+    async fn load_recording_source(&self) -> Result<RecordingSource, AppError> {
+        self.recording_source
+            .lock()
+            .map(|source| *source)
+            .map_err(|_| AppError::new("TEST_ERROR", "recording source lock poisoned"))
+    }
+
+    async fn save_recording_source(&self, source: RecordingSource) -> Result<(), AppError> {
+        *self
+            .recording_source
+            .lock()
+            .map_err(|_| AppError::new("TEST_ERROR", "recording source lock poisoned"))? = source;
         Ok(())
     }
 }

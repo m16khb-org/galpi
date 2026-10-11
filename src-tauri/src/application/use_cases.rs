@@ -25,6 +25,7 @@ use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
     SetupRequest, TranscriptImportRequest, TranscriptionRequest, validate_speaker_hint,
 };
+use crate::domain::recording::RecordingSource;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use crate::domain::worker::AsrContext;
 use std::collections::HashMap;
@@ -156,6 +157,14 @@ impl Application {
 
     pub async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError> {
         self.settings.save_compute_device(device).await
+    }
+
+    pub async fn load_recording_source(&self) -> Result<RecordingSource, AppError> {
+        self.settings.load_recording_source().await
+    }
+
+    pub async fn save_recording_source(&self, source: RecordingSource) -> Result<(), AppError> {
+        self.settings.save_recording_source(source).await
     }
 
     pub async fn hugging_face_token_stored(&self) -> Result<bool, AppError> {
@@ -618,7 +627,11 @@ impl Application {
         self.artifacts.open_directory(&artifacts.output_directory)
     }
 
-    pub async fn start_recording(&self, output_root: String) -> Result<RecordingStatus, AppError> {
+    pub async fn start_recording(
+        &self,
+        output_root: String,
+        source: RecordingSource,
+    ) -> Result<RecordingStatus, AppError> {
         self.access.require()?;
         let mut active = self.active_recording.lock().await;
         if active.is_some() {
@@ -630,7 +643,7 @@ impl Application {
         let recording_id = Uuid::now_v7();
         let result = self
             .recording
-            .start(recording_id, Path::new(&output_root))
+            .start(recording_id, Path::new(&output_root), source)
             .await;
         if result.is_ok() {
             *active = Some(recording_id);

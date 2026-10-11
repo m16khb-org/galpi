@@ -14,6 +14,7 @@ use crate::domain::drive::{
 };
 use crate::domain::gateway::GatewayRefreshFailure;
 use crate::domain::job::{SpeakerHint, TranscriptImportRequest, TranscriptionRequest};
+use crate::domain::recording::RecordingSource;
 use async_trait::async_trait;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -1494,7 +1495,9 @@ async fn syncing_without_a_connection_is_refused() -> Result<(), AppError> {
 
 /// A recording the app finished: `/tmp/recording.wav`, known by its recording id.
 async fn finished_recording(app: &Application) -> Result<Uuid, AppError> {
-    let started = app.start_recording("/tmp".to_owned()).await?;
+    let started = app
+        .start_recording("/tmp".to_owned(), RecordingSource::default())
+        .await?;
     app.stop_recording(started.recording_id).await?;
     Ok(started.recording_id)
 }
@@ -1507,7 +1510,9 @@ fn recording_path() -> PathBuf {
 async fn only_a_finished_recording_of_this_run_can_be_uploaded() -> Result<(), AppError> {
     // Given: Drive is connected, one recording was never stopped, another id never existed
     let (port, app) = connected()?;
-    let running = app.start_recording("/tmp".to_owned()).await?;
+    let running = app
+        .start_recording("/tmp".to_owned(), RecordingSource::default())
+        .await?;
 
     // When
     let unfinished = failure(app.upload_recording_to_drive(running.recording_id).await)?;

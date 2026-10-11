@@ -15,6 +15,7 @@ use crate::domain::drive::{
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::gateway::{GatewayGrant, GatewayRefreshFailure, GatewayTokens};
 use crate::domain::job::{SetupRequest, SpeakerHint};
+use crate::domain::recording::RecordingSource;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
 use crate::domain::worker::WorkerEvent;
 use async_trait::async_trait;
@@ -83,6 +84,7 @@ pub trait RecordingPort: Send + Sync {
         &self,
         recording_id: Uuid,
         output_root: &Path,
+        source: RecordingSource,
     ) -> Result<RecordingStatus, AppError>;
     async fn stop(&self, recording_id: Uuid) -> Result<RecordingResult, AppError>;
     async fn cancel(&self, recording_id: Uuid) -> Result<(), AppError>;
@@ -109,6 +111,8 @@ pub trait SettingsPort: Send + Sync {
     async fn save_engine_preset(&self, preset: EnginePreset) -> Result<(), AppError>;
     async fn load_compute_device(&self) -> Result<ComputeDevice, AppError>;
     async fn save_compute_device(&self, device: ComputeDevice) -> Result<(), AppError>;
+    async fn load_recording_source(&self) -> Result<RecordingSource, AppError>;
+    async fn save_recording_source(&self, source: RecordingSource) -> Result<(), AppError>;
 }
 
 /// One transcript refinement request handed to the assistant worker.

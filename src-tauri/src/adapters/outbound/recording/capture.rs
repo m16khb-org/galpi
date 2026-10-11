@@ -17,23 +17,50 @@ pub struct WriterChannels {
     pub recycled: Receiver<Vec<i16>>,
 }
 
+/// How a capture stream names itself when something goes wrong, so a second
+/// stream (the computer's own output) reports under its own codes.
+#[derive(Clone, Copy)]
+pub struct CaptureErrors {
+    pub disconnected: &'static str,
+    pub error: &'static str,
+    /// What the user is told is being captured, for unsupported formats.
+    pub label: &'static str,
+}
+
+pub const MICROPHONE_ERRORS: CaptureErrors = CaptureErrors {
+    disconnected: "MICROPHONE_DISCONNECTED",
+    error: "MICROPHONE_ERROR",
+    label: "마이크",
+};
+
+pub const SYSTEM_AUDIO_ERRORS: CaptureErrors = CaptureErrors {
+    disconnected: "SYSTEM_AUDIO_DISCONNECTED",
+    error: "SYSTEM_AUDIO_ERROR",
+    label: "컴퓨터 소리",
+};
+
+/// What the capture callback shares with the rest of the recording.
+pub struct CaptureState {
+    pub failure: SharedFailure,
+    pub dropped_samples: Arc<AtomicU64>,
+    /// Interleaved channels the device delivers.
+    pub channels: u16,
+    pub errors: CaptureErrors,
+}
+
 pub fn build(
     device: &Device,
     config: &StreamConfig,
     format: SampleFormat,
     channels_out: WriterChannels,
-    failure: SharedFailure,
-    dropped_samples: Arc<AtomicU64>,
-    channels: u16,
+    state: CaptureState,
 ) -> Result<Stream, AppError> {
     let capture = Capture {
         device,
         config,
         sender: channels_out.sender,
         recycled: channels_out.recycled,
-        failure,
-        dropped_samples,
-        channels,
+        state,
     };
     match format {
         SampleFormat::I8 => capture.typed::<i8>(convert::<i8>),
@@ -50,7 +77,10 @@ pub fn build(
         SampleFormat::F64 => capture.typed::<f64>(f64_to_i16),
         unsupported => Err(AppError::new(
             "UNSUPPORTED_AUDIO_CONFIG",
-            format!("지원하지 않는 마이크 샘플 형식입니다: {unsupported}"),
+            format!(
+                "지원하지 않는 {} 샘플 형식입니다: {unsupported}",
+                capture.state.errors.label
+            ),
         )),
     }
 }
@@ -61,9 +91,7 @@ struct Capture<'a> {
     sender: SyncSender<WriterCommand>,
     /// Buffers the writer has finished with, waiting to be filled again.
     recycled: Receiver<Vec<i16>>,
-    failure: SharedFailure,
-    dropped_samples: Arc<AtomicU64>,
-    channels: u16,
+    state: CaptureState,
 }
 
 impl Capture<'_> {
@@ -71,7 +99,8 @@ impl Capture<'_> {
     where
         T: SizedSample + Copy + Send + 'static,
     {
-        let callback_failure = self.failure.clone();
+        let callback_failure = self.state.failure.clone();
+        let errors = self.state.errors;
         self.device
             .build_input_stream(
                 *self.config,
@@ -80,9 +109,9 @@ impl Capture<'_> {
                         input,
                         &self.sender,
                         &self.recycled,
-                        &self.failure,
-                        &self.dropped_samples,
-                        self.channels,
+                        &self.state.failure,
+                        &self.state.dropped_samples,
+                        self.state.channels,
                         convert,
                     );
                 },
@@ -90,15 +119,11 @@ impl Capture<'_> {
                     if is_recoverable_stream_error(error.kind()) {
                         return;
                     }
-                    set_failure(
-                        &callback_failure,
-                        "MICROPHONE_DISCONNECTED",
-                        error.to_string(),
-                    );
+                    set_failure(&callback_failure, errors.disconnected, error.to_string());
                 },
                 None,
             )
-            .map_err(|error| AppError::new("MICROPHONE_ERROR", error.to_string()))
+            .map_err(|error| AppError::new(errors.error, error.to_string()))
     }
 }
 

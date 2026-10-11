@@ -116,14 +116,17 @@ Write access and Inference Providers access are not required.
 **Record inside Galpi**
 
 1. Confirm the output folder.
-2. Select `마이크로 바로 녹음` (Record with microphone) and grant microphone access. On Windows, Settings → Privacy → Microphone must allow microphone access and "Let desktop apps access your microphone".
-3. Select `정지` (Stop) when the meeting ends.
-4. The completed WAV is selected automatically as the transcription input.
+2. Choose the recording source. `마이크만` (Microphone only, the default) records the microphone input only; `마이크 + 회의 소리` (Microphone + meeting sound) also records the sound your computer plays, so remote voices from Slack huddles, Zoom, or Google Meet are captured. The choice is saved immediately and cannot be changed while recording.
+3. Select `마이크로 바로 녹음` (Record with microphone) and grant microphone access. On Windows, Settings → Privacy → Microphone must allow microphone access and "Let desktop apps access your microphone".
+4. Select `정지` (Stop) when the meeting ends. With `마이크 + 회의 소리`, merging the two tracks into one WAV adds a short wait after stopping.
+5. The completed WAV is selected automatically as the transcription input.
 
-Recording uses a bounded queue and a dedicated WAV writer, so the entire meeting is not kept in memory. `버리기` (Discard) cancels the recording and removes its partial file.
+Recording uses a bounded queue and a dedicated WAV writer, so the entire meeting is not kept in memory. `버리기` (Discard) cancels the recording and removes its partial files.
 
 > [!NOTE]
-> Galpi currently captures the selected microphone input only. It does not capture system audio from Zoom, Meet, or other apps.
+> `마이크 + 회의 소리` captures the default output device: WASAPI loopback on Windows, a Core Audio process tap on macOS 14.6 or later. macOS also requires the system-audio-recording permission; macOS behavior has not been verified on the development PC.
+> Use headphones. Galpi has no echo cancellation, so remote voices played through speakers and picked up by the microphone are recorded twice.
+> System sound comes from the default output device only. There is no per-app capture and no device picker, and notification sounds from the meeting app and other computer sounds are recorded too.
 
 **Import an existing recording**
 

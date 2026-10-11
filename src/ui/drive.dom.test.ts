@@ -110,6 +110,8 @@ function backend(overrides: Partial<BackendPort>, calls: string[] = []): Backend
     saveAssistantSettings: async () => undefined,
     saveEnginePreset: unused("saveEnginePreset"),
     saveComputeDevice: unused("saveComputeDevice"),
+    loadRecordingSource: async () => "microphone",
+    saveRecordingSource: async () => undefined,
     refineTranscript: unused("refineTranscript"),
     transcribe: unused("transcribe"),
     importTranscript: unused("importTranscript"),

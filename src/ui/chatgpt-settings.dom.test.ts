@@ -88,6 +88,8 @@ function backendWith(overrides: Partial<BackendPort>): BackendPort {
     saveAssistantSettings: async () => undefined,
     saveEnginePreset: async () => undefined,
     saveComputeDevice: async () => undefined,
+    loadRecordingSource: async () => "microphone",
+    saveRecordingSource: async () => undefined,
     refineTranscript: unused,
     transcribe: unused,
     importTranscript: unused,
