@@ -197,7 +197,7 @@ nearest step, ties going up; structural sizes (248px rail, 560×780px sheet, 480
 
 - **Structure**: the per-meeting attendee picker renders one toggle chip per roster entry (`이름 · 팀 · 역할`, omitting absent parts); a saved roster is edited in Settings under `참석자 명부` with name, optional team, optional role, optional freeform description (`담당 업무 등 설명`), and comma-separated aliases. A chip's description surfaces as its tooltip; the chip label itself stays compact. An unselected chip renders no mark slot — the check glyph appears only on selection.
 - **States**: unselected, selected, disabled; selection state pairs the filled accent with a check glyph and the `N명 선택` counter, never color alone.
-- **Behavior**: selecting attendees fills the speaker-count hint (`정확히 N`) and a note says the value was auto-filled; a later manual change is never overridden. An empty roster shows a hint linking to Settings instead of an empty chip group.
+- **Behavior**: selecting attendees fills the speaker-count hint with `범위` from count − 1 (at least 1) to count + 1, and a note says the value was auto-filled; clearing every attendee returns the hint to `자동`. A range rather than `정확히 N` keeps one voice from being split in two when a selected attendee never speaks; a user who picks `정확히` keeps it. A later manual change is never overridden. An empty roster shows a hint linking to Settings instead of an empty chip group.
 - **Accessibility**: each chip is a real checkbox inside `role="group"`; focus ring follows the global outline token; chips scroll independently above six entries.
 
 ### Glossary
