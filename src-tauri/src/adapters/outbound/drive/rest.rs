@@ -5,7 +5,7 @@
 //! result files again by querying them; only the root folder id is kept with
 //! the connection.
 
-use super::super::paths::{AppPaths, canonical, meeting_stem};
+use super::super::paths::{AppPaths, canonical, sanitized_stem};
 use super::Tuning;
 use crate::application::error::AppError;
 use crate::application::ports::{DriveFilesPort, LocalUpload, PickedFile, RemoteFolder};
@@ -194,18 +194,24 @@ fn multipart(metadata: &Value, mime: &str, content: &[u8]) -> (String, Vec<u8>) 
     (format!("multipart/related; boundary={boundary}"), body)
 }
 
-/// A file name safe on every platform, keeping the extension.
+/// A file name safe on every platform, keeping the extension. Drive names are
+/// plain strings, so they are never parsed as host paths: both `/` and `\`
+/// separate segments on every OS, and a Windows drive prefix is ordinary text.
 fn local_name(name: &str) -> String {
-    let path = Path::new(name);
-    let stem = meeting_stem(path);
-    match path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .filter(|extension| {
-            !extension.is_empty() && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
-        }) {
-        Some(extension) => format!("{stem}.{extension}"),
-        None => stem,
+    let base = name
+        .rsplit(['/', '\\'])
+        .find(|segment| !segment.is_empty() && *segment != ".")
+        .filter(|segment| *segment != "..")
+        .unwrap_or_default();
+    let (stem, extension) = match base.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => (stem, extension),
+        _ => (base, ""),
+    };
+    let stem = sanitized_stem(stem);
+    if !extension.is_empty() && extension.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        format!("{stem}.{extension}")
+    } else {
+        stem
     }
 }
 
@@ -730,6 +736,11 @@ mod tests {
         assert_eq!(local_name("a:b?.WAV"), "a-b.WAV");
         assert_eq!(local_name(".m4a"), "m4a");
         assert_eq!(local_name("녹음.m4a/.."), "meeting");
+        // Windows path syntax must not change the result on any OS.
+        assert_eq!(local_name(r"C:\x\y.m4a"), "y.m4a");
+        assert_eq!(local_name(r"..\..\boot.ini"), "boot.ini");
+        assert_eq!(local_name("C:"), "C");
+        assert_eq!(local_name("c:.wav"), "c.wav");
     }
 
     #[test]
