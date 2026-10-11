@@ -315,7 +315,7 @@ summary:focus-visible {
   flex-shrink: 1;
 }
 
-.drive-chip span {
+.drive-chip small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -627,7 +627,8 @@ summary:focus-visible {
   display: flex;
   flex-direction: column;
   width: min(560px, calc(100vw - 40px));
-  max-height: calc(100dvh - 40px);
+  /* One height for every tab, so switching tabs never resizes the sheet. */
+  height: min(780px, calc(100dvh - 40px));
   overflow: hidden;
   background: var(--seed-color-bg-layer-default);
   border: 1px solid var(--seed-color-stroke-neutral-weak);
@@ -635,23 +636,75 @@ summary:focus-visible {
   box-shadow: var(--seed-shadow-s3);
 }
 
-.settings-header,
-.settings-actions {
+/* The title, tabs, and close control stay pinned; only the body scrolls. */
+.settings-header {
   display: flex;
+  flex: none;
   justify-content: space-between;
   gap: var(--seed-dimension-x4);
   align-items: center;
-}
-
-/* The title and close control stay pinned; only the body scrolls. */
-.settings-header {
-  flex: none;
   padding: var(--seed-dimension-x6) var(--seed-dimension-x6) 0;
 }
 
+/* SEED's line tabs, drawn on tokens: the selected tab carries a 2px rule, the
+   others keep muted text that still clears 4.5:1. */
+.settings-tabs {
+  display: flex;
+  flex: none;
+  gap: var(--seed-dimension-x1);
+  margin-top: var(--seed-dimension-x4);
+  padding: 0 var(--seed-dimension-x6);
+  overflow-x: auto;
+  box-shadow: inset 0 -1px var(--seed-color-stroke-neutral-muted);
+  scrollbar-width: none;
+}
+
+.settings-tab {
+  position: relative;
+  min-block-size: var(--seed-dimension-x10);
+  padding: 0 var(--seed-dimension-x3);
+  color: var(--seed-color-fg-neutral-muted);
+  font-size: var(--seed-font-size-t3);
+  font-weight: var(--seed-font-weight-bold);
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.settings-tab[aria-selected="true"] {
+  color: var(--seed-color-fg-neutral);
+}
+
+.settings-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--seed-dimension-x3);
+  bottom: 0;
+  block-size: var(--seed-dimension-x0_5);
+  background: var(--seed-color-fg-neutral);
+}
+
+.settings-tab:focus-visible {
+  outline: var(--seed-dimension-x0_5) solid var(--seed-color-stroke-focus-ring);
+  outline-offset: calc(var(--seed-dimension-x0_5) * -1);
+}
+
 .settings-body {
+  flex: 1;
+  min-block-size: 0;
   overflow-y: auto;
   padding: 0 var(--seed-dimension-x6) var(--seed-dimension-x6);
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
+/* Each clear sits in the section of the credential it removes. */
+#clear-token-button,
+#clear-assistant-key-button {
+  margin-top: var(--seed-dimension-x3);
 }
 
 .settings-header h2 {
@@ -687,6 +740,11 @@ summary:focus-visible {
 
 .augment-hint p {
   margin: 0;
+}
+
+/* A hint whose sentence ends in a 40px action centers its icon on that line. */
+.augment-hint:has(> .inline-action) {
+  align-items: center;
 }
 
 .augment-panel .panel-actions {
@@ -824,13 +882,6 @@ summary:focus-visible {
   color: var(--seed-color-fg-warning-contrast);
 }
 
-.settings-actions {
-  justify-content: flex-end;
-  margin-top: var(--seed-dimension-x1_5);
-  padding-top: var(--seed-dimension-x4_5);
-  border-top: 1px solid var(--seed-color-stroke-neutral-muted);
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -861,6 +912,23 @@ summary:focus-visible {
 
 .text-button {
   margin-top: var(--seed-dimension-x2_5);
+}
+
+/* A sentence that ends in a text action: the 40px action centers on the copy
+   instead of dropping below its baseline, and wraps to the next line whole. */
+.inline-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--seed-dimension-x1);
+}
+
+.inline-action[hidden] {
+  display: none;
+}
+
+.inline-action .text-button {
+  margin-top: 0;
 }
 
 .panel-actions {
@@ -1076,6 +1144,11 @@ button:disabled:not(.seed-action-button) {
   font-size: var(--seed-font-size-t1);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A sentence, not a path or a format list. */
+.file-picker .file-picker-note {
+  font-family: inherit;
 }
 
 .field-block {
@@ -1707,6 +1780,8 @@ button:disabled:not(.seed-action-button) {
   margin-top: var(--seed-dimension-x1);
   overflow: hidden;
   color: var(--seed-color-fg-neutral-muted);
+  /* Korean UI fonts draw `\` as `₩`; Windows paths need the mono stack. */
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: var(--seed-font-size-t1);
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -249,9 +249,25 @@ describe("Drive onboarding and settings", () => {
     // Then
     expect(visible(root, "#drive-onboarding")).toBe(false)
     expect(visible(root, "#drive-chip")).toBe(true)
-    expect(pick(root, "#drive-email").textContent).toBe("dev@example.com")
+    // The signed-in account already shows the address; the chip only says it is connected
+    expect(pick(root, "#drive-account").textContent).toBe("연결됨")
+    expect(pick(root, "#drive-chip").title).toBe("dev@example.com")
     expect(visible(root, "#drive-import-button")).toBe(true)
     expect(root.ownerDocument.activeElement?.id).toBe("drive-import-button")
+    controller.stop()
+  })
+
+  test("names the Drive account in the chip when it is not the signed-in one", async () => {
+    // Given: Drive connected with another Google account than the Galpi sign-in
+    const { controller, root } = await mount(
+      backend({
+        loadDriveStatus: async () => ({ ...connected, email: "team@example.com" }),
+      }),
+    )
+
+    // Then
+    expect(pick(root, "#drive-account").textContent).toBe("team@example.com")
+    expect(pick(root, "#drive-chip").title).toBe("team@example.com")
     controller.stop()
   })
 
@@ -285,6 +301,7 @@ describe("Drive onboarding and settings", () => {
       backend({ loadDriveStatus: async () => dismissed, connectDrive: () => consent.promise }, calls),
     )
     await click(root, '[data-action="open-settings"]')
+    await click(root, "#settings-tab-drive")
     expect(pick(root, "#drive-settings-state").textContent).toBe("연결 안 됨")
 
     // When
@@ -380,6 +397,57 @@ describe("Drive onboarding and settings", () => {
     controller.stop()
   })
 })
+
+describe("Settings tabs", () => {
+  test("a contextual link opens its tab, and the gear reopens the tab last shown", async () => {
+    // Given: no roster yet, so the attendee picker links to the roster
+    const { controller, root } = await mount(backend({}))
+
+    // When
+    await click(root, '#attendee-empty [data-action="open-settings"]')
+
+    // Then: the meeting tab is the one shown, and the others are out of the way
+    expect(pick(root, "#settings-tab-meeting").getAttribute("aria-selected")).toBe("true")
+    expect(visible(root, "#participant-rows")).toBe(true)
+    expect(visible(root, "#settings-hf-token")).toBe(false)
+
+    // When: closed and reopened from the gear
+    await click(root, '[data-action="close-settings"]')
+    await click(root, '[data-action="open-settings"]')
+
+    // Then
+    expect(pick(root, "#settings-tab-meeting").getAttribute("aria-selected")).toBe("true")
+    controller.stop()
+  })
+
+  test("arrow keys move between tabs and keep one tab in the tab order", async () => {
+    // Given
+    const { controller, root } = await mount(backend({}))
+    await click(root, '[data-action="open-settings"]')
+    const engine = pick(root, "#settings-tab-engine")
+
+    // When: right from the first tab, then left wraps to the last
+    keydown(engine, "ArrowRight")
+    const meeting = pick(root, "#settings-tab-meeting")
+
+    // Then
+    expect(root.ownerDocument.activeElement).toBe(meeting)
+    expect(meeting.getAttribute("aria-selected")).toBe("true")
+    expect([...root.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => tab.tabIndex)).toEqual([
+      -1, 0, -1, -1,
+    ])
+    keydown(engine, "ArrowLeft")
+    expect(pick(root, "#settings-tab-drive").getAttribute("aria-selected")).toBe("true")
+    expect(visible(root, "#drive-settings")).toBe(true)
+    controller.stop()
+  })
+})
+
+function keydown(target: HTMLElement, key: string): void {
+  const view = target.ownerDocument.defaultView
+  if (view === null) throw new Error("the element has no window")
+  target.dispatchEvent(new view.KeyboardEvent("keydown", { key, bubbles: true }))
+}
 
 describe("Drive sync after a meeting", () => {
   async function transcribedMeeting(overrides: Partial<BackendPort>, calls: string[] = []) {
@@ -511,6 +579,48 @@ describe("Drive sync after a meeting", () => {
     expect(visible(root, "#drive-open-folder-button")).toBe(false)
     second.resolve(uploaded)
     await settle()
+    controller.stop()
+  })
+})
+
+describe("A finished run comes into view", () => {
+  test("results take focus after a transcription, and the minutes action after a refinement", async () => {
+    // Given / When: a transcription finishes
+    const { controller, root } = await mount(
+      backend({
+        transcribe: async () => transcribed,
+        refineTranscript: async (jobId) => ({ jobId, minutes: "/out/회의/회의_회의록.md" }),
+      }),
+    )
+    await click(root, '[data-action="choose-audio"]')
+    await click(root, "#start-button")
+
+    // Then: the results heading holds focus, so the outcome is announced where it is
+    expect(root.ownerDocument.activeElement?.id).toBe("results-title")
+
+    // When: the minutes are written
+    await click(root, "#refine-button")
+
+    // Then: the enabled primary action to open them takes focus
+    expect(root.ownerDocument.activeElement?.id).toBe("open-minutes-button")
+    controller.stop()
+  })
+
+  test("an open settings sheet keeps its focus when a run finishes behind it", async () => {
+    // Given: a transcription still running while the user opens settings
+    const running = Promise.withResolvers<typeof transcribed>()
+    const { controller, root } = await mount(backend({ transcribe: () => running.promise }))
+    await click(root, '[data-action="choose-audio"]')
+    await click(root, "#start-button")
+    await click(root, '[data-action="open-settings"]')
+    const focused = root.ownerDocument.activeElement
+
+    // When
+    running.resolve(transcribed)
+    await settle()
+
+    // Then
+    expect(root.ownerDocument.activeElement).toBe(focused)
     controller.stop()
   })
 })

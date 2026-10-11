@@ -1,5 +1,5 @@
 import type { AssistantSettings } from "../domain/job"
-import { nextTokenVisibility, tokenDisplayValue } from "./token-settings"
+import { hideClearUnlessStored, nextTokenVisibility, tokenDisplayValue } from "./token-settings"
 import { required } from "./dom"
 
 const KEY_SELECTOR = "#settings-assistant-key"
@@ -107,6 +107,7 @@ export class AssistantSettingsView {
     const state = this.element("#assistant-configured-state")
     state.textContent = configured ? "API 키 저장됨" : "API 키 없음"
     state.dataset["state"] = configured ? "ready" : "pending"
+    hideClearUnlessStored(this.element("#clear-assistant-key-button"), configured, KEY_SELECTOR)
   }
 
   setBusy(busy: boolean): void {

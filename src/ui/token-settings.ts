@@ -122,6 +122,7 @@ export class TokenSettingsView {
     const state = this.element("#token-configured-state")
     state.textContent = configured ? "저장됨" : "저장된 토큰 없음"
     state.dataset["state"] = configured ? "ready" : "pending"
+    hideClearUnlessStored(this.element("#clear-token-button"), configured, "#settings-hf-token")
   }
 
   setBusy(busy: boolean): void {
@@ -152,4 +153,14 @@ export class TokenSettingsView {
   private element<T extends HTMLElement = HTMLElement>(selector: string): T {
     return required<T>(this.root, selector)
   }
+}
+
+/**
+ * Clearing is offered only for a credential that is stored. When the clear
+ * itself hides the button, focus lands on the now-empty field instead of the page.
+ */
+export function hideClearUnlessStored(button: HTMLElement, stored: boolean, field: string): void {
+  const hadFocus = button.ownerDocument.activeElement === button
+  button.hidden = !stored
+  if (hadFocus && !stored) button.ownerDocument.querySelector<HTMLElement>(field)?.focus()
 }

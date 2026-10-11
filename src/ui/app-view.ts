@@ -17,6 +17,7 @@ import { ParticipantPickerView } from "./participant-picker"
 import { ParticipantSettingsView } from "./participant-settings"
 import { DriveView } from "./drive-view"
 import { setActionButtonVariant } from "./seed"
+import { SettingsTabsView } from "./settings-tabs"
 import { bindTokenGuide } from "./token-guide"
 import { TokenSettingsView } from "./token-settings"
 
@@ -32,6 +33,7 @@ export class AppView {
   readonly glossarySettings: GlossarySettingsView
   readonly attendees: ParticipantPickerView
   readonly drive: DriveView
+  readonly settingsTabs: SettingsTabsView
   private environmentChecked = false
   private engineReady = false
   private jobBusy = false
@@ -71,6 +73,7 @@ export class AppView {
     this.glossarySettings = new GlossarySettingsView(root, () => this.settingsChangeHandler?.())
     this.attendees = new ParticipantPickerView(root, (count) => this.applyAttendeeCount(count))
     this.drive = new DriveView(root)
+    this.settingsTabs = new SettingsTabsView(root)
     bindTokenGuide(this.root)
   }
 
@@ -414,6 +417,29 @@ export class AppView {
     this.minutesReady = true
     this.refreshStages()
     this.refreshActions()
+  }
+
+  /** A finished transcription: bring its results into view and announce them. */
+  revealResults(): void {
+    this.reveal(this.element("#results-panel"), this.element("#results-title"))
+  }
+
+  /** Finished minutes: bring the minutes row into view and offer opening them. */
+  revealMinutes(): void {
+    this.reveal(this.element("#result-minutes-row"), this.element("#open-minutes-button"))
+  }
+
+  /**
+   * Long runs finish while the user looks elsewhere in the window, so the new
+   * result scrolls in. Focus follows only when nothing else holds it: an open
+   * settings sheet keeps its focus.
+   */
+  private reveal(target: HTMLElement, focusTarget: HTMLElement): void {
+    const window = this.root.ownerDocument.defaultView
+    const reduced = window?.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
+    target.scrollIntoView?.({ behavior: reduced ? "auto" : "smooth", block: "start" })
+    if (!this.element("#settings-dialog").hidden || focusTarget.hidden) return
+    focusTarget.focus({ preventScroll: true })
   }
 
   clearError(): void {

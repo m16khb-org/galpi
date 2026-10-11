@@ -35,6 +35,8 @@ export class AccessScreenView {
       const email = this.element("#account-email")
       email.textContent = state.email ?? "Google 계정"
       email.dataset["state"] = state.offline ? "pending" : "ready"
+      // The Drive chip compares against it to avoid printing the same address twice.
+      this.element("#account-chip").dataset["email"] = state.email ?? ""
       this.element("#account-mode").textContent = state.offline
         ? "오프라인 · 저장된 로그인 사용"
         : "온라인"

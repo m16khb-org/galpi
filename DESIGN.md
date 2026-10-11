@@ -109,7 +109,7 @@ Former 600 weights round up to bold; SEED has no letter-spacing tokens, so track
 ### Base Unit
 
 Padding, margin, and gap use SEED's 4px dimension scale with half steps. Off-scale values moved to the
-nearest step, ties going up; structural sizes (248px rail, 560px sheet, 480px login card, 132px chip area, icon tiles) stay literal.
+nearest step, ties going up; structural sizes (248px rail, 560×780px sheet, 480px login card, 132px chip area, icon tiles) stay literal.
 
 | Token | Value | Usage |
 |---|---:|---|
@@ -187,6 +187,9 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 480px lo
 - **Text actions**: ghost text buttons (`text-button`, the token-guide trigger) start-align and narrow the
   recipe's inline padding through `--seed-box-padding-left` / `--seed-box-padding-right`
   (`--seed-dimension-x1_5`) so the label keeps the left edge of the copy above it.
+- **Inline actions**: a sentence that ends in a text action (`명부 만들기`, `설정에서 등록`, `사용량 관리`) is an
+  `inline-action` row — flex, centered, wrapping — so the 40px action sits on the copy's center line instead of
+  dropping below its baseline, and moves to the next line whole when space runs out.
 - **Emphasis follows the task**: one primary action per stage. After a transcription renders, `전사 시작` steps down to a secondary `새 전사 시작` until new audio arrives; after minutes render, `회의록 열기` becomes primary and the augment action steps down to a secondary `다시 증강`. The step-down swaps the recipe variant together with the Galpi class.
 - **States**: idle, loading, success, error, disabled. Disabled recipe buttons use SEED's disabled colors instead of opacity.
 
@@ -231,27 +234,34 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 480px lo
 
 ### Google Drive
 
-- **Structure**: four surfaces share one state. The onboarding card `#drive-onboarding` sits between the setup panel and the transcription panel as a regular panel (`선택 / Google Drive`, heading `Google Drive 연결`, one sentence saying Galpi reaches only the files it created or the user picked), with `Drive 연결` (primary), `나중에` (ghost), and a cancel button that replaces both while the browser consent waits. Connected, the top bar shows a Drive chip (the account e-mail over `Drive 연결됨`) and the transcription panel shows `Drive에서 가져오기` as a second file picker under `오디오 파일 선택`. The settings dialog has a `Google Drive` section with the account line and `Drive 연결` / `취소` / `연결 해제`. The results panel ends with the sync row `#drive-sync-row`: a status line, one line per uploaded file, `Drive 폴더 열기`, and `Drive 버전 덮어쓰기` only on a conflict.
+- **Structure**: four surfaces share one state. The onboarding card `#drive-onboarding` sits between the setup panel and the transcription panel as a regular panel (`선택 / Google Drive`, heading `Google Drive 연결`, one sentence saying Galpi reaches only the files it created or the user picked), with `Drive 연결` (primary), `나중에` (ghost), and a cancel button that replaces both while the browser consent waits. Connected, the top bar shows a Drive chip — `Google Drive` over `연결됨`, or over the Drive account's e-mail when it is not the signed-in Google account, so the same address never appears twice beside the account chip — and the transcription panel shows `Drive에서 가져오기` as a second file picker under `오디오 파일 선택`. The settings sheet's `Google Drive` tab holds a section with the account line and `Drive 연결` / `취소` / `연결 해제`. The results panel ends with the sync row `#drive-sync-row`: a status line, one line per uploaded file, `Drive 폴더 열기`, and `Drive 버전 덮어쓰기` only on a conflict.
 - **States**: the card shows only while disconnected and not dismissed; a lost connection (`DRIVE_RECONNECT_REQUIRED`, or `DRIVE_NOT_CONNECTED` while the window still shows Drive connected) brings it back with the reason. A failure that follows the user's own `연결 해제` does not. Status lines always state the state in words beside the color — success (`<이메일> 계정의 Drive에 연결했습니다.`, `Drive의 Galpi 폴더에 올렸습니다.`, `Drive에 이미 최신 결과가 있습니다.`), warning (the browser wait, `Drive에 결과를 올리는 중입니다.`, `Drive의 파일이 다른 곳에서 바뀌어 덮어쓰지 않았습니다.`), and critical (the host's Korean message). File lines read `<종류> · 올림/갱신함/변경 없음/Drive에서 바뀌어 건너뜀/올리지 못함: <이유>`; conflict and failure lines take the warning and critical text colors.
 - **Import as a job**: `Drive에서 가져오기` follows the same rule as every other start action — disabled while a job or a recording runs. While the Picker waits and the file downloads, the transcription panel's progress card shows `Drive에서 녹음을 가져오고 있습니다` with `작업 취소`, but no percentage or phase list, because the download reports no progress worth a number. Success folds the card away (no `전사 완료` summary) and the audio picker names the Drive file; failure and cancellation keep the card with `Drive에서 녹음을 가져오지 못했습니다` / `Drive 가져오기를 취소했습니다`. Declining consent or closing the Picker in the browser (`CANCELLED`) is a cancellation, not a failure.
 - **Recording upload**: the settings section has the switch `녹음을 마치면 Drive에 바로 저장` (`#drive-save-recordings`): a 20px checkbox inside a label that is the 40px target, SEED brand accent, with a help line below. It is off and disabled until Drive is connected, persists immediately like a select (it shows the user's choice while the write runs, returns to the stored value when the host refuses, and reports through `#settings-message`), and `연결 해제` clears it, so a later connection never uploads by itself. With it on, stopping a microphone recording uploads the finished WAV to `Galpi/<녹음 이름>` as soon as it is saved. The audio is already chosen for transcription, so nothing waits for Drive, and the results of a later transcription land in the same Drive folder. Under the recorder's own message, `#recording-drive-status` (a `role="status"` line that stays rendered while empty) reports: `녹음 파일을 Drive에 올리는 중입니다.` (warning), `녹음 파일을 Drive의 Galpi 폴더에 저장했습니다.` or `이 녹음은 Drive에 이미 저장되어 있습니다.` (success, with `Drive 폴더 열기`), `Drive의 녹음 파일이 다른 곳에서 바뀌어 덮어쓰지 않았습니다.` (warning; the Drive copy is never overwritten), and `녹음 파일을 Drive에 올리지 못했습니다. <이유>` (critical, with `다시 올리기`, hidden once the connection is lost). A failed upload never fails the local recording and nothing retries on its own; the line clears when the next recording starts. The host sends the file in a resumable session read from disk in 4 MiB chunks, so a long recording is never held in memory.
 - **Behavior**: nothing retries on its own. A failed upload never fails the local result; overwriting needs the explicit `Drive 버전 덮어쓰기`. Disconnecting keeps the files on Drive. The window never holds a Drive token, only the connection state and e-mail.
-- **Layout**: the Drive chip shrinks before anything else in the top bar: at most 220px wide, the e-mail truncates with an ellipsis and the full address stays in the chip's `title`, so a long address never pushes the settings button off a 1024px window.
+- **Layout**: the Drive chip shrinks before anything else in the top bar: at most 220px wide, its second line truncates with an ellipsis and the full Drive address stays in the chip's `title`, so a long address never pushes the settings button off a 1024px window.
 - **Accessibility**: every status line is a `role="status"` live region and stays rendered while empty (only its margin collapses), so its first message is announced; buttons use the SEED `action-button` recipe at the 40px minimum height; the settings cancel button has its own id because the sheet makes the background inert, so the card's cancel cannot be reached from it. When a Drive button hides itself, focus moves to the visible, enabled control that took its place (connect → cancel → connect or `Drive에서 가져오기`, `나중에` → `오디오 파일 선택`, `연결 해제` → `Drive 연결`); while a job or a recording disables the start actions, focus goes to the settings button instead of dropping to the page.
+
+### Settings Sheet
+
+- **Structure**: a modal sheet with the pinned header (eyebrow, `설정`, the polite `#settings-message` line, close button), a tab list, and one scrolling body. Tabs group the sections by task: `전사 엔진` (engine picker, Hugging Face token), `회의 정보` (roster, glossary), `AI 증강` (auth mode, provider fields, background), `Google Drive`. The sheet keeps one height (`min(780px, 100dvh - 40px)`) for every tab, so switching never resizes it, and a newly shown tab starts at its top.
+- **Tabs**: SEED's line-tab look drawn on tokens (the action-button-only recipe decision stands): 40px targets, the selected tab in `--seed-color-fg-neutral` with a 2px rule of the same token, the others in `--seed-color-fg-neutral-muted` (6.6:1). APG tabs with automatic activation — `aria-selected` and a roving `tabindex` on the tabs only, ←/→ wrap, Home/End jump; unselected panels are `hidden`, so their fields stay in the DOM and keep autosaving.
+- **Entry**: the gear reopens the tab last shown (`전사 엔진` first). A contextual link opens its own tab: `토큰 설정 열기` → `전사 엔진`, `명부 만들기` → `회의 정보`, `설정에서 등록` → `AI 증강`. The gear stays the first `open-settings` control in document order, the fallback focus target when a start action disables itself.
+- **Credentials**: each clear button sits in its credential's section — `Hugging Face 토큰 지우기` under the token field, `AI 증강 API 키 지우기` at the end of the API-key panel — and shows only while that credential is stored. When a clear hides its own button, focus moves to the emptied field.
 
 ### Settings Autosave
 
 - **Behavior**: text fields persist when the user commits the edit (blur or Enter); selects, switches, and row removals persist immediately. There is no global save button.
 - **Concurrency**: while one local write is active, later changes coalesce into one latest-state write instead of racing or disabling the sheet.
 - **Feedback**: the polite settings status line moves through `저장 중` → `자동 저장됨`, or an actionable error. Errors preserve the edited values and the next change retries.
-- **Destructive actions**: clearing a stored credential remains an explicit labeled action; autosave never turns a destructive clear into an implicit side effect.
+- **Destructive actions**: clearing a stored credential remains an explicit labeled action next to that credential; autosave never turns a destructive clear into an implicit side effect.
 - **Accessibility**: persistence feedback uses the existing `role="status"` live region and never steals focus.
 
 ### Phase Timeline
 
 - **Structure**: waveform progress rule plus four named phases and live phase message. Completed phases carry `✓` and the current phase `●` beside their color.
 - **States**: waiting, active, completed, failed, cancelled. The card title states the outcome (`회의를 전사하고 있습니다` → `전사를 마쳤습니다` / `전사하지 못했습니다` / `전사를 취소했습니다`); setup and augmentation cards follow the same rule.
-- **Completion**: a finished transcription folds the card into one summary row on the secondary surface — success check, `전사 완료 · N개 발화 보존 · N개 환각 제거`, and the log disclosure on the right — and keeps it until the next run. Failed and cancelled runs keep the full card so the error stays in view.
+- **Completion**: a finished transcription folds the card into one summary row on the secondary surface — success check, `전사 완료 · N개 발화 보존 · N개 환각 제거`, and the log disclosure on the right — and keeps it until the next run. Failed and cancelled runs keep the full card so the error stays in view. Once the busy state ends, the results panel scrolls into view (smooth, instant under reduced motion) and its heading `전사 결과` takes focus so the outcome is announced where it is; finished minutes do the same with the minutes row and `회의록 열기`. An open settings sheet keeps its focus.
 - **Accessibility**: `role="progressbar"` with phase-local value; no fabricated time estimate.
 - **Motion**: waveform fill uses transform only and stops under reduced motion.
 
@@ -260,7 +270,7 @@ nearest step, ties going up; structural sizes (248px rail, 560px sheet, 480px lo
 - **Structure**: artifact kind, canonical path, open and reveal actions. An imported transcript renders only the transcript row — subtitle and checkpoint rows stay hidden until a real transcription produces them.
 - **States**: ready, opening, missing, error.
 - **Accessibility**: action labels include artifact kind; paths remain selectable.
-- **Layout**: cluster that wraps actions before the path overflows.
+- **Layout**: cluster that wraps actions before the path overflows. Paths use the mono stack: Korean UI fonts draw `\` as `₩`, which would misprint every Windows path.
 
 ### Augment Target
 

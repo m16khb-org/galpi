@@ -452,6 +452,7 @@ export class AppController {
 
     const jobId = crypto.randomUUID()
     this.begin("transcription", "오디오를 분석할 준비를 합니다.", jobId)
+    let finished = false
     try {
       const result = await this.backend.transcribe({
         jobId,
@@ -465,11 +466,14 @@ export class AppController {
       this.view.renderJob(this.job)
       this.view.renderResult(result)
       this.drive.syncAfter(result.jobId)
+      finished = true
     } catch (error) {
       this.handleFailure(error)
     } finally {
       this.view.setBusy(null)
     }
+    // After the busy state ends, so the results' actions are already enabled.
+    if (finished) this.view.revealResults()
   }
 
   private async cancel(): Promise<void> {
@@ -494,6 +498,7 @@ export class AppController {
     }
     const jobId = crypto.randomUUID()
     this.begin("refinement", "저장한 사전 정보로 회의록을 만듭니다.", jobId)
+    let finished = false
     try {
       const refined = await this.backend.refineTranscript(
         jobId,
@@ -512,11 +517,13 @@ export class AppController {
       this.view.renderMinutes(refined.minutes)
       // The minutes belong to the meeting the refinement targeted.
       this.drive.syncAfter(result.jobId)
+      finished = true
     } catch (error) {
       this.handleFailure(error)
     } finally {
       this.view.setBusy(null)
     }
+    if (finished) this.view.revealMinutes()
   }
 
   private async openArtifact(kind: ArtifactKind): Promise<void> {

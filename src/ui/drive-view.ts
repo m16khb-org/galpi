@@ -65,7 +65,13 @@ export class DriveView {
 
     const chip = this.element("#drive-chip")
     chip.hidden = !connected
-    if (connected) this.element("#drive-email").textContent = connection.email
+    if (connected) {
+      // The account chip beside it already shows the signed-in address; repeat
+      // it only when Drive belongs to another account.
+      const signedInAs = this.element("#account-chip").dataset["email"]
+      this.element("#drive-account").textContent =
+        connection.email === signedInAs ? "연결됨" : connection.email
+    }
     // The chip truncates a long address; the full one stays a hover away.
     chip.title = connected ? connection.email : ""
 
