@@ -24,6 +24,7 @@ from .core import (
 from .protocol import EventWriter
 from .runtime import (
     configure_warnings,
+    detect_asr_runtime,
     detect_torch_device,
     failure_reason,
     needs_cpu_fallback,
@@ -33,10 +34,15 @@ from .speakers import SpeakerTurn, label_segments
 from .voice import relabel_lines
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from whisperx.diarize import DiarizationPipeline, DiarizationSegments
 
 
 WHISPERX_ENGINE_TAG = "whisperx"
+# Diarization hands over at 80% to the per-line voice check, so its own
+# library progress must stop below that instead of running up to 99.
+DIARIZE_CEILING = 79.0
 
 
 def checkpoint_reusable(checkpoint_path: Path) -> bool:
@@ -112,12 +118,6 @@ def transcribe_whisperx(
             json.loads(checkpoint_path.read_text(encoding="utf-8")),
         )
     else:
-        events.emit(
-            "phase",
-            phase="transcribing",
-            percent=5.0,
-            message="한국어 음성을 전사합니다. (CTranslate2 CPU int8)",
-        )
         asr_options: dict[str, object] = {
             "no_speech_threshold": 0.75,
             "condition_on_previous_text": False,
@@ -131,19 +131,41 @@ def transcribe_whisperx(
                 # Bias recognition toward glossary terms and attendee names;
                 # the fixed-prompt batched path applies it to every chunk.
                 asr_options["hotwords"] = hotwords
-        model = whisperx.load_model(
-            "large-v3-turbo",
-            "cpu",
-            compute_type="int8",
-            language="ko",
-            asr_options=asr_options,
-            vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
-        )
-        result = cast(
-            Transcription,
-            model.transcribe(audio, batch_size=8, language="ko"),
-        )
-        del model
+
+        def run_asr(asr_device: str, compute_type: str) -> Transcription:
+            message = f"한국어 음성을 전사합니다. (CTranslate2 {asr_device.upper()} {compute_type})"
+            events.emit("phase", phase="transcribing", percent=5.0, message=message)
+            model = whisperx.load_model(
+                "large-v3-turbo",
+                asr_device,
+                compute_type=compute_type,
+                language="ko",
+                asr_options=asr_options,
+                vad_options={"vad_onset": 0.6, "vad_offset": 0.4},
+            )
+            return cast(
+                Transcription,
+                model.transcribe(
+                    audio,
+                    batch_size=8,
+                    language="ko",
+                    progress_callback=_phase_progress(
+                        events, "transcribing", message, 5.0
+                    ),
+                ),
+            )
+
+        asr_device, compute_type = detect_asr_runtime(device)
+        try:
+            result = run_asr(asr_device, compute_type)
+        except Exception:
+            if asr_device == "cpu":
+                raise
+            events.log(
+                f"{asr_device.upper()} 전사에 실패해 CPU int8로 다시 시도합니다."
+            )
+            gc.collect()
+            result = run_asr("cpu", "int8")
         gc.collect()
         events.emit(
             "phase",
@@ -183,19 +205,22 @@ def transcribe_whisperx(
             message="정렬 체크포인트를 저장했습니다.",
         )
 
-    events.emit(
-        "phase",
-        phase="diarizing",
-        percent=10.0,
-        message=f"{device.upper()}에서 화자를 분리합니다.",
-    )
+    diarize_message = f"{device.upper()}에서 화자를 분리합니다."
+    events.emit("phase", phase="diarizing", percent=10.0, message=diarize_message)
     diarization_device = device
     try:
         diarization = DiarizationPipeline(
             model_name="pyannote/speaker-diarization-community-1",
             device=device,
         )
-        diarization_segments, centroids = _diarize(diarization, audio, speaker_hint)
+        diarization_segments, centroids = _diarize(
+            diarization,
+            audio,
+            speaker_hint,
+            _phase_progress(
+                events, "diarizing", diarize_message, 10.0, DIARIZE_CEILING
+            ),
+        )
     except Exception as error:
         if not needs_cpu_fallback(device):
             raise
@@ -209,7 +234,14 @@ def transcribe_whisperx(
             model_name="pyannote/speaker-diarization-community-1",
             device="cpu",
         )
-        diarization_segments, centroids = _diarize(diarization, audio, speaker_hint)
+        diarization_segments, centroids = _diarize(
+            diarization,
+            audio,
+            speaker_hint,
+            _phase_progress(
+                events, "diarizing", "CPU에서 화자를 분리합니다.", 10.0, DIARIZE_CEILING
+            ),
+        )
     events.emit(
         "phase",
         phase="diarizing",
@@ -263,10 +295,37 @@ def transcribe_whisperx(
     )
 
 
+def _phase_progress(
+    events: EventWriter,
+    phase: str,
+    message: str,
+    floor: float,
+    ceiling: float = 99.0,
+) -> Callable[[float], None]:
+    """Forward a WhisperX progress callback as phase events.
+
+    ASR and diarization each run as one blocking library call, so without
+    this the phase would sit at its starting percent until the call returns.
+    100 stays reserved for the completion event of the phase; `ceiling` keeps
+    room for a later step inside the same phase.
+    """
+
+    def report(percent: float) -> None:
+        events.emit(
+            "phase",
+            phase=phase,
+            percent=min(max(percent, floor), ceiling),
+            message=message,
+        )
+
+    return report
+
+
 def _diarize(
     pipeline: DiarizationPipeline,
     audio: object,
     hint: SpeakerHint,
+    progress: Callable[[float], None],
 ) -> tuple[DiarizationSegments, dict[str, list[float]]]:
     """Speaker turns plus one centroid embedding per speaker label."""
 
@@ -275,6 +334,7 @@ def _diarize(
             audio,
             num_speakers=hint.exact,
             return_embeddings=True,
+            progress_callback=progress,
         )
     elif hint.mode == "range":
         segments, centroids = pipeline(
@@ -282,7 +342,10 @@ def _diarize(
             min_speakers=hint.minimum,
             max_speakers=hint.maximum,
             return_embeddings=True,
+            progress_callback=progress,
         )
     else:
-        segments, centroids = pipeline(audio, return_embeddings=True)
+        segments, centroids = pipeline(
+            audio, return_embeddings=True, progress_callback=progress
+        )
     return segments, centroids or {}

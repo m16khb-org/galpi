@@ -34,3 +34,4 @@ Record structural choices, rejected alternatives, and decisions that affect long
 - Consequences: <tradeoffs and follow-up>
 - Evidence: <files, commands, issues, docs>
 - [Google Drive 연동은 auth-gateway가 토큰을 교환하고 appProperties로 무상태 동기화한다](2026-10-11-google-drive-auth-gateway-appproperties.md)
+- [Windows CUDA 빌드에서 ASR도 CTranslate2 CUDA float16으로 실행](2026-10-09-windows-asr-on-cuda.md)

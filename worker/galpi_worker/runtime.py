@@ -76,6 +76,41 @@ def release_torch_cache() -> None:
         torch.cuda.empty_cache()
 
 
+AsrDevice = Literal["cpu", "cuda"]
+
+
+class Ctranslate2(Protocol):
+    @staticmethod
+    def get_cuda_device_count() -> int: ...
+
+
+def select_asr_runtime(
+    torch_device: TorchDevice, *, ct2_cuda_devices: int
+) -> tuple[AsrDevice, str]:
+    """CTranslate2 device and compute type for ASR.
+
+    CUDA float16 when torch runs on CUDA (the Windows CUDA build, whose torch
+    wheels also carry the cuBLAS/cuDNN DLLs CTranslate2 loads) and CTranslate2
+    sees a GPU. CTranslate2 has no MPS backend, so every other case keeps CPU
+    int8.
+    """
+
+    if torch_device == "cuda" and ct2_cuda_devices > 0:
+        return "cuda", "float16"
+    return "cpu", "int8"
+
+
+def detect_asr_runtime(torch_device: TorchDevice) -> tuple[AsrDevice, str]:
+    """ASR runtime for this machine. ctranslate2 is imported lazily."""
+
+    if torch_device != "cuda":
+        return select_asr_runtime(torch_device, ct2_cuda_devices=0)
+    ctranslate2 = cast(Ctranslate2, cast(object, import_module("ctranslate2")))
+    return select_asr_runtime(
+        torch_device, ct2_cuda_devices=ctranslate2.get_cuda_device_count()
+    )
+
+
 def ffmpeg_link_name(platform: str = sys.platform) -> str:
     # Keep in sync with Rust `Os::ffmpeg_file_name()` in
     # src-tauri/src/adapters/outbound/platform.rs.

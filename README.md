@@ -73,7 +73,7 @@ bun run dev
 2. 빌드한 NSIS 설치 프로그램(`Galpi_<버전>_x64-setup.exe`)은 현재 사용자용으로 설치되므로 관리자 권한이 필요 없습니다.
 3. 아래 'Google 계정으로 로그인'과 '최초 엔진 준비'를 진행합니다.
 
-Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. ASR 자체는 CTranslate2 CPU int8로 동작하며 CUDA는 정렬·화자분리만 가속합니다.
+Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. CUDA를 고르면 음성 인식(CTranslate2 float16)과 정렬·화자분리가 모두 GPU에서 돌고, GPU 음성 인식이 실패하면 CPU int8로 한 번 다시 시도합니다.
 
 ### 2. Google 계정으로 로그인
 
@@ -201,13 +201,13 @@ Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Ga
 |---|---|---|
 | 1. 입력 | 마이크 녹음(WAV) 또는 오디오 파일 가져오기 | 같음 |
 | 2. 디코딩 | 앱에 포함된 ffmpeg로 16 kHz 모노 WAV 변환 | 같음 |
-| 3. 음성 인식 | `Qwen3`(기본): `Qwen/Qwen3-ASR-1.7B`를 MLX 8비트 가중치로 변환해 Metal GPU에서 실행<br>`WhisperX`: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 | `WhisperX`만 제공: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 |
+| 3. 음성 인식 | `Qwen3`(기본): `Qwen/Qwen3-ASR-1.7B`를 MLX 8비트 가중치로 변환해 Metal GPU에서 실행<br>`WhisperX`: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 | `WhisperX`만 제공: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 또는 CUDA float16 |
 | 4. 단어 시간 정렬 | `Qwen3`: `Qwen/Qwen3-ForcedAligner-0.6B`(MLX, 음성 인식과 같은 단계에서 실행)<br>`WhisperX`: `kresnik/wav2vec2-large-xlsr-korean`(MPS) | `kresnik/wav2vec2-large-xlsr-korean`(CPU 또는 CUDA) |
 | 5. 화자분리 | `pyannote/speaker-diarization-community-1`(MPS) | `pyannote/speaker-diarization-community-1`(CPU 또는 CUDA) |
 | 6. 후처리 | 문장 병합과 환각 구간 제거(규칙 기반, 모델 없음) | 같음 |
 | 7. AI 증강 | 외부 LLM API(아래 설명 참고) | 같음 |
 
-- macOS에는 연산 장치 선택 메뉴가 없고, 설치된 PyTorch에서 MPS를 쓸 수 있으면 자동으로 사용합니다. Windows의 CUDA는 정렬과 화자분리만 가속합니다.
+- macOS에는 연산 장치 선택 메뉴가 없고, 설치된 PyTorch에서 MPS를 쓸 수 있으면 자동으로 사용합니다(CTranslate2에는 MPS가 없어 WhisperX 음성 인식은 CPU int8입니다). Windows에서 CUDA를 고르면 음성 인식·정렬·화자분리를 모두 가속합니다.
 - WhisperX 프리셋은 MPS나 CUDA에서 정렬·화자분리가 실패하면 CPU로 한 번 다시 시도합니다.
 - Qwen3 프리셋은 오디오를 무음 위치 기준으로 30초 이하 구간으로 나눠 인식합니다.
 - 참석자 이름과 단어집은 음성 인식 단계에도 반영됩니다. WhisperX는 `hotwords` 옵션으로, Qwen3는 문맥 힌트로 넣습니다.

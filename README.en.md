@@ -73,7 +73,7 @@ bun run dev
 2. The NSIS installer you build (`Galpi_<version>_x64-setup.exe`) installs for the current user, so it needs no administrator rights.
 3. Follow "2. Sign in with Google" and "3. Prepare the local engine" below.
 
-On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. ASR itself stays on CTranslate2 CPU int8; CUDA accelerates only alignment and diarization.
+On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. With CUDA, speech recognition (CTranslate2 float16), alignment, and diarization all run on the GPU; a failed GPU recognition retries once on CPU int8.
 
 ### 2. Sign in with Google
 
@@ -201,13 +201,13 @@ Recording through transcription runs locally; the transcript leaves the machine 
 |---|---|---|
 | 1. Input | Microphone recording (WAV) or imported audio file | Same |
 | 2. Decoding | Bundled ffmpeg converts to 16 kHz mono WAV | Same |
-| 3. Speech recognition | `Qwen3` (default): `Qwen/Qwen3-ASR-1.7B` converted to 8-bit MLX weights, run on the Metal GPU<br>`WhisperX`: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 | `WhisperX` only: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 |
+| 3. Speech recognition | `Qwen3` (default): `Qwen/Qwen3-ASR-1.7B` converted to 8-bit MLX weights, run on the Metal GPU<br>`WhisperX`: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 | `WhisperX` only: `faster-whisper-large-v3-turbo`, CTranslate2 CPU int8 or CUDA float16 |
 | 4. Word timestamp alignment | `Qwen3`: `Qwen/Qwen3-ForcedAligner-0.6B` (MLX, same pass as recognition)<br>`WhisperX`: `kresnik/wav2vec2-large-xlsr-korean` (MPS) | `kresnik/wav2vec2-large-xlsr-korean` (CPU or CUDA) |
 | 5. Diarization | `pyannote/speaker-diarization-community-1` (MPS) | `pyannote/speaker-diarization-community-1` (CPU or CUDA) |
 | 6. Post-processing | Sentence merging and hallucination filtering (rule-based, no model) | Same |
 | 7. AI augmentation | External LLM API (see below) | Same |
 
-- macOS has no compute device setting; MPS is used automatically when the installed PyTorch supports it. On Windows, CUDA accelerates alignment and diarization only.
+- macOS has no compute device setting; MPS is used automatically when the installed PyTorch supports it (CTranslate2 has no MPS backend, so WhisperX recognition stays on CPU int8). On Windows, CUDA accelerates recognition, alignment, and diarization.
 - The WhisperX preset retries alignment or diarization once on CPU if it fails on MPS or CUDA.
 - The Qwen3 preset recognizes audio in chunks of 30 seconds or less, cut at silences.
 - Participant names and the glossary also bias speech recognition: as `hotwords` for WhisperX and as a context hint for Qwen3.
