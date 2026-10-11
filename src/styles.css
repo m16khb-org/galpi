@@ -1228,6 +1228,20 @@ button:disabled:not(.seed-action-button) {
   margin-top: 0;
 }
 
+/* Recorder source picker: two slots under the record button. */
+.recording-source-segmented {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.recording-source-help {
+  margin: var(--seed-dimension-x2) 0 0;
+  color: var(--seed-color-fg-neutral-muted);
+  font-size: var(--seed-font-size-t1);
+  line-height: var(--seed-line-height-t1);
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
 .engine-segmented span {
   gap: var(--seed-dimension-x0_5);
   padding: var(--seed-dimension-x1_5) var(--seed-dimension-x2_5);

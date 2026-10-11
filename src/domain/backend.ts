@@ -16,6 +16,7 @@ import type {
   ChatGptSignOutResult,
 } from "./chatgpt"
 import type { DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult } from "./drive"
+import type { RecordingSource } from "./recording"
 import type { SpeakerHint } from "./speaker"
 
 /**
@@ -43,7 +44,10 @@ export interface BackendPort {
   cancel(jobId: string): Promise<void>
   openArtifact(jobId: string, kind: ArtifactKind): Promise<void>
   revealOutput(jobId: string): Promise<void>
-  startRecording(outputRoot: string): Promise<RecordingStatus>
+  loadRecordingSource(): Promise<RecordingSource>
+  /** Remembers the choice for the next launch; it applies to the next recording. */
+  saveRecordingSource(source: RecordingSource): Promise<void>
+  startRecording(outputRoot: string, source: RecordingSource): Promise<RecordingStatus>
   stopRecording(recordingId: string): Promise<RecordingResult>
   cancelRecording(recordingId: string): Promise<void>
   listenToRecordingFailures(handler: (event: RecordingFailure) => void): Promise<() => void>

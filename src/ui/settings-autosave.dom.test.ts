@@ -67,6 +67,8 @@ function createBackend(
     },
     saveEnginePreset: async () => undefined,
     saveComputeDevice: async () => undefined,
+    loadRecordingSource: async () => "microphone",
+    saveRecordingSource: async () => undefined,
     saveAssistantSettings: async (settings) => {
       await onSave(settings)
     },

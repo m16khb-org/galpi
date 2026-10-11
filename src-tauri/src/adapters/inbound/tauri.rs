@@ -13,6 +13,7 @@ use crate::domain::drive::{DriveImport, DriveRecordingUpload, DriveStatus, Drive
 use crate::domain::engine::{ComputeDevice, EnginePreset};
 use crate::domain::gateway::AppAccess;
 use crate::domain::job::{SetupRequest, TranscriptImportRequest, TranscriptionRequest};
+use crate::domain::recording::RecordingSource;
 use crate::domain::roster::AssistantSettings;
 use crate::domain::worker::WorkerEvent;
 use serde::Serialize;
@@ -93,6 +94,21 @@ pub async fn save_compute_device(
 }
 
 #[tauri::command]
+pub async fn load_recording_source(
+    application: State<'_, Application>,
+) -> Result<RecordingSource, AppError> {
+    application.load_recording_source().await
+}
+
+#[tauri::command]
+pub async fn save_recording_source(
+    application: State<'_, Application>,
+    source: RecordingSource,
+) -> Result<(), AppError> {
+    application.save_recording_source(source).await
+}
+
+#[tauri::command]
 pub async fn refine_transcript(
     application: State<'_, Application>,
     job_id: Uuid,
@@ -146,8 +162,9 @@ pub async fn reveal_output_directory(
 pub async fn start_recording(
     application: State<'_, Application>,
     output_root: String,
+    source: RecordingSource,
 ) -> Result<RecordingStatus, AppError> {
-    application.start_recording(output_root).await
+    application.start_recording(output_root, source).await
 }
 
 #[tauri::command]

@@ -4,6 +4,7 @@ use crate::application::ports::{ClockPort, GatewayAuthPort, GatewaySessionStore}
 use crate::application::use_cases::Application;
 use crate::domain::gateway::{AppAccess, GatewayGrant, GatewayRefreshFailure, GatewayTokens};
 use crate::domain::job::{SetupRequest, SpeakerHint, TranscriptImportRequest};
+use crate::domain::recording::RecordingSource;
 use async_trait::async_trait;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -211,7 +212,11 @@ async fn feature_codes(app: &Application) -> Vec<String> {
             .await
             .map(drop),
         ),
-        code(app.start_recording("/tmp".to_owned()).await.map(drop)),
+        code(
+            app.start_recording("/tmp".to_owned(), RecordingSource::default())
+                .await
+                .map(drop),
+        ),
     ]
     .into_iter()
     .map(Option::unwrap_or_default)

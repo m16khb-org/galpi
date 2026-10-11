@@ -250,6 +250,13 @@ nearest step, ties going up; structural sizes (248px rail, 560×780px sheet, 480
 - **Entry**: the gear reopens the tab last shown (`전사 엔진` first). A contextual link opens its own tab: `토큰 설정 열기` → `전사 엔진`, `명부 만들기` → `회의 정보`, `설정에서 등록` → `AI 증강`. The gear stays the first `open-settings` control in document order, the fallback focus target when a start action disables itself.
 - **Credentials**: each clear button sits in its credential's section — `Hugging Face 토큰 지우기` under the token field, `AI 증강 API 키 지우기` at the end of the API-key panel — and shows only while that credential is stored. When a clear hides its own button, focus moves to the emptied field.
 
+### Recording Source
+
+- **Structure**: under the record button inside the `#recorder` card sits a `segmented-control` radio group labeled `녹음 소스` with two slots, `마이크만` and `마이크 + 회의 소리`. It reuses the segmented-control states of the engine preset picker; no new tokens or colors.
+- **Behavior**: the choice saves immediately like a select and the stored value is restored on launch. The group is disabled while a recording is running or stopping.
+- **Helper text**: selecting `마이크 + 회의 소리` shows `스피커 대신 헤드폰을 쓰면 상대 목소리가 두 번 녹음되지 않습니다. 회의 앱의 알림음 등 컴퓨터 소리도 함께 녹음됩니다.` below the group; it is hidden for `마이크만`.
+- **Labels**: the record button sub label reads `시스템 마이크 · 16-bit PCM WAV` for microphone only and `마이크와 회의 소리 · 16-bit PCM WAV` for the combined source. While recording, the status sub label reads `마이크 입력을 저장하고 있습니다.` or `마이크와 회의 소리를 저장하고 있습니다.`. Stopping keeps `녹음 파일을 마무리합니다.`, which now also covers merging the two tracks; no elapsed-time estimate is shown.
+
 ### Settings Autosave
 
 - **Behavior**: text fields persist when the user commits the edit (blur or Enter); selects, switches, and row removals persist immediately. There is no global save button.

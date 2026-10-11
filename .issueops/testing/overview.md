@@ -40,6 +40,16 @@ Manual Windows gates (not automated):
 
 - Run the NSIS installer, prepare the engine, and transcribe a sample file.
 - Record from the microphone, then cancel; confirm the recording is discarded.
+- Record with `마이크 + 회의 소리` for at least 1 minute while a browser plays
+  audio and you speak, with about 20 seconds of silence in the middle; confirm
+  the final WAV length is within 1 second of the recording time, both the
+  browser audio and your voice are audible, and the file transcribes end to
+  end.
+- During that recording, confirm playback of other apps does not change
+  volume.
+- Record with `마이크 + 회의 소리`, then discard; confirm no meeting folder and
+  no `.part` files remain.
+- macOS (Core Audio process tap, 14.6+) is not verified on the dev PC.
 - Cancel a running job and confirm in Task Manager that no worker/Python
   process remains.
 - Save the Hugging Face token and assistant API key, restart the app, and

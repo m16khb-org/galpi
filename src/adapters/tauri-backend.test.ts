@@ -102,6 +102,44 @@ describe("TauriBackend compute device", () => {
   })
 })
 
+describe("TauriBackend recording source", () => {
+  test("sends the source with start_recording and saves it by its wire name", async () => {
+    // Given
+    const calls: Array<[string, unknown]> = []
+    mock.module("@tauri-apps/api/core", () => ({
+      invoke: async (command: string, args?: unknown) => {
+        calls.push([command, args])
+        if (command !== "start_recording") return undefined
+        return { recordingId: "rec-1", path: "/out/a.wav.part", sampleRate: 48_000, channels: 1 }
+      },
+    }))
+    const { TauriBackend } = await import("./tauri-backend")
+    const backend = new TauriBackend()
+
+    // When
+    await backend.saveRecordingSource("microphoneAndSystem")
+    await backend.startRecording("/out", "microphoneAndSystem")
+
+    // Then
+    expect(calls).toEqual([
+      ["save_recording_source", { source: "microphoneAndSystem" }],
+      ["start_recording", { outputRoot: "/out", source: "microphoneAndSystem" }],
+    ])
+  })
+
+  test("refuses a stored source it does not know", async () => {
+    // Given: a host newer than this window, answering with a source it lacks
+    mock.module("@tauri-apps/api/core", () => ({
+      invoke: async () => "systemOnly",
+    }))
+    const { TauriBackend } = await import("./tauri-backend")
+    const backend = new TauriBackend()
+
+    // When / Then
+    expect(backend.loadRecordingSource()).rejects.toThrow()
+  })
+})
+
 describe("TauriBackend Drive transcript import", () => {
   test("invokes import_transcript_from_drive and parses the import result", async () => {
     // Given: a host that imports the picked transcript into the output folder

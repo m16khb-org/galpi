@@ -3,6 +3,7 @@ import { Window } from "happy-dom"
 
 import type { EnvironmentStatus, TranscriptionResult } from "../domain/job"
 import { initialJobState } from "../application/job-machine"
+import { initialRecordingState } from "../application/recording-machine"
 import { AppView } from "./app-view"
 
 const styles = await Bun.file(new URL("../styles.css", import.meta.url)).text()
@@ -581,6 +582,87 @@ describe("AppView platform capabilities (real DOM)", () => {
     expect(html).toContain("시스템 마이크 · 16-bit PCM WAV")
     expect(html).toContain("출력 폴더 열기")
     expect(html).toContain("이 컴퓨터")
+  })
+})
+
+describe("AppView recording source (real DOM)", () => {
+  let view: AppView
+  let root: HTMLElement
+  let window: Window
+
+  beforeEach(() => {
+    ;({ view, root, window } = createView())
+  })
+
+  function radio(value: string): HTMLInputElement {
+    return root.querySelector(`input[name="recording-source"][value="${value}"]`) as HTMLInputElement
+  }
+
+  test("starts on the microphone with no note about the computer's sound", () => {
+    // Then
+    expect(radio("microphone").checked).toBe(true)
+    expect(hidden(root, "#recording-source-help")).toBe(true)
+    expect(root.querySelector("#record-button-detail")?.textContent).toBe(
+      "시스템 마이크 · 16-bit PCM WAV",
+    )
+  })
+
+  test("choosing the combined source explains headphones and renames the record button detail", () => {
+    // When
+    view.setRecordingSource("microphoneAndSystem")
+
+    // Then
+    expect(radio("microphoneAndSystem").checked).toBe(true)
+    expect(hidden(root, "#recording-source-help")).toBe(false)
+    expect(root.querySelector("#recording-source-help")?.textContent).toContain("헤드폰")
+    expect(root.querySelector("#record-button-detail")?.textContent).toBe(
+      "마이크와 회의 소리 · 16-bit PCM WAV",
+    )
+    expect(root.querySelector(".recording-source-segmented")?.getAttribute("aria-describedby")).toBe(
+      "recording-source-help",
+    )
+  })
+
+  test("hands the user's pick to the handler", () => {
+    // Given
+    const picked: string[] = []
+    view.onRecordingSourceChange((source) => picked.push(source))
+
+    // When
+    const combined = radio("microphoneAndSystem")
+    combined.checked = true
+    combined.dispatchEvent(new window.Event("change") as unknown as Event)
+
+    // Then
+    expect(picked).toEqual(["microphoneAndSystem"])
+  })
+
+  test("locks the choice while a recording starts, runs, or stops", () => {
+    // Given
+    const idle = { ...initialRecordingState }
+
+    // When / Then: it unlocks the moment the recording is over
+    for (const status of ["starting", "recording", "stopping"] as const) {
+      view.setRecording({ ...idle, status })
+      expect(radio("microphone").disabled).toBe(true)
+      expect(radio("microphoneAndSystem").disabled).toBe(true)
+    }
+    view.setRecording({ ...idle, status: "completed" })
+    expect(radio("microphone").disabled).toBe(false)
+    expect(radio("microphoneAndSystem").disabled).toBe(false)
+  })
+
+  test("names the combined source while it records", () => {
+    // Given
+    view.setRecordingSource("microphoneAndSystem")
+
+    // When
+    view.setRecording({ ...initialRecordingState, status: "starting" })
+
+    // Then
+    expect(root.querySelector("#recording-path")?.textContent).toBe(
+      "마이크와 회의 소리를 저장하고 있습니다.",
+    )
   })
 })
 

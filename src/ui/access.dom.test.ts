@@ -53,6 +53,8 @@ function backendWith(overrides: Partial<BackendPort>, calls: string[]): BackendP
     saveAssistantSettings: unused,
     saveEnginePreset: unused,
     saveComputeDevice: unused,
+    loadRecordingSource: async () => "microphone",
+    saveRecordingSource: async () => undefined,
     refineTranscript: unused,
     transcribe: unused,
     importTranscript: unused,

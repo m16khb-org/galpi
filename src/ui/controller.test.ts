@@ -30,6 +30,8 @@ function unavailableBackend(): BackendPort {
     saveAssistantSettings: unavailable,
     saveEnginePreset: unavailable,
     saveComputeDevice: unavailable,
+    loadRecordingSource: async () => "microphone",
+    saveRecordingSource: async () => undefined,
     refineTranscript: unavailable,
     transcribe: unavailable,
     importTranscript: unavailable,
@@ -162,6 +164,8 @@ describe("AppController engine preset", () => {
         state.preset = preset
       },
       saveComputeDevice: unavailable,
+      loadRecordingSource: async () => "microphone",
+      saveRecordingSource: async () => undefined,
       refineTranscript: unavailable,
       transcribe: unavailable,
       importTranscript: unavailable,
@@ -263,6 +267,8 @@ describe("AppController transcript import", () => {
       saveAssistantSettings: unavailable,
       saveEnginePreset: unavailable,
       saveComputeDevice: unavailable,
+      loadRecordingSource: async () => "microphone",
+      saveRecordingSource: async () => undefined,
       refineTranscript: unavailable,
       transcribe: unavailable,
       importTranscript: async () => ({
@@ -658,6 +664,8 @@ describe("AppController compute device", () => {
         state.saved.push(device)
         state.device = device
       },
+      loadRecordingSource: async () => "microphone",
+      saveRecordingSource: async () => undefined,
       loadChatGptSettings: async () => ({
         authMode: "apiKey",
         model: null,

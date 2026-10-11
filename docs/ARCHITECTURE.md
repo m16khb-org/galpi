@@ -16,7 +16,7 @@ Galpi는 세 개의 런타임으로 구성된다. 각각 내부적으로 같은 
 TypeScript (WebView)          Rust (Tauri 호스트)              Python (WhisperX 사이드카)
 ┌────────────────────┐        ┌──────────────────────────┐     ┌────────────────────────┐
 │ ui/        (외부)   │        │ adapters/inbound  (외부)  │     │ __main__.py  (외부)     │
-│ ├─ controller       │  IPC   │ ├─ tauri.rs (38 커맨드)   │     │ engine.py    (유스케이스)│
+│ ├─ controller       │  IPC   │ ├─ tauri.rs (40 커맨드)   │     │ engine.py    (유스케이스)│
 │ ├─ app-view         │ ─────▶ │ └─ TauriEvents            │     │ refine.py             │
 │ └─ settings/…       │        │                          │     │ protocol.py (포트: stdout)│
 ├────────────────────┤        │ application/  (유스케이스) │     ├────────────────────────┤
@@ -50,7 +50,7 @@ TypeScript (WebView)          Rust (Tauri 호스트)              Python (Whispe
 
 | 방향 | Rust | TypeScript | Python |
 |------|------|-----------|--------|
-| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 38개 `#[tauri::command]`(`save_compute_device`와 Drive 10개 포함, `composition.rs`의 `generate_handler!`와 일치) + `TauriEvents` 이벤트 브리지(`job-event`·`recording-event`·`chatgpt-event`) | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
+| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 40개 `#[tauri::command]`(`save_compute_device`와 Drive 10개 포함, `composition.rs`의 `generate_handler!`와 일치) + `TauriEvents` 이벤트 브리지(`job-event`·`recording-event`·`chatgpt-event`) | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
 | **-driven (outbound)** | `DesktopAdapter`(엔진·전사·산출물), `NativeRecorder`(CPAL), `LocalSettingsStore`(`ChatGptStore`·`GatewaySessionStore`·`DriveSessionStore` 포함), `ChatGptOAuthAdapter`(`ChatGptAuthPort`: OAuth/PKCE·토큰 갱신·폐기·모델 목록), `GatewayOAuthAdapter`(`GatewayAuthPort`: auth-gateway Google 로그인·세션 갱신·로그아웃), `DriveOAuthAdapter`(`DriveAuthPort`: `drive.file` 동의·데스크톱 Picker, 코드 교환·갱신은 auth-gateway `/drive/native/token` 대행), `DriveRestAdapter`(`DriveFilesPort`: Drive v3 폴더·업로드·갱신·스트리밍 다운로드, 녹음 같은 큰 파일은 디스크에서 청크로 읽어 이어 올리기), 세 로그인 어댑터가 함께 쓰는 `browser_sign_in/`(시스템 브라우저·루프백·PKCE), `SystemClock`(`ClockPort`), `process.rs`(워커 감독) | (없음 — 프론트엔드는 driven 포트가 없다; 브라우저 API는 어댑터 내부 처리) | `protocol.py` `EventWriter`(stdout), `assistant_stream.py`·`responses_stream.py`(HTTP) |
 
 **포트 소유 규칙 (DIP)**: 포트 인터페이스는 사용하는 쪽(내부 계층)이 소유하고,
@@ -67,7 +67,11 @@ TypeScript는 `BackendPort`가 **어댑터 모듈에** 정의되어 있어 위�
 `adapters/outbound/platform.rs`의 `Os` 값으로 분기하며, `Os::current()`가 유일한
 `cfg!(windows)`다. `#[cfg]`는 다른 플랫폼에서 컴파일할 수 없는 코드에만 쓴다: Win32
 FFI(`process/guard/windows.rs`, `recording/power/windows.rs`,
-`secrets/credential_manager.rs`)와 `nix`(`process/guard/unix.rs`).
+`secrets/credential_manager.rs`)와 `nix`(`process/guard/unix.rs`). 녹음의 시스템 소리 트랙도
+이 규칙을 따른다: `recording/system.rs`의 Windows 무음 출력 스트림(루프백 유지)과 macOS
+입력 가능한 출력 장치 거부 분기는 `#[cfg]`가 아니라 `Os::current()` 값으로 가른다.
+녹음 중에는 마이크(`<이름>.mic.wav.part`)와 시스템 소리(`<이름>.system.wav.part`)를 따로
+저장하고, 정지 뒤 `recording/mix.rs`가 하나의 `<이름>.wav`로 합친다.
 `scripts/check-architecture.ts`는 domain/application/inbound에서 `cfg(windows)`,
 `cfg(unix)`, `target_os`, `cfg!(`를 금지한다. 빌드 종류에 따른 분기도 같은 규칙을 따른다:
 디버그 빌드에서만 `GALPI_AUTH_GATEWAY_URL`로 로그인 서버를 바꾸는 `cfg!(debug_assertions)`는

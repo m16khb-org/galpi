@@ -113,7 +113,7 @@ export const appTemplate = `
               <div id="recorder" class="recorder" data-state="idle">
                 <button id="record-button" class="record-button" type="button" data-action="record">
                   <span><i class="ph ph-microphone" aria-hidden="true"></i></span>
-                  <div><strong>마이크로 바로 녹음</strong><small>시스템 마이크 · 16-bit PCM WAV</small></div>
+                  <div><strong>마이크로 바로 녹음</strong><small id="record-button-detail">시스템 마이크 · 16-bit PCM WAV</small></div>
                 </button>
                 <div id="recording-active" class="recording-active" hidden>
                   <span class="recording-dot" aria-hidden="true"></span>
@@ -122,6 +122,11 @@ export const appTemplate = `
                   <button id="stop-recording-button" class="record-stop ${recordAction}" type="button" data-action="stop-recording"><i class="ph ph-stop" aria-hidden="true"></i> 정지</button>
                   <button id="cancel-recording-button" class="record-discard ${recordAction}" type="button" data-action="cancel-recording">버리기</button>
                 </div>
+                <div class="segmented-control recording-source-segmented" role="radiogroup" aria-label="녹음 소스" aria-describedby="recording-source-help">
+                  <label><input type="radio" name="recording-source" value="microphone" checked /><span>마이크만</span></label>
+                  <label><input type="radio" name="recording-source" value="microphoneAndSystem" /><span>마이크 + 회의 소리</span></label>
+                </div>
+                <p id="recording-source-help" class="recording-source-help" hidden>스피커 대신 헤드폰을 쓰면 상대 목소리가 두 번 녹음되지 않습니다. 회의 앱의 알림음 등 컴퓨터 소리도 함께 녹음됩니다.</p>
                 <p id="recording-status" class="recording-status" aria-live="polite">마이크로 바로 녹음할 수 있습니다.</p>
                 <p id="recording-drive-status" class="drive-status" role="status" aria-live="polite" data-state="pending"></p>
                 <div class="drive-sync-actions">

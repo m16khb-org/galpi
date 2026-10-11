@@ -11,6 +11,7 @@ import {
   tickRecording,
 } from "../application/recording-machine"
 import { type BackendPort, errorMessage, type RecordingFailure } from "../domain/backend"
+import { defaultRecordingSource, type RecordingSource } from "../domain/recording"
 import type { AppView } from "./app-view"
 
 export class RecordingController {
@@ -20,6 +21,9 @@ export class RecordingController {
   // The webview suspends interval callbacks while the window is hidden, so a
   // visibility change is the first moment the frozen counter can catch up.
   private readonly refresh = (): void => this.tick()
+  private source: RecordingSource = defaultRecordingSource
+  /** The latest save of the source choice; it never rejects. */
+  private sourceSaved: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly backend: BackendPort,
@@ -34,6 +38,32 @@ export class RecordingController {
     this.view.setRecording(this.state)
   }
 
+  /** Puts the stored choice into the control; a read failure keeps the default. */
+  async loadSource(): Promise<void> {
+    try {
+      this.source = await this.backend.loadRecordingSource()
+    } catch (error) {
+      this.view.showError(errorMessage(error))
+    }
+    this.view.setRecordingSource(this.source)
+  }
+
+  /** Shows the choice at once and saves it; a save that fails puts the old choice back. */
+  chooseSource(source: RecordingSource): Promise<void> {
+    const previous = this.source
+    this.source = source
+    this.view.setRecordingSource(source)
+    this.sourceSaved = this.backend.saveRecordingSource(source).catch((error: unknown) => {
+      // The control must not promise a source the next launch will not remember.
+      if (this.source === source) {
+        this.source = previous
+        this.view.setRecordingSource(previous)
+      }
+      this.view.showError(errorMessage(error))
+    })
+    return this.sourceSaved
+  }
+
   async start(outputRoot: string | null): Promise<void> {
     if (!canStartRecording(this.state)) return
     if (outputRoot === null) {
@@ -43,8 +73,10 @@ export class RecordingController {
     this.pendingFailures.clear()
     this.state = beginRecordingState()
     this.render()
+    // A recording never races the save of the choice it starts with.
+    await this.sourceSaved
     try {
-      const started = await this.backend.startRecording(outputRoot)
+      const started = await this.backend.startRecording(outputRoot, this.source)
       this.state = startRecordingState(started.recordingId, started.path, this.now())
       this.render()
       const earlyFailure = this.pendingFailures.get(started.recordingId)
