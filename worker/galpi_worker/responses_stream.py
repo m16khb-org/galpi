@@ -22,6 +22,11 @@ from .protocol import EventWriter
 
 RESPONSES_BASE_URL = "https://api.openai.com/v1"
 USER_AGENT = "galpi-worker"
+# Every `reasoning.effort` the Responses API defines; the host only sends one
+# the chosen model listed.
+RESPONSES_EFFORTS = frozenset(
+    {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+)
 MESSAGES = {
     "CHATGPT_USAGE_LIMIT_EXCEEDED": (
         "ChatGPT 사용량 한도에 도달했습니다. ChatGPT 설정의 사용량에서 확인해 주세요. "
@@ -73,8 +78,14 @@ def map_failure(status: int | None, code: str) -> str:
     return "CHATGPT_UNAVAILABLE"
 
 
-def build_responses_body(messages: Sequence[ChatMessage], model: str) -> bytes:
-    """Build the preview-safe body: no sampling, token, or reasoning fields."""
+def build_responses_body(
+    messages: Sequence[ChatMessage], model: str, effort: str | None = None
+) -> bytes:
+    """Build the preview-safe body: no sampling or token fields.
+
+    `reasoning` carries only the user's chosen effort; without one the model
+    keeps its own default.
+    """
 
     instructions = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
     body: dict[str, object] = {
@@ -89,6 +100,8 @@ def build_responses_body(messages: Sequence[ChatMessage], model: str) -> bytes:
     }
     if instructions:
         body["instructions"] = instructions
+    if effort is not None:
+        body["reasoning"] = {"effort": effort}
     return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
@@ -184,12 +197,13 @@ def request_via_responses(
     progress_start: float = REFINE_STREAM_START_PERCENT,
     progress_ceiling: float = REFINE_STREAM_CEILING_PERCENT,
     activity: str = "회의록 작성",
+    effort: str | None = None,
 ) -> str:
     """POST one streaming Responses request. Never retries."""
 
     request = urllib.request.Request(
         f"{RESPONSES_BASE_URL}/responses",
-        data=build_responses_body(messages, model),
+        data=build_responses_body(messages, model, effort),
         method="POST",
         headers={
             "Authorization": f"Bearer {access_token}",

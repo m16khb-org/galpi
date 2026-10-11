@@ -104,6 +104,7 @@ describe("TauriBackend compute device", () => {
 const signedInSettings = {
   authMode: "chatGpt",
   model: "gpt-5.5",
+  reasoningEffort: "high",
   welcomeAcknowledged: true,
   account: { state: "signedIn", email: "dev@example.com" },
 }
@@ -158,11 +159,16 @@ describe("chatGptSignOutSchema", () => {
 })
 
 describe("chatGptModelsSchema", () => {
-  test("keeps the server order and the slug/displayName pair", () => {
+  test("keeps the server order, the slug/displayName pair, and each model's efforts", () => {
     // Given
     const models = [
-      { slug: "b-model", displayName: "B" },
-      { slug: "a-model", displayName: "A" },
+      {
+        slug: "b-model",
+        displayName: "B",
+        reasoningEfforts: ["low", "high"],
+        defaultReasoningEffort: "low",
+      },
+      { slug: "a-model", displayName: "A", reasoningEfforts: [], defaultReasoningEffort: null },
     ]
 
     // When / Then

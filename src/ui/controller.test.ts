@@ -11,6 +11,7 @@ const styles = await Bun.file(new URL("../styles.css", import.meta.url)).text()
 const signedOutChatGpt: ChatGptSettings = {
   authMode: "apiKey",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
@@ -318,6 +319,7 @@ describe("AppController ChatGPT sign-in", () => {
   const signedIn: ChatGptSettings = {
     authMode: "chatGpt",
     model: null,
+    reasoningEffort: null,
     welcomeAcknowledged: true,
     account: { state: "signedIn", email: "dev@example.com" },
   }
@@ -371,7 +373,12 @@ describe("AppController ChatGPT sign-in", () => {
       },
       loadChatGptSettings: record("loadChatGptSettings", signedOutChatGpt),
       listChatGptModels: record("listChatGptModels", [
-        { slug: "gpt-5.5", displayName: "GPT-5.5" },
+        {
+          slug: "gpt-5.5",
+          displayName: "GPT-5.5",
+          reasoningEfforts: [],
+          defaultReasoningEffort: null,
+        },
       ]),
       loadAppAccess: async () => openAccess,
       ...overrides,
@@ -651,6 +658,7 @@ describe("AppController compute device", () => {
       loadChatGptSettings: async () => ({
         authMode: "apiKey",
         model: null,
+        reasoningEffort: null,
         welcomeAcknowledged: true,
         account: { state: "signedOut", email: null },
       }),

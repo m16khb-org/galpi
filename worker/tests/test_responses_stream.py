@@ -157,6 +157,12 @@ class BodyAndParserTests(unittest.TestCase):
             self.assertNotIn(key, body)
         self.assertNotIn("previous_response_id", body)
 
+    def test_body_carries_only_a_chosen_effort(self) -> None:
+        body = cast(
+            dict[str, object], json.loads(build_responses_body(MESSAGES, "m", "xhigh"))
+        )
+        self.assertEqual(body["reasoning"], {"effort": "xhigh"})
+
     def test_stream_accumulates_deltas(self) -> None:
         lines = sse(delta("안"), delta("녕"), COMPLETED)
         self.assertEqual(
@@ -258,6 +264,39 @@ class RefineTests(unittest.TestCase):
             types = [json.loads(line)["type"] for line in sink.getvalue().splitlines()]
             self.assertIn("refined", types)
             self.assertEqual(len(fake.requests), 1)
+
+    def test_saved_effort_reaches_the_request_and_an_unknown_one_is_dropped(
+        self,
+    ) -> None:
+        for env_effort, expected in (("High", {"effort": "high"}), ("turbo", None)):
+            with (
+                self.subTest(effort=env_effort),
+                serving() as fake,
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                fake.respond_stream("# 회의록")
+                root = Path(directory)
+                transcript = root / "t.txt"
+                transcript.write_text("화자1: 안녕하세요", encoding="utf-8")
+                with (
+                    responses_mode(fake),
+                    patch.dict(
+                        os.environ, {"GALPI_ASSISTANT_REASONING_EFFORT": env_effort}
+                    ),
+                ):
+                    refine(
+                        transcript,
+                        root / "o.md",
+                        None,
+                        None,
+                        None,
+                        "m",
+                        quiet_events(),
+                        meeting_date="2026-01-01",
+                    )
+                self.assertEqual(
+                    request_body(fake.requests[0]).get("reasoning"), expected
+                )
 
     def test_map_reduce_requests_are_all_responses_shaped(self) -> None:
         with serving() as fake, tempfile.TemporaryDirectory() as directory:

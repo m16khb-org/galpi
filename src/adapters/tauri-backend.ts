@@ -103,6 +103,7 @@ const refinementResultSchema = z.object({
 export const chatGptSettingsSchema = z.strictObject({
   authMode: z.enum(["apiKey", "chatGpt"]),
   model: z.string().nullable(),
+  reasoningEffort: z.string().nullable(),
   welcomeAcknowledged: z.boolean(),
   account: z.strictObject({
     state: z.enum(["signedOut", "signInRequired", "signedIn"]),
@@ -111,7 +112,12 @@ export const chatGptSettingsSchema = z.strictObject({
 })
 
 export const chatGptModelsSchema = z.array(
-  z.strictObject({ slug: z.string(), displayName: z.string() }),
+  z.strictObject({
+    slug: z.string(),
+    displayName: z.string(),
+    reasoningEfforts: z.array(z.string()),
+    defaultReasoningEffort: z.string().nullable(),
+  }),
 )
 
 export const chatGptSignOutSchema = z.strictObject({

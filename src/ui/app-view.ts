@@ -117,6 +117,7 @@ export class AppView {
       "#settings-assistant-base-url",
       "#settings-assistant-background",
       "#settings-chatgpt-model",
+      "#settings-chatgpt-effort",
     ]) {
       this.element(selector).addEventListener("change", handler)
     }

@@ -25,6 +25,7 @@ const assistant: AssistantSettings = {
 const signedOut: ChatGptSettings = {
   authMode: "apiKey",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
@@ -32,13 +33,19 @@ const signedOut: ChatGptSettings = {
 const signedIn: ChatGptSettings = {
   authMode: "chatGpt",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedIn", email: "dev@example.com" },
 }
 
 const models: readonly ChatGptModel[] = [
-  { slug: "gpt-5.5", displayName: "GPT-5.5" },
-  { slug: "gpt-5.4-mini", displayName: "GPT-5.4 mini" },
+  { slug: "gpt-5.5", displayName: "GPT-5.5", reasoningEfforts: [], defaultReasoningEffort: null },
+  {
+    slug: "gpt-5.4-mini",
+    displayName: "GPT-5.4 mini",
+    reasoningEfforts: [],
+    defaultReasoningEffort: null,
+  },
 ]
 
 // The controller continues in microtasks after a backend promise settles;
@@ -425,7 +432,9 @@ describe("ChatGPT settings panel (real DOM)", () => {
 
     // Then: it is dismissed and remembered as a preference
     expect(hidden(root, "#chatgpt-welcome")).toBe(true)
-    expect(saved).toEqual([{ authMode: "chatGpt", model: null, welcomeAcknowledged: true }])
+    expect(saved).toEqual([
+      { authMode: "chatGpt", model: null, reasoningEffort: null, welcomeAcknowledged: true },
+    ])
     controller.stop()
   })
 

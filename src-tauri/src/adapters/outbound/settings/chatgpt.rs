@@ -67,6 +67,7 @@ impl ChatGptStore for LocalSettingsStore {
         self.snapshot(|settings| ChatGptSettings {
             auth_mode: settings.chatgpt_auth_mode,
             model: settings.chatgpt_model.clone(),
+            reasoning_effort: settings.chatgpt_reasoning_effort.clone(),
             welcome_acknowledged: settings.chatgpt_welcome_acknowledged,
             account: account_view(settings),
         })
@@ -77,6 +78,7 @@ impl ChatGptStore for LocalSettingsStore {
         self.update(|settings| {
             settings.chatgpt_auth_mode = preferences.auth_mode;
             settings.chatgpt_model = preferences.model;
+            settings.chatgpt_reasoning_effort = preferences.reasoning_effort;
             settings.chatgpt_welcome_acknowledged = preferences.welcome_acknowledged;
         })
         .await
@@ -165,6 +167,7 @@ impl ChatGptStore for LocalSettingsStore {
             settings.chatgpt_email = None;
             settings.chatgpt_needs_consent = false;
             settings.chatgpt_model = None;
+            settings.chatgpt_reasoning_effort = None;
             settings.chatgpt_auth_mode = AssistantAuthMode::ApiKey;
         })
         .await
@@ -303,6 +306,7 @@ mod tests {
             "chatgptEmail",
             "chatgptSubject",
             "chatgptModel",
+            "chatgptReasoningEffort",
         ] {
             assert!(cleared(&after, key), "{key} survived: {after}");
         }
@@ -360,6 +364,7 @@ mod tests {
         let preferences = ChatGptPreferences {
             auth_mode: AssistantAuthMode::ChatGpt,
             model: Some("gpt-5".to_owned()),
+            reasoning_effort: Some("high".to_owned()),
             welcome_acknowledged: true,
         };
         store.save_preferences(preferences.clone()).await?;
@@ -371,6 +376,7 @@ mod tests {
         let settings = store.load_settings().await?;
         assert_eq!(settings.auth_mode, AssistantAuthMode::ChatGpt);
         assert_eq!(settings.model.as_deref(), Some("gpt-5"));
+        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
         assert!(settings.welcome_acknowledged);
         assert_eq!(settings.account.state, ChatGptAccountState::SignedIn);
         tokio::fs::remove_dir_all(directory).await?;

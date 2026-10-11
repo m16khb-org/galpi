@@ -29,6 +29,7 @@ const initialAssistant: AssistantSettings = {
 const signedOutChatGpt: ChatGptSettings = {
   authMode: "apiKey",
   model: null,
+  reasoningEffort: null,
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
@@ -103,8 +104,18 @@ function createBackend(
     },
     cancelChatGptSignIn: async () => undefined,
     listChatGptModels: async () => [
-      { slug: "gpt-5.5", displayName: "GPT-5.5" },
-      { slug: "gpt-5.4-mini", displayName: "GPT-5.4 mini" },
+      {
+        slug: "gpt-5.5",
+        displayName: "GPT-5.5",
+        reasoningEfforts: ["low", "medium", "high", "xhigh"],
+        defaultReasoningEffort: "medium",
+      },
+      {
+        slug: "gpt-5.4-mini",
+        displayName: "GPT-5.4 mini",
+        reasoningEfforts: ["low", "medium"],
+        defaultReasoningEffort: "low",
+      },
     ],
     signOutOfChatGpt: async () => {
       throw new Error("unused sign-out")
@@ -353,6 +364,7 @@ describe("ChatGPT preferences autosave (real DOM)", () => {
   const signedIn: ChatGptSettings = {
     authMode: "chatGpt",
     model: "gpt-5.5",
+    reasoningEffort: null,
     welcomeAcknowledged: true,
     account: { state: "signedIn", email: "dev@example.com" },
   }
@@ -383,7 +395,7 @@ describe("ChatGPT preferences autosave (real DOM)", () => {
 
     // Then: the choice went to its own command with no account data
     expect(preferenceSaves).toEqual([
-      { authMode: "chatGpt", model: null, welcomeAcknowledged: false },
+      { authMode: "chatGpt", model: null, reasoningEffort: null, welcomeAcknowledged: false },
     ])
     // And the assistant document and key travel exactly as before
     expect(keySaves).toEqual([])
@@ -431,9 +443,67 @@ describe("ChatGPT preferences autosave (real DOM)", () => {
 
     // Then
     expect(preferenceSaves).toEqual([
-      { authMode: "chatGpt", model: "gpt-5.4-mini", welcomeAcknowledged: true },
+      {
+        authMode: "chatGpt",
+        model: "gpt-5.4-mini",
+        reasoningEffort: null,
+        welcomeAcknowledged: true,
+      },
     ])
     expect(assistantSaves.at(-1)?.model).toBe("glm-5.3-flash")
+    controller.stop()
+  })
+
+  test("picking an effort saves it, and a model without that effort hands it back", async () => {
+    // Given: the saved model offers `xhigh` and the other model does not
+    const preferenceSaves: ChatGptPreferences[] = []
+    let saved = deferred<void>()
+    const { window, root, controller } = await createHarness(
+      () => undefined,
+      () => undefined,
+      (preferences) => {
+        preferenceSaves.push(preferences)
+        saved.resolve(undefined)
+      },
+      signedIn,
+    )
+    ;(root.querySelector('[data-action="open-settings"]') as HTMLElement).click()
+    await settle()
+    const model = root.querySelector<HTMLSelectElement>("#settings-chatgpt-model")
+    const effort = root.querySelector<HTMLSelectElement>("#settings-chatgpt-effort")
+    if (model === null || effort === null) throw new Error("ChatGPT selects are missing")
+    expect([...effort.options].map((option) => option.textContent)).toEqual([
+      "모델 기본값 (중간)",
+      "낮음",
+      "중간",
+      "높음",
+      "매우 높음",
+    ])
+    expect(effort.value).toBe("")
+
+    // When: the user picks the deepest effort
+    effort.value = "xhigh"
+    dispatchChange(window, effort)
+    await withTimeout(saved.promise)
+
+    // Then it is saved with the model
+    expect(preferenceSaves.at(-1)?.reasoningEffort).toBe("xhigh")
+
+    // When: the user switches to a model that does not accept it
+    saved = deferred<void>()
+    model.value = "gpt-5.4-mini"
+    dispatchChange(window, model)
+    await withTimeout(saved.promise)
+
+    // Then: the new model's own choices show and its default takes over
+    expect([...effort.options].map((option) => option.value)).toEqual(["", "low", "medium"])
+    expect(effort.value).toBe("")
+    expect(preferenceSaves.at(-1)).toEqual({
+      authMode: "chatGpt",
+      model: "gpt-5.4-mini",
+      reasoningEffort: null,
+      welcomeAcknowledged: true,
+    })
     controller.stop()
   })
 })

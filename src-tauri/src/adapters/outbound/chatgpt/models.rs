@@ -1,9 +1,10 @@
 //! The signed-in account's model list (`GET /v1/models`).
 
 use crate::application::error::AppError;
-use crate::domain::chatgpt::ChatGptModel;
+use crate::domain::chatgpt::{ChatGptModel, reasoning_effort};
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::Value;
 
 const LISTED: &str = "list";
 
@@ -17,6 +18,31 @@ struct ModelEntry {
     slug: String,
     display_name: Option<String>,
     visibility: Option<String>,
+    /// `[{"effort": "low", "description": ..}, ..]`. Kept loose: a shape this
+    /// adapter does not know costs only the effort choices, never the list.
+    #[serde(default)]
+    supported_reasoning_levels: Value,
+    #[serde(default)]
+    default_reasoning_level: Option<Value>,
+}
+
+/// One level as `{"effort": ".."}` or a bare string; unknown efforts are dropped.
+fn level(value: &Value) -> Option<String> {
+    value
+        .get("effort")
+        .unwrap_or(value)
+        .as_str()
+        .and_then(reasoning_effort)
+}
+
+fn efforts(levels: &Value) -> Vec<String> {
+    let mut efforts: Vec<String> = Vec::new();
+    for effort in levels.as_array().into_iter().flatten().filter_map(level) {
+        if !efforts.contains(&effort) {
+            efforts.push(effort);
+        }
+    }
+    efforts
 }
 
 fn unavailable(reason: &str) -> AppError {
@@ -60,6 +86,8 @@ pub async fn list_models(
         .filter(|entry| entry.visibility.as_deref() == Some(LISTED))
         .map(|entry| ChatGptModel {
             display_name: entry.display_name.unwrap_or_else(|| entry.slug.clone()),
+            reasoning_efforts: efforts(&entry.supported_reasoning_levels),
+            default_reasoning_effort: entry.default_reasoning_level.as_ref().and_then(level),
             slug: entry.slug,
         })
         .collect())

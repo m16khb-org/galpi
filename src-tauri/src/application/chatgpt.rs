@@ -17,10 +17,12 @@ use tokio::sync::oneshot;
 
 mod sign_in;
 
-/// What a ChatGPT-mode refinement needs: a usable access token and the model.
+/// What a ChatGPT-mode refinement needs: a usable access token, the model,
+/// and the chosen reasoning effort (`None` is the model's default).
 pub struct ChatGptAccess {
     pub token: String,
     pub model: String,
+    pub reasoning_effort: Option<String>,
 }
 
 /// Account lifecycle on top of the authorization server and the store.
@@ -111,7 +113,11 @@ impl ChatGptAccounts {
             )
         })?;
         let token = self.fresh_access_token().await?;
-        Ok(ChatGptAccess { token, model })
+        Ok(ChatGptAccess {
+            token,
+            model,
+            reasoning_effort: settings.reasoning_effort,
+        })
     }
 
     /// An access token with at least the refresh margin left, refreshing once

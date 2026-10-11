@@ -4,7 +4,9 @@ import {
   assistantReady,
   type ChatGptAccount,
   type ChatGptModel,
+  effortChoices,
   pickDefaultModel,
+  pickEffort,
   signInFailureMessage,
 } from "./chatgpt"
 
@@ -13,8 +15,18 @@ const signedOut: ChatGptAccount = { state: "signedOut", email: null }
 const signInRequired: ChatGptAccount = { state: "signInRequired", email: "dev@example.com" }
 
 const models: readonly ChatGptModel[] = [
-  { slug: "gpt-5.5", displayName: "GPT-5.5" },
-  { slug: "gpt-5.4-mini", displayName: "GPT-5.4 mini" },
+  {
+    slug: "gpt-5.5",
+    displayName: "GPT-5.5",
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    slug: "gpt-5.4-mini",
+    displayName: "GPT-5.4 mini",
+    reasoningEfforts: [],
+    defaultReasoningEffort: null,
+  },
 ]
 
 describe("assistantReady", () => {
@@ -45,6 +57,22 @@ describe("pickDefaultModel", () => {
 
   test("has nothing to pick from an empty list", () => {
     expect(pickDefaultModel([], "gpt-5.5")).toBeNull()
+  })
+})
+
+describe("reasoning effort", () => {
+  test("offers what the model list says, or the widely accepted three when it says nothing", () => {
+    expect(effortChoices(models[0])).toEqual(["low", "medium", "high", "xhigh"])
+    expect(effortChoices(models[1])).toEqual(["low", "medium", "high"])
+    expect(effortChoices(undefined)).toEqual([])
+  })
+
+  test("keeps a saved effort only while the model accepts it", () => {
+    // Given / When / Then: switching to a model without `xhigh` hands the choice back to the model
+    expect(pickEffort(models[0], "xhigh")).toBe("xhigh")
+    expect(pickEffort(models[1], "xhigh")).toBeNull()
+    expect(pickEffort(models[1], "high")).toBe("high")
+    expect(pickEffort(models[0], null)).toBeNull()
   })
 })
 

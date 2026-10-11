@@ -109,10 +109,13 @@ impl ChatGptAccounts {
             .list_models(&access_token)
             .await
             .unwrap_or_default();
+        let model = choose_model(&listed, current.model);
+        let reasoning_effort = keep_effort(&listed, model.as_deref(), current.reasoning_effort);
         self.store
             .save_preferences(ChatGptPreferences {
                 auth_mode: AssistantAuthMode::ChatGpt,
-                model: choose_model(&listed, current.model),
+                model,
+                reasoning_effort,
                 welcome_acknowledged: current.welcome_acknowledged,
             })
             .await?;
@@ -129,4 +132,19 @@ fn choose_model(listed: &[ChatGptModel], saved: Option<String>) -> Option<String
     saved
         .filter(|slug| listed.iter().any(|model| &model.slug == slug))
         .or_else(|| listed.first().map(|model| model.slug.clone()))
+}
+
+/// Drop a saved effort the chosen model says it does not accept. A model the
+/// list does not describe keeps it.
+fn keep_effort(
+    listed: &[ChatGptModel],
+    model: Option<&str>,
+    saved: Option<String>,
+) -> Option<String> {
+    let accepted = listed
+        .iter()
+        .find(|listed| Some(listed.slug.as_str()) == model)
+        .map(|listed| &listed.reasoning_efforts)
+        .filter(|efforts| !efforts.is_empty());
+    saved.filter(|effort| accepted.is_none_or(|efforts| efforts.contains(effort)))
 }

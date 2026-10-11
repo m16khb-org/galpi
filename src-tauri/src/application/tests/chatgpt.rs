@@ -120,6 +120,8 @@ impl ChatGptFake {
             .map(|(slug, name)| ChatGptModel {
                 slug: (*slug).to_owned(),
                 display_name: (*name).to_owned(),
+                reasoning_efforts: Vec::new(),
+                default_reasoning_effort: None,
             })
             .collect();
         Ok(())
@@ -135,6 +137,7 @@ impl ChatGptFake {
         account.preferences = ChatGptPreferences {
             auth_mode: AssistantAuthMode::ChatGpt,
             model: model.map(str::to_owned),
+            reasoning_effort: None,
             welcome_acknowledged: true,
         };
         Ok(())
@@ -216,6 +219,7 @@ impl ChatGptStore for FakePort {
         Ok(ChatGptSettings {
             auth_mode: account.preferences.auth_mode,
             model: account.preferences.model.clone(),
+            reasoning_effort: account.preferences.reasoning_effort.clone(),
             welcome_acknowledged: account.preferences.welcome_acknowledged,
             account: ChatGptAccountView {
                 state,
@@ -414,6 +418,31 @@ async fn signing_in_again_reuses_the_stored_registration_and_keeps_a_listed_mode
         port.chatgpt.calls()?.sign_in_requests,
         [Some(registration("subject-1", false)?)]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn signing_in_again_drops_an_effort_the_chosen_model_does_not_accept() -> Result<(), AppError>
+{
+    // Given: a saved model whose list entry no longer offers the saved effort
+    let port = port();
+    port.chatgpt.seed(None, Some("gpt-5"))?;
+    port.chatgpt.account()?.preferences.reasoning_effort = Some("max".to_owned());
+    port.chatgpt.script_sign_in(grant("subject-1", true))?;
+    *lock(&port.chatgpt.models)? = vec![ChatGptModel {
+        slug: "gpt-5".to_owned(),
+        display_name: "GPT-5".to_owned(),
+        reasoning_efforts: vec!["low".to_owned(), "medium".to_owned(), "high".to_owned()],
+        default_reasoning_effort: Some("medium".to_owned()),
+    }];
+    let app = port.application();
+
+    // When
+    let settings = app.sign_in_with_chatgpt().await?;
+
+    // Then: the model stays and the effort falls back to the model's default
+    assert_eq!(settings.model.as_deref(), Some("gpt-5"));
+    assert_eq!(settings.reasoning_effort, None);
     Ok(())
 }
 
@@ -678,13 +707,15 @@ async fn a_rejected_client_is_reported_without_discarding_anything() -> Result<(
 }
 
 #[tokio::test]
-async fn chatgpt_refinement_ignores_the_api_key_endpoint_settings() -> Result<(), AppError> {
-    // Given: ChatGPT mode, with leftover API-key endpoint settings saved
+async fn chatgpt_refinement_uses_its_own_effort_and_ignores_the_api_key_settings()
+-> Result<(), AppError> {
+    // Given: ChatGPT mode with its own effort, and leftover API-key settings saved
     let port = port();
     port.chatgpt.seed(
         Some(tokens("access-old", "refresh-old", NOW + HOUR)),
         Some("gpt-5"),
     )?;
+    port.chatgpt.account()?.preferences.reasoning_effort = Some("high".to_owned());
     let app = port.application();
     app.save_assistant_settings(AssistantSettings {
         api_key_stored: false,
@@ -700,7 +731,7 @@ async fn chatgpt_refinement_ignores_the_api_key_endpoint_settings() -> Result<()
     // When
     refine(&app).await?;
 
-    // Then: the selected slug, the access token, Responses, and no endpoint override
+    // Then: the selected slug and effort, the access token, Responses, and no endpoint override
     let refinements = lock(&port.refinements)?;
     let job = refinements
         .first()
@@ -708,7 +739,7 @@ async fn chatgpt_refinement_ignores_the_api_key_endpoint_settings() -> Result<()
     assert_eq!(job.api_key, "access-old");
     assert_eq!(job.model.as_deref(), Some("gpt-5"));
     assert_eq!(job.base_url, None);
-    assert_eq!(job.reasoning_effort, None);
+    assert_eq!(job.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(job.transport, AssistantTransport::Responses);
     Ok(())
 }
@@ -973,6 +1004,7 @@ async fn saved_preferences_are_trimmed_and_a_blank_model_is_cleared() -> Result<
     app.save_chatgpt_preferences(ChatGptPreferences {
         auth_mode: AssistantAuthMode::ChatGpt,
         model: Some("  gpt-5  ".to_owned()),
+        reasoning_effort: Some(" HIGH ".to_owned()),
         welcome_acknowledged: true,
     })
     .await?;
@@ -980,6 +1012,7 @@ async fn saved_preferences_are_trimmed_and_a_blank_model_is_cleared() -> Result<
     app.save_chatgpt_preferences(ChatGptPreferences {
         auth_mode: AssistantAuthMode::ChatGpt,
         model: Some("   ".to_owned()),
+        reasoning_effort: None,
         welcome_acknowledged: true,
     })
     .await?;
@@ -987,6 +1020,7 @@ async fn saved_preferences_are_trimmed_and_a_blank_model_is_cleared() -> Result<
 
     // Then
     assert_eq!(trimmed.model.as_deref(), Some("gpt-5"));
+    assert_eq!(trimmed.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(blank.model, None);
     assert!(blank.welcome_acknowledged);
     Ok(())

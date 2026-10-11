@@ -25,8 +25,22 @@ pub struct ChatGptAccountView {
 pub struct ChatGptSettings {
     pub auth_mode: AssistantAuthMode,
     pub model: Option<String>,
+    /// `None` leaves the effort to the model's own default.
+    pub reasoning_effort: Option<String>,
     pub welcome_acknowledged: bool,
     pub account: ChatGptAccountView,
+}
+
+/// Every `reasoning.effort` value the Responses API defines. Which of them a
+/// model accepts comes from the account's model list.
+const REASONING_EFFORTS: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// The effort as the Responses API spells it, or `None` for a value it does not define.
+pub fn reasoning_effort(value: &str) -> Option<String> {
+    let lowered = value.trim().to_ascii_lowercase();
+    REASONING_EFFORTS
+        .contains(&lowered.as_str())
+        .then_some(lowered)
 }
 
 /// The choices the window owns and autosaves.
@@ -37,6 +51,8 @@ pub struct ChatGptPreferences {
     pub auth_mode: AssistantAuthMode,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub welcome_acknowledged: bool,
 }
@@ -49,6 +65,7 @@ impl ChatGptPreferences {
                 .model
                 .map(|model| model.trim().to_owned())
                 .filter(|model| !model.is_empty()),
+            reasoning_effort: self.reasoning_effort.as_deref().and_then(reasoning_effort),
             ..self
         }
     }
@@ -59,6 +76,10 @@ impl ChatGptPreferences {
 pub struct ChatGptModel {
     pub slug: String,
     pub display_name: String,
+    /// The efforts this model accepts, in the server's order; empty when the
+    /// list did not say.
+    pub reasoning_efforts: Vec<String>,
+    pub default_reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -84,7 +105,27 @@ pub struct ChatGptSignInEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{AssistantAuthMode, ChatGptAccountState, ChatGptAccountView, ChatGptSettings};
+    use super::{
+        AssistantAuthMode, ChatGptAccountState, ChatGptAccountView, ChatGptPreferences,
+        ChatGptSettings,
+    };
+
+    #[test]
+    fn trimming_keeps_only_efforts_the_responses_api_defines() {
+        // Given
+        let effort = |value: &str| ChatGptPreferences {
+            reasoning_effort: Some(value.to_owned()),
+            ..ChatGptPreferences::default()
+        };
+
+        // When / Then
+        assert_eq!(
+            effort(" XHigh ").trimmed().reasoning_effort.as_deref(),
+            Some("xhigh")
+        );
+        assert_eq!(effort("extreme").trimmed().reasoning_effort, None);
+        assert_eq!(effort("").trimmed().reasoning_effort, None);
+    }
 
     #[test]
     fn settings_serialize_without_any_credential() -> Result<(), serde_json::Error> {
@@ -92,6 +133,7 @@ mod tests {
         let settings = ChatGptSettings {
             auth_mode: AssistantAuthMode::ChatGpt,
             model: Some("gpt-5".to_owned()),
+            reasoning_effort: Some("high".to_owned()),
             welcome_acknowledged: true,
             account: ChatGptAccountView {
                 state: ChatGptAccountState::SignedIn,
@@ -109,7 +151,13 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(
             keys,
-            ["account", "authMode", "model", "welcomeAcknowledged"]
+            [
+                "account",
+                "authMode",
+                "model",
+                "reasoningEffort",
+                "welcomeAcknowledged"
+            ]
         );
         let account: Vec<&str> = value["account"]
             .as_object()

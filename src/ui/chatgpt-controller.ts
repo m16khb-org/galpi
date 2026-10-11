@@ -22,7 +22,7 @@ const USAGE_LIMIT_CODE = "CHATGPT_USAGE_LIMIT_EXCEEDED"
  * ChatGPT sign-in, account status and model list for the settings sheet.
  *
  * The host owns the account; this window only mirrors it and autosaves the
- * preferences it owns (`authMode`, `model`, `welcomeAcknowledged`). A failed
+ * preferences it owns (`authMode`, `model`, `reasoningEffort`, `welcomeAcknowledged`). A failed
  * sign-in is shown and left alone — nothing here retries it.
  */
 export class ChatGptController {
@@ -84,14 +84,19 @@ export class ChatGptController {
   changedPreferences(): ChatGptPreferences | null {
     const saved = this.settings
     if (saved === null) return null
+    const view = this.view.chatGptSettings
+    const model = view.selectedModel()
     const current: ChatGptPreferences = {
-      authMode: this.view.chatGptSettings.authMode(),
-      model: this.view.chatGptSettings.selectedModel() ?? saved.model,
-      welcomeAcknowledged: this.view.chatGptSettings.welcomeAcknowledged(),
+      authMode: view.authMode(),
+      model: model ?? saved.model,
+      // Until the list loads there is no effort choice on screen to read.
+      reasoningEffort: model === null ? saved.reasoningEffort : view.selectedEffort(),
+      welcomeAcknowledged: view.welcomeAcknowledged(),
     }
     const unchanged =
       current.authMode === saved.authMode &&
       current.model === saved.model &&
+      current.reasoningEffort === saved.reasoningEffort &&
       current.welcomeAcknowledged === saved.welcomeAcknowledged
     return unchanged ? null : current
   }
@@ -144,7 +149,7 @@ export class ChatGptController {
     try {
       const result = await this.backend.signOutOfChatGpt()
       this.apply(result.settings)
-      view.setModels([], null)
+      view.setModels([], null, null)
       // The ChatGPT panel hides with the return to API key mode, so the outcome
       // goes to the sheet-wide status line that stays on screen and is announced.
       this.view.tokenSettings.showMessage(
@@ -183,13 +188,20 @@ export class ChatGptController {
       const models = await this.backend.listChatGptModels()
       // A sign-out while the request was in flight makes the list stale.
       if (!this.signedIn()) return
-      const picked = pickDefaultModel(models, this.settings?.model ?? null)
-      view.setModels(models, picked)
-      // A saved choice the account no longer lists is replaced, and that is worth saving.
-      if (picked !== (this.settings?.model ?? null)) this.requestSave()
+      const saved = this.settings
+      const picked = pickDefaultModel(models, saved?.model ?? null)
+      view.setModels(models, picked, saved?.reasoningEffort ?? null)
+      // A saved model the account no longer lists, or an effort the picked model
+      // does not accept, is replaced, and that is worth saving.
+      if (
+        picked !== (saved?.model ?? null) ||
+        view.selectedEffort() !== (saved?.reasoningEffort ?? null)
+      ) {
+        this.requestSave()
+      }
     } catch (error) {
       if (!this.signedIn()) return
-      view.setModels([], null)
+      view.setModels([], null, null)
       view.setMessage(errorMessage(error), "error")
     }
   }

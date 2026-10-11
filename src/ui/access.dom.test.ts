@@ -71,6 +71,7 @@ function backendWith(overrides: Partial<BackendPort>, calls: string[]): BackendP
     loadChatGptSettings: async () => ({
       authMode: "apiKey",
       model: null,
+      reasoningEffort: null,
       welcomeAcknowledged: true,
       account: { state: "signedOut", email: null },
     }),

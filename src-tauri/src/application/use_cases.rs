@@ -271,7 +271,7 @@ impl Application {
                     api_key: access.token,
                     model: Some(access.model),
                     base_url: None,
-                    reasoning_effort: None,
+                    reasoning_effort: access.reasoning_effort,
                     transport: AssistantTransport::Responses,
                 })
             }

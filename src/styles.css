@@ -721,6 +721,7 @@ summary:focus-visible {
 #settings-assistant-help,
 #settings-background-help,
 #chatgpt-plan-line,
+#settings-chatgpt-effort-help,
 #chatgpt-data-notice,
 #drive-settings-help {
   margin: var(--seed-dimension-x2) 0 0;

@@ -11,6 +11,8 @@ export interface ChatGptAccount {
 export interface ChatGptSettings {
   readonly authMode: AssistantAuthMode
   readonly model: string | null
+  /** Null leaves the effort to the model's own default. */
+  readonly reasoningEffort: string | null
   readonly welcomeAcknowledged: boolean
   readonly account: ChatGptAccount
 }
@@ -19,12 +21,41 @@ export interface ChatGptSettings {
 export interface ChatGptPreferences {
   readonly authMode: AssistantAuthMode
   readonly model: string | null
+  readonly reasoningEffort: string | null
   readonly welcomeAcknowledged: boolean
 }
 
 export interface ChatGptModel {
   readonly slug: string
   readonly displayName: string
+  /** The efforts the model accepts in the server's order; empty when the list did not say. */
+  readonly reasoningEfforts: readonly string[]
+  readonly defaultReasoningEffort: string | null
+}
+
+/** Korean labels for the `reasoning.effort` values the Responses API defines. */
+export const EFFORT_LABELS: Readonly<Record<string, string>> = {
+  none: "끔",
+  minimal: "최소",
+  low: "낮음",
+  medium: "중간",
+  high: "높음",
+  xhigh: "매우 높음",
+  max: "최대",
+}
+
+/** Offered when the model list does not say which efforts a model accepts. */
+const FALLBACK_EFFORTS = ["low", "medium", "high"] as const
+
+/** The efforts to offer for `model`: what the list says, or the widely accepted three. */
+export function effortChoices(model: ChatGptModel | undefined): readonly string[] {
+  if (model === undefined) return []
+  return model.reasoningEfforts.length > 0 ? model.reasoningEfforts : FALLBACK_EFFORTS
+}
+
+/** A saved effort survives only while the model still accepts it; otherwise the model decides. */
+export function pickEffort(model: ChatGptModel | undefined, saved: string | null): string | null {
+  return saved !== null && effortChoices(model).includes(saved) ? saved : null
 }
 
 export type ChatGptSignInPhase = "awaitingBrowser" | "exchanging"

@@ -133,9 +133,9 @@ pub fn process_environment(
     env
 }
 
-/// Worker environment for assistant calls, carrying the assistant credential.
-/// Chat Completions may also override the endpoint and reasoning effort; a
-/// Responses call is named explicitly and uses neither.
+/// Worker environment for assistant calls, carrying the assistant credential
+/// and the reasoning effort. Chat Completions may also override the endpoint;
+/// a Responses call is named explicitly and never takes another endpoint.
 pub fn assistant_environment(
     paths: &AppPaths,
     worker_root: &Path,
@@ -154,13 +154,13 @@ pub fn assistant_environment(
             if let Some(base_url) = base_url {
                 env.insert("GALPI_ASSISTANT_BASE_URL".into(), base_url.into());
             }
-            if let Some(reasoning_effort) = reasoning_effort {
-                env.insert(
-                    "GALPI_ASSISTANT_REASONING_EFFORT".into(),
-                    reasoning_effort.into(),
-                );
-            }
         }
+    }
+    if let Some(reasoning_effort) = reasoning_effort {
+        env.insert(
+            "GALPI_ASSISTANT_REASONING_EFFORT".into(),
+            reasoning_effort.into(),
+        );
     }
     env
 }
@@ -342,15 +342,15 @@ mod assistant_environment_tests {
     }
 
     #[test]
-    fn responses_transport_is_named_and_drops_endpoint_and_effort() {
-        // Given: a ChatGPT job that still carries stale API-key settings
+    fn responses_transport_is_named_keeps_effort_and_drops_endpoint() {
+        // Given: a ChatGPT job that still carries a stale API-key endpoint
         let env = environment(
             Some("https://example.invalid/v1"),
-            Some("max"),
+            Some("high"),
             AssistantTransport::Responses,
         );
 
-        // Then: the worker is told to use Responses and gets only the credential
+        // Then: the worker is told to use Responses with the chosen effort, never another endpoint
         assert_eq!(
             value(&env, "GALPI_ASSISTANT_TRANSPORT"),
             Some(&OsString::from("responses"))
@@ -360,7 +360,10 @@ mod assistant_environment_tests {
             Some(&OsString::from("bearer-value"))
         );
         assert_eq!(value(&env, "GALPI_ASSISTANT_BASE_URL"), None);
-        assert_eq!(value(&env, "GALPI_ASSISTANT_REASONING_EFFORT"), None);
+        assert_eq!(
+            value(&env, "GALPI_ASSISTANT_REASONING_EFFORT"),
+            Some(&OsString::from("high"))
+        );
     }
 
     #[test]

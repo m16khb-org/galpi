@@ -8,7 +8,7 @@ mod view;
 
 pub use view::{
     ChatGptAccountState, ChatGptAccountView, ChatGptModel, ChatGptPreferences, ChatGptSettings,
-    ChatGptSignInEvent, ChatGptSignInPhase, SignOutResult,
+    ChatGptSignInEvent, ChatGptSignInPhase, SignOutResult, reasoning_effort,
 };
 
 use serde::{Deserialize, Serialize};

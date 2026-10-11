@@ -164,6 +164,7 @@ You can sign in with a ChatGPT account instead of an API key to use it as the mi
 1. In `설정` (Settings) → **AI 증강** (AI augmentation), choose **ChatGPT** and select `ChatGPT로 계속하기` (Continue with ChatGPT).
 2. Sign in and approve access in the system browser that opens. You return to the app when approval finishes.
 3. Pick a model from the signed-in account's `/v1/models` list.
+4. Pick a `추론 강도` (reasoning effort) among the levels that model supports; `모델 기본값` (model default) leaves it to the model. Higher levels take longer and use more of the plan's allowance.
 
 - Usage limits are shared with your ChatGPT plan; the app does not resend a request when a limit is hit.
 - The app does not access your ChatGPT conversations or account information.

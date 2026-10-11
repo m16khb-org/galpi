@@ -3,12 +3,16 @@ import {
   type AssistantAuthMode,
   type ChatGptAccount,
   type ChatGptModel,
+  EFFORT_LABELS,
+  effortChoices,
+  pickEffort,
   signInFailureMessage,
 } from "../domain/chatgpt"
 import { required } from "./dom"
 
 const MODE_SELECTOR = 'input[name="assistant-auth-mode"]'
 const MODEL_SELECTOR = "#settings-chatgpt-model"
+const EFFORT_SELECTOR = "#settings-chatgpt-effort"
 
 const FLOW_MESSAGES = {
   awaitingBrowser:
@@ -35,6 +39,7 @@ export class ChatGptSettingsView {
   private flow: ChatGptFlowState = { status: "idle", code: null, message: null }
   private welcomeSeen = false
   private busy = false
+  private models: readonly ChatGptModel[] = []
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -42,6 +47,10 @@ export class ChatGptSettingsView {
     for (const input of this.modeInputs()) {
       input.addEventListener("change", () => this.render())
     }
+    // Registered before the autosave listener, so a save already sees the new model's efforts.
+    this.element(MODEL_SELECTOR).addEventListener("change", () =>
+      this.fillEfforts(this.selectedEffort()),
+    )
     this.render()
   }
 
@@ -62,6 +71,12 @@ export class ChatGptSettingsView {
     return value.length > 0 ? value : null
   }
 
+  /** The effort the user picked; null means the model's own default. */
+  selectedEffort(): string | null {
+    const value = this.element<HTMLSelectElement>(EFFORT_SELECTOR).value
+    return value.length > 0 ? value : null
+  }
+
   welcomeAcknowledged(): boolean {
     return this.welcomeSeen
   }
@@ -76,8 +91,12 @@ export class ChatGptSettingsView {
     this.render()
   }
 
-  /** Fill the select in the server's order; `selected` is applied only if the list carries it. */
-  setModels(models: readonly ChatGptModel[], selected: string | null): void {
+  /**
+   * Fill the selects in the server's order; `selected` and `effort` are applied
+   * only if the list carries them.
+   */
+  setModels(models: readonly ChatGptModel[], selected: string | null, effort: string | null): void {
+    this.models = models
     const select = this.element<HTMLSelectElement>(MODEL_SELECTOR)
     select.replaceChildren()
     if (models.length === 0) {
@@ -87,15 +106,16 @@ export class ChatGptSettingsView {
       placeholder.disabled = true
       placeholder.selected = true
       select.appendChild(placeholder)
-      return
+    } else {
+      for (const model of models) {
+        const option = select.ownerDocument.createElement("option")
+        option.value = model.slug
+        option.textContent = model.displayName
+        select.appendChild(option)
+      }
+      select.value = selected !== null && models.some((m) => m.slug === selected) ? selected : ""
     }
-    for (const model of models) {
-      const option = select.ownerDocument.createElement("option")
-      option.value = model.slug
-      option.textContent = model.displayName
-      select.appendChild(option)
-    }
-    select.value = selected !== null && models.some((m) => m.slug === selected) ? selected : ""
+    this.fillEfforts(effort)
   }
 
   setFlow(flow: ChatGptFlowState): void {
@@ -156,7 +176,27 @@ export class ChatGptSettingsView {
     this.element("#chatgpt-welcome").hidden = !signedIn || this.welcomeSeen
     this.element("#chatgpt-model-field").hidden = !signedIn || flowActive
     this.element<HTMLSelectElement>(MODEL_SELECTOR).disabled = this.busy
+    this.element<HTMLSelectElement>(EFFORT_SELECTOR).disabled = this.busy
     for (const input of this.modeInputs()) input.disabled = this.busy || flowActive
+  }
+
+  /** The selected model's efforts, keeping `effort` while that model accepts it. */
+  private fillEfforts(effort: string | null): void {
+    const select = this.element<HTMLSelectElement>(EFFORT_SELECTOR)
+    const model = this.models.find((candidate) => candidate.slug === this.selectedModel())
+    const fallback = model?.defaultReasoningEffort ?? null
+    const automatic = select.ownerDocument.createElement("option")
+    automatic.value = ""
+    automatic.textContent =
+      fallback === null ? "모델 기본값" : `모델 기본값 (${EFFORT_LABELS[fallback] ?? fallback})`
+    select.replaceChildren(automatic)
+    for (const choice of effortChoices(model)) {
+      const option = select.ownerDocument.createElement("option")
+      option.value = choice
+      option.textContent = EFFORT_LABELS[choice] ?? choice
+      select.appendChild(option)
+    }
+    select.value = pickEffort(model, effort) ?? ""
   }
 
   private modeInputs(): HTMLInputElement[] {
