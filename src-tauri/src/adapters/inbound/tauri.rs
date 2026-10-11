@@ -9,7 +9,7 @@ use crate::domain::artifact::ArtifactKind;
 use crate::domain::chatgpt::{
     ChatGptModel, ChatGptPreferences, ChatGptSettings, ChatGptSignInEvent, SignOutResult,
 };
-use crate::domain::drive::{DriveImport, DriveStatus, DriveSyncResult};
+use crate::domain::drive::{DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult};
 use crate::domain::engine::{ComputeDevice, EnginePreset};
 use crate::domain::gateway::AppAccess;
 use crate::domain::job::{SetupRequest, TranscriptImportRequest, TranscriptionRequest};
@@ -288,6 +288,24 @@ pub async fn sync_meeting_to_drive(
     overwrite: bool,
 ) -> Result<DriveSyncResult, AppError> {
     application.sync_meeting_to_drive(job_id, overwrite).await
+}
+
+/// Turns the upload of each finished recording on or off. Needs a connection.
+#[tauri::command]
+pub async fn set_drive_save_recordings(
+    application: State<'_, Application>,
+    enabled: bool,
+) -> Result<DriveStatus, AppError> {
+    application.set_drive_save_recordings(enabled).await
+}
+
+/// Uploads a recording `stop_recording` reported, named by its recording id.
+#[tauri::command]
+pub async fn upload_recording_to_drive(
+    application: State<'_, Application>,
+    recording_id: Uuid,
+) -> Result<DriveRecordingUpload, AppError> {
+    application.upload_recording_to_drive(recording_id).await
 }
 
 #[derive(Debug, Clone)]

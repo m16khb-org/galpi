@@ -319,6 +319,7 @@ struct LocalSettings {
     drive_permission_id: Option<String>,
     drive_folder_id: Option<String>,
     drive_onboarding_dismissed: bool,
+    drive_save_recordings: bool,
     drive_session: Option<String>,
     drive_session_stored: bool,
 }
@@ -355,6 +356,7 @@ impl LocalSettings {
             && self.drive_permission_id.is_none()
             && self.drive_folder_id.is_none()
             && !self.drive_onboarding_dismissed
+            && !self.drive_save_recordings
             && self.drive_session.is_none()
             && !self.drive_session_stored
     }

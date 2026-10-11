@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 
-import type { DriveSyncResult } from "../domain/drive"
+import type { DriveRecordingUpload, DriveSyncResult } from "../domain/drive"
 
 import {
   appAccessSchema,
@@ -8,6 +8,7 @@ import {
   chatGptSettingsSchema,
   chatGptSignOutSchema,
   driveImportSchema,
+  driveRecordingUploadSchema,
   driveStatusSchema,
   driveSyncResultSchema,
   parseChatGptEvent,
@@ -211,19 +212,18 @@ describe("appAccessSchema", () => {
 
 describe("Drive schemas", () => {
   test("read both connection states and refuse a leaked token", () => {
-    expect(driveStatusSchema.parse({ state: "connected", email: "dev@example.com" })).toEqual({
-      state: "connected",
-      email: "dev@example.com",
+    const connected = { state: "connected" as const, email: "dev@example.com", saveRecordings: true }
+    expect(driveStatusSchema.parse(connected)).toEqual(connected)
+    expect(driveStatusSchema.parse({ state: "disconnected", onboardingDismissed: true })).toEqual({
+      state: "disconnected",
+      onboardingDismissed: true,
     })
+    expect(driveStatusSchema.safeParse({ ...connected, accessToken: "secret" }).success).toBe(false)
+  })
+
+  test("refuse a connected status that does not say whether recordings are saved", () => {
     expect(
-      driveStatusSchema.parse({ state: "disconnected", onboardingDismissed: true }),
-    ).toEqual({ state: "disconnected", onboardingDismissed: true })
-    expect(
-      driveStatusSchema.safeParse({
-        state: "connected",
-        email: "dev@example.com",
-        accessToken: "secret",
-      }).success,
+      driveStatusSchema.safeParse({ state: "connected", email: "dev@example.com" }).success,
     ).toBe(false)
   })
 
@@ -258,5 +258,18 @@ describe("Drive schemas", () => {
     expect(
       driveSyncResultSchema.safeParse({ ...result, refreshToken: "secret" }).success,
     ).toBe(false)
+  })
+
+  test("read how a recording upload ended and refuse an unknown state", () => {
+    const upload: DriveRecordingUpload = {
+      state: "uploaded",
+      folderLink: "https://drive.google.com/drive/folders/m1",
+      webViewLink: null,
+    }
+    expect(driveRecordingUploadSchema.parse(upload)).toEqual(upload)
+    expect(driveRecordingUploadSchema.safeParse({ ...upload, state: "failed" }).success).toBe(false)
+    expect(driveRecordingUploadSchema.safeParse({ ...upload, accessToken: "secret" }).success).toBe(
+      false,
+    )
   })
 })

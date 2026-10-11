@@ -3,7 +3,12 @@ import type { ArtifactKind } from "./backend"
 /** What the host tells the window about Drive. No token ever crosses the IPC border. */
 export type DriveStatus =
   | { readonly state: "disconnected"; readonly onboardingDismissed: boolean }
-  | { readonly state: "connected"; readonly email: string }
+  | {
+      readonly state: "connected"
+      readonly email: string
+      /** Upload each finished microphone recording right away; ends with the connection. */
+      readonly saveRecordings: boolean
+    }
 
 /** A recording the Picker chose, downloaded and ready to transcribe from `inputPath`. */
 export interface DriveImport {
@@ -76,4 +81,38 @@ export function syncSummary(result: DriveSyncResult): {
     tone: "ready",
     conflict,
   }
+}
+
+/** How uploading one finished recording ended. */
+export type DriveRecordingState = "uploaded" | "updated" | "unchanged" | "conflict"
+
+export interface DriveRecordingUpload {
+  readonly state: DriveRecordingState
+  readonly folderLink: string | null
+  readonly webViewLink: string | null
+}
+
+export const RECORDING_UPLOADING = "녹음 파일을 Drive에 올리는 중입니다."
+
+/** The headline under the recorder once the upload is over. */
+export function recordingUploadSummary(upload: DriveRecordingUpload): {
+  readonly text: string
+  readonly tone: DriveTone
+} {
+  switch (upload.state) {
+    case "uploaded":
+    case "updated":
+      return { text: "녹음 파일을 Drive의 Galpi 폴더에 저장했습니다.", tone: "ready" }
+    case "unchanged":
+      return { text: "이 녹음은 Drive에 이미 저장되어 있습니다.", tone: "ready" }
+    case "conflict":
+      return {
+        text: "Drive의 녹음 파일이 다른 곳에서 바뀌어 덮어쓰지 않았습니다.",
+        tone: "pending",
+      }
+  }
+}
+
+export function recordingUploadFailure(message: string): string {
+  return `녹음 파일을 Drive에 올리지 못했습니다. ${message}`
 }

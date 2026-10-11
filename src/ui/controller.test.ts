@@ -64,6 +64,8 @@ function unavailableBackend(): BackendPort {
     dismissDriveOnboarding: unavailable,
     importFromDrive: unavailable,
     syncMeetingToDrive: unavailable,
+    setDriveSaveRecordings: unavailable,
+    uploadRecordingToDrive: unavailable,
     openDriveLink: unavailable,
   }
 }

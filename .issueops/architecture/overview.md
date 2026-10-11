@@ -32,8 +32,8 @@ adapters/tauri-backend composition.rs (root)          domain pure modules
 - DDD tactical: value objects (`SpeakerHint`, `Participant`, `GlossaryEntry`,
   `AssistantSettings`), aggregate root `Artifacts::path_for(kind)`, domain
   services as pure functions, conceptual in-memory `JobRegistry`.
-- Inbound adapters: `tauri.rs` (35 `#[tauri::command]`s incl. `save_compute_device` and
-  the 7 Drive commands, + event bridge),
+- Inbound adapters: `tauri.rs` (37 `#[tauri::command]`s incl. `save_compute_device` and
+  the 9 Drive commands, + event bridge),
   `tauri-backend.ts` (Zod boundary), worker `__main__.py`.
 - Outbound adapters: `process.rs` (worker supervision), `NativeRecorder`
   (CPAL), settings/paths adapters, `ChatGptOAuthAdapter`, `GatewayOAuthAdapter`,

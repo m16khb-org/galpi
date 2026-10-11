@@ -17,7 +17,8 @@ use crate::domain::chatgpt::{
     SignOutResult,
 };
 use crate::domain::drive::{
-    DriveFileId, DriveImport, DriveMeeting, DriveStatus, DriveSyncResult, MeetingKey,
+    DriveFileId, DriveImport, DriveMeeting, DriveRecordingUpload, DriveStatus, DriveSyncResult,
+    MeetingKey,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
 use crate::domain::gateway::AppAccess;
@@ -60,6 +61,9 @@ pub struct Application {
     /// Every recording downloaded from Drive, so a transcription that claims
     /// a Drive source is checked against what was actually imported.
     drive_imports: Mutex<HashMap<PathBuf, DriveFileId>>,
+    /// The canonical file of every recording this run finished, by recording
+    /// id, so an upload names a recording instead of a path.
+    finished_recordings: Mutex<HashMap<Uuid, PathBuf>>,
 }
 
 impl Application {
@@ -92,6 +96,7 @@ impl Application {
             active_recording: tokio::sync::Mutex::new(None),
             drive_meetings: Mutex::new(HashMap::new()),
             drive_imports: Mutex::new(HashMap::new()),
+            finished_recordings: Mutex::new(HashMap::new()),
         }
     }
 
@@ -312,6 +317,38 @@ impl Application {
 
     pub async fn dismiss_drive_onboarding(&self) -> Result<DriveStatus, AppError> {
         self.drive.dismiss_onboarding().await
+    }
+
+    /// Choose whether finished recordings upload to Drive on their own.
+    pub async fn set_drive_save_recordings(&self, enabled: bool) -> Result<DriveStatus, AppError> {
+        self.drive.set_save_recordings(enabled).await
+    }
+
+    /// Upload a recording this run finished, named by its recording id. The
+    /// window never supplies a path: only a file the recorder reported can go.
+    pub async fn upload_recording_to_drive(
+        &self,
+        recording_id: Uuid,
+    ) -> Result<DriveRecordingUpload, AppError> {
+        self.access.require()?;
+        let path = self
+            .finished_recordings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&recording_id)
+            .cloned()
+            .ok_or_else(|| {
+                AppError::new(
+                    "RECORDING_NOT_FOUND",
+                    "Drive에 올릴 녹음을 찾지 못했습니다.",
+                )
+            })?;
+        // The same key a later transcription of this file registers, so its
+        // results land in the folder that holds the recording.
+        let meeting = DriveMeeting::new(MeetingKey::local(&path), &path);
+        self.drive
+            .upload_recording(&self.access, &meeting, &path)
+            .await
     }
 
     /// Resolves when the browser consent finishes, is cancelled, or times out.
@@ -562,6 +599,12 @@ impl Application {
         verify_recording_id(*active, recording_id)?;
         let result = self.recording.stop(recording_id).await;
         *active = None;
+        if let Ok(finished) = &result {
+            self.finished_recordings
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(recording_id, PathBuf::from(&finished.path));
+        }
         result
     }
 

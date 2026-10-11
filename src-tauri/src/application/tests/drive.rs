@@ -3,13 +3,13 @@ use super::{FakePort, TranscriptionBehavior, request};
 use crate::application::error::AppError;
 use crate::application::ports::{
     ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DriveSessionStore,
-    LocalUpload, PickedFile, RemoteFolder,
+    LargeUpload, LocalFileDigest, LocalUpload, PickedFile, RemoteFolder,
 };
 use crate::application::use_cases::Application;
 use crate::domain::artifact::ArtifactKind;
 use crate::domain::drive::{
-    DriveAccount, DriveConnection, DriveFileId, DriveStatus, DriveSyncState, DriveTokenFailure,
-    DriveTokens, MeetingKey, RemoteFile, parse_picked_ids,
+    DriveAccount, DriveConnection, DriveFileId, DriveRecordingState, DriveStatus, DriveSyncState,
+    DriveTokenFailure, DriveTokens, MeetingKey, RemoteFile, parse_picked_ids,
 };
 use crate::domain::gateway::GatewayRefreshFailure;
 use crate::domain::job::{SpeakerHint, TranscriptImportRequest, TranscriptionRequest};
@@ -32,6 +32,7 @@ struct Stored {
     connection: Option<DriveConnection>,
     tokens: Option<DriveTokens>,
     dismissed: bool,
+    save_recordings: bool,
 }
 
 #[derive(Default)]
@@ -362,6 +363,61 @@ impl DriveFilesPort for FakePort {
         })
     }
 
+    async fn digest_local(&self, path: &Path) -> Result<LocalFileDigest, AppError> {
+        let content = lock(&self.drive.local)?
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| path.to_string_lossy().into_owned());
+        Ok(LocalFileDigest {
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            size: u64::try_from(content.len()).unwrap_or(u64::MAX),
+            // Same convention as `read_local`: the content is its own checksum.
+            sha256: content,
+        })
+    }
+
+    async fn upload_large(
+        &self,
+        _access_token: &str,
+        upload: &LargeUpload<'_>,
+    ) -> Result<RemoteFile, AppError> {
+        self.drive.rejecting()?;
+        self.drive.failing(upload.kind)?;
+        let checksum = upload.digest.sha256.clone();
+        let mut remote = self.drive.remote()?;
+        let id = if let Some(existing) = upload.existing {
+            for entry in remote.files.values_mut() {
+                if entry.id == existing {
+                    entry.checksum = Some(checksum.clone());
+                    entry.synced = Some(checksum.clone());
+                }
+            }
+            self.drive.calls()?.updated.push(existing.to_owned());
+            existing.to_owned()
+        } else {
+            let id = remote.new_id("file");
+            remote.files.insert(
+                (upload.folder.to_owned(), upload.kind),
+                RemoteEntry {
+                    id: id.clone(),
+                    checksum: Some(checksum.clone()),
+                    synced: Some(checksum.clone()),
+                },
+            );
+            self.drive.calls()?.created.push(upload.kind);
+            id
+        };
+        Ok(RemoteFile {
+            web_view_link: Some(format!("https://drive.google.com/file/d/{id}")),
+            id,
+            sha256_checksum: Some(checksum.clone()),
+            synced_sha256: Some(checksum),
+        })
+    }
+
     async fn create_file(
         &self,
         _access_token: &str,
@@ -453,6 +509,7 @@ impl DriveSessionStore for FakePort {
         Ok(match &stored.connection {
             Some(connection) => DriveStatus::Connected {
                 email: connection.email.clone(),
+                save_recordings: stored.save_recordings,
             },
             None => DriveStatus::Disconnected {
                 onboarding_dismissed: stored.dismissed,
@@ -496,10 +553,16 @@ impl DriveSessionStore for FakePort {
         Ok(())
     }
 
+    async fn save_recordings_preference(&self, enabled: bool) -> Result<(), AppError> {
+        self.drive.stored()?.save_recordings = enabled;
+        Ok(())
+    }
+
     async fn clear(&self) -> Result<(), AppError> {
         let mut stored = self.drive.stored()?;
         stored.connection = None;
         stored.tokens = None;
+        stored.save_recordings = false;
         Ok(())
     }
 }
@@ -565,10 +628,11 @@ async fn drive_features_require_sign_in() -> Result<(), AppError> {
         failure(app.connect_drive().await)?.code,
         failure(app.import_from_drive(Uuid::now_v7()).await)?.code,
         failure(app.sync_meeting_to_drive(Uuid::now_v7(), false).await)?.code,
+        failure(app.upload_recording_to_drive(Uuid::now_v7()).await)?.code,
     ];
 
     // Then: only the feature commands are closed
-    assert_eq!(codes, ["AUTH_REQUIRED", "AUTH_REQUIRED", "AUTH_REQUIRED"]);
+    assert_eq!(codes, ["AUTH_REQUIRED"; 4]);
     assert_eq!(
         app.load_drive_status().await?,
         DriveStatus::Disconnected {
@@ -591,7 +655,8 @@ async fn connecting_stores_the_account_and_the_galpi_folder() -> Result<(), AppE
     assert_eq!(
         status,
         DriveStatus::Connected {
-            email: "user@example.com".to_owned()
+            email: "user@example.com".to_owned(),
+            save_recordings: false
         }
     );
     let stored = port.drive.stored()?;
@@ -1241,5 +1306,203 @@ async fn syncing_without_a_connection_is_refused() -> Result<(), AppError> {
 
     // Then
     assert_eq!(error.code, "DRIVE_NOT_CONNECTED");
+    Ok(())
+}
+
+/// A recording the app finished: `/tmp/recording.wav`, known by its recording id.
+async fn finished_recording(app: &Application) -> Result<Uuid, AppError> {
+    let started = app.start_recording("/tmp".to_owned()).await?;
+    app.stop_recording(started.recording_id).await?;
+    Ok(started.recording_id)
+}
+
+fn recording_path() -> PathBuf {
+    PathBuf::from("/tmp/recording.wav")
+}
+
+#[tokio::test]
+async fn only_a_finished_recording_of_this_run_can_be_uploaded() -> Result<(), AppError> {
+    // Given: Drive is connected, one recording was never stopped, another id never existed
+    let (port, app) = connected()?;
+    let running = app.start_recording("/tmp".to_owned()).await?;
+
+    // When
+    let unfinished = failure(app.upload_recording_to_drive(running.recording_id).await)?;
+    let unknown = failure(app.upload_recording_to_drive(Uuid::now_v7()).await)?;
+
+    // Then: nothing reaches Drive, whatever path the window might have in mind
+    assert_eq!(unfinished.code, "RECORDING_NOT_FOUND");
+    assert_eq!(unknown.code, "RECORDING_NOT_FOUND");
+    assert_eq!(port.drive.calls()?.created, Vec::<ArtifactKind>::new());
+    app.cancel_recording(running.recording_id).await
+}
+
+#[tokio::test]
+async fn uploading_a_recording_without_a_drive_connection_is_refused() -> Result<(), AppError> {
+    // Given: signed in, a finished recording, but no Drive connection
+    let (port, app) = signed_in()?;
+    let recording = finished_recording(&app).await?;
+
+    // When
+    let error = failure(app.upload_recording_to_drive(recording).await)?;
+
+    // Then
+    assert_eq!(error.code, "DRIVE_NOT_CONNECTED");
+    assert_eq!(port.drive.calls()?.created, Vec::<ArtifactKind>::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_recording_lands_in_the_folder_its_transcription_later_syncs_to() -> Result<(), AppError>
+{
+    // Given: a finished recording, uploaded
+    let (port, app) = connected()?;
+    let recording = finished_recording(&app).await?;
+
+    // When
+    let uploaded = app.upload_recording_to_drive(recording).await?;
+    let transcribed = app
+        .transcribe(TranscriptionRequest {
+            input_path: recording_path().to_string_lossy().into_owned(),
+            ..request(SpeakerHint::Auto)
+        })
+        .await?;
+    app.sync_meeting_to_drive(transcribed.job_id, false).await?;
+
+    // Then: one meeting folder holds the recording and the results
+    assert_eq!(uploaded.state, DriveRecordingState::Uploaded);
+    assert!(uploaded.folder_link.is_some());
+    assert!(uploaded.web_view_link.is_some());
+    assert_eq!(port.drive.remote()?.meetings.len(), 1);
+    assert!(port.drive.remote_id(ArtifactKind::Recording)?.is_some());
+    assert!(port.drive.remote_id(ArtifactKind::SpeakerText)?.is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unchanged_recording_is_not_uploaded_twice() -> Result<(), AppError> {
+    // Given: the recording is already on Drive
+    let (port, app) = connected()?;
+    let recording = finished_recording(&app).await?;
+    app.upload_recording_to_drive(recording).await?;
+
+    // When
+    let again = app.upload_recording_to_drive(recording).await?;
+
+    // Then
+    assert_eq!(again.state, DriveRecordingState::Unchanged);
+    assert!(again.web_view_link.is_some());
+    assert_eq!(port.drive.calls()?.created, [ArtifactKind::Recording]);
+    assert_eq!(port.drive.calls()?.updated, Vec::<String>::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_recording_changed_on_disk_replaces_the_same_drive_file() -> Result<(), AppError> {
+    // Given
+    let (port, app) = connected()?;
+    let recording = finished_recording(&app).await?;
+    app.upload_recording_to_drive(recording).await?;
+    let first = port.drive.remote_id(ArtifactKind::Recording)?;
+    lock(&port.drive.local)?.insert(recording_path(), "다시 녹음한 내용".to_owned());
+
+    // When
+    let again = app.upload_recording_to_drive(recording).await?;
+
+    // Then
+    assert_eq!(again.state, DriveRecordingState::Updated);
+    assert_eq!(port.drive.remote_id(ArtifactKind::Recording)?, first);
+    assert_eq!(
+        port.drive.remote_checksum(ArtifactKind::Recording)?,
+        Some("다시 녹음한 내용".to_owned())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_drive_copy_edited_elsewhere_is_left_alone() -> Result<(), AppError> {
+    // Given: someone replaced the Drive copy, and the local file changed too
+    let (port, app) = connected()?;
+    let recording = finished_recording(&app).await?;
+    app.upload_recording_to_drive(recording).await?;
+    port.drive.edit_remote(ArtifactKind::Recording)?;
+    lock(&port.drive.local)?.insert(recording_path(), "다시 녹음한 내용".to_owned());
+
+    // When
+    let again = app.upload_recording_to_drive(recording).await?;
+
+    // Then: reported, never overwritten
+    assert_eq!(again.state, DriveRecordingState::Conflict);
+    assert_eq!(
+        port.drive.remote_checksum(ArtifactKind::Recording)?,
+        Some("edited-elsewhere".to_owned())
+    );
+    assert_eq!(port.drive.calls()?.created, [ArtifactKind::Recording]);
+    assert_eq!(port.drive.calls()?.updated, Vec::<String>::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_upload_keeps_the_recording_so_a_retry_can_finish_it() -> Result<(), AppError> {
+    // Given: Drive is full
+    let (port, app) = connected()?;
+    let recording = finished_recording(&app).await?;
+    *lock(&port.drive.failing_kind)? = Some((ArtifactKind::Recording, "DRIVE_STORAGE_FULL"));
+
+    // When
+    let error = failure(app.upload_recording_to_drive(recording).await)?;
+    *lock(&port.drive.failing_kind)? = None;
+    let retried = app.upload_recording_to_drive(recording).await?;
+
+    // Then
+    assert_eq!(error.code, "DRIVE_STORAGE_FULL");
+    assert_eq!(retried.state, DriveRecordingState::Uploaded);
+    assert_eq!(port.drive.calls()?.created, [ArtifactKind::Recording]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_recordings_choice_needs_a_connection_and_ends_with_it() -> Result<(), AppError> {
+    // Given: signed in, Drive not connected
+    let (_port, app) = signed_in()?;
+
+    // When / Then: nothing to choose yet
+    assert_eq!(
+        failure(app.set_drive_save_recordings(true).await)?.code,
+        "DRIVE_NOT_CONNECTED"
+    );
+
+    // Given: connected, the choice starts off
+    assert_eq!(
+        app.connect_drive().await?,
+        DriveStatus::Connected {
+            email: "user@example.com".to_owned(),
+            save_recordings: false
+        }
+    );
+
+    // When
+    let chosen = app.set_drive_save_recordings(true).await?;
+
+    // Then: it is part of the status the window reads
+    let expected = DriveStatus::Connected {
+        email: "user@example.com".to_owned(),
+        save_recordings: true,
+    };
+    assert_eq!(chosen, expected);
+    assert_eq!(app.load_drive_status().await?, expected);
+
+    // When: the user disconnects and connects again
+    app.disconnect_drive().await?;
+    let reconnected = app.connect_drive().await?;
+
+    // Then: the new connection starts with the choice off
+    assert_eq!(
+        reconnected,
+        DriveStatus::Connected {
+            email: "user@example.com".to_owned(),
+            save_recordings: false
+        }
+    );
     Ok(())
 }

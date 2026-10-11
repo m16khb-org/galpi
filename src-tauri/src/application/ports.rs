@@ -291,6 +291,25 @@ pub struct LocalUpload {
     pub sha256: String,
 }
 
+/// A file of any size identified by reading it once in chunks, so a recording
+/// is never held in memory.
+pub struct LocalFileDigest {
+    pub name: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// One local file sent with a resumable upload.
+pub struct LargeUpload<'a> {
+    pub folder: &'a str,
+    pub key: &'a MeetingKey,
+    pub kind: ArtifactKind,
+    /// The Drive file whose content is replaced; `None` creates a new file.
+    pub existing: Option<&'a str>,
+    pub path: &'a Path,
+    pub digest: &'a LocalFileDigest,
+}
+
 /// Drive v3 on behalf of the user. An access token Google refuses yields
 /// `DRIVE_TOKEN_REJECTED`, which the caller answers by renewing once.
 #[async_trait]
@@ -317,6 +336,15 @@ pub trait DriveFilesPort: Send + Sync {
     ) -> Result<Option<RemoteFile>, AppError>;
     /// Read a result file, refusing one too large for a single upload.
     async fn read_local(&self, path: &Path) -> Result<LocalUpload, AppError>;
+    /// Name, size, and SHA-256 of a file of any size.
+    async fn digest_local(&self, path: &Path) -> Result<LocalFileDigest, AppError>;
+    /// Stream the file to Drive in a resumable session, hashing it again on
+    /// the way. A file that no longer matches `digest` is not stored.
+    async fn upload_large(
+        &self,
+        access_token: &str,
+        upload: &LargeUpload<'_>,
+    ) -> Result<RemoteFile, AppError>;
     async fn create_file(
         &self,
         access_token: &str,
@@ -364,6 +392,9 @@ pub trait DriveSessionStore: Send + Sync {
     /// Change only the remembered `Galpi` folder.
     async fn save_folder_id(&self, folder_id: String) -> Result<(), AppError>;
     async fn dismiss_onboarding(&self) -> Result<(), AppError>;
-    /// Forget the tokens and the connection; the onboarding choice stays.
+    /// Remember whether finished recordings upload on their own.
+    async fn save_recordings_preference(&self, enabled: bool) -> Result<(), AppError>;
+    /// Forget the tokens, the connection, and the recordings choice; the
+    /// onboarding choice stays.
     async fn clear(&self) -> Result<(), AppError>;
 }

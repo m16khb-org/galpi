@@ -30,7 +30,11 @@ impl DriveSessionStore for LocalSettingsStore {
         let settings = state.as_ref();
         Ok(
             match settings.and_then(|settings| settings.drive_email.clone()) {
-                Some(email) => DriveStatus::Connected { email },
+                Some(email) => DriveStatus::Connected {
+                    email,
+                    save_recordings: settings
+                        .is_some_and(|settings| settings.drive_save_recordings),
+                },
                 None => DriveStatus::Disconnected {
                     onboarding_dismissed: settings
                         .is_some_and(|settings| settings.drive_onboarding_dismissed),
@@ -88,6 +92,11 @@ impl DriveSessionStore for LocalSettingsStore {
             .await
     }
 
+    async fn save_recordings_preference(&self, enabled: bool) -> Result<(), AppError> {
+        self.update(|settings| settings.drive_save_recordings = enabled)
+            .await
+    }
+
     /// Tokens first, so an interruption leaves Drive disconnected.
     async fn clear(&self) -> Result<(), AppError> {
         self.store_secret(Secret::DriveSession, None).await?;
@@ -95,6 +104,7 @@ impl DriveSessionStore for LocalSettingsStore {
             settings.drive_email = None;
             settings.drive_permission_id = None;
             settings.drive_folder_id = None;
+            settings.drive_save_recordings = false;
         })
         .await
     }
@@ -157,7 +167,8 @@ mod tests {
         assert_eq!(
             restarted.load_status().await?,
             DriveStatus::Connected {
-                email: "user@example.com".to_owned()
+                email: "user@example.com".to_owned(),
+                save_recordings: false
             }
         );
         tokio::fs::remove_dir_all(directory).await?;
@@ -216,6 +227,45 @@ mod tests {
         assert_eq!(store.load_connection().await?, None);
         assert!(!tokio::fs::try_exists(&path).await?);
         let _removed = tokio::fs::remove_dir_all(directory).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn the_recordings_choice_survives_a_restart_not_a_disconnect() -> TestResult {
+        // Given: a connected account that chose to save recordings
+        let directory = directory();
+        let path = directory.join("settings.json");
+        let first = store(path.clone(), Arc::new(SettingsFile));
+        first
+            .save_connection(connection(), tokens("galpi-test-refresh-1"))
+            .await?;
+        first.save_recordings_preference(true).await?;
+
+        // When: the next launch reads it, then the user disconnects and reconnects
+        let restarted = store(path.clone(), Arc::new(SettingsFile));
+        let after_restart = restarted.load_status().await?;
+        restarted.clear().await?;
+        restarted
+            .save_connection(connection(), tokens("galpi-test-refresh-2"))
+            .await?;
+        let after_reconnect = restarted.load_status().await?;
+
+        // Then: the choice is kept across restarts but never carried to a new connection
+        assert_eq!(
+            after_restart,
+            DriveStatus::Connected {
+                email: "user@example.com".to_owned(),
+                save_recordings: true
+            }
+        );
+        assert_eq!(
+            after_reconnect,
+            DriveStatus::Connected {
+                email: "user@example.com".to_owned(),
+                save_recordings: false
+            }
+        );
+        tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }
 

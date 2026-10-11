@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test"
 
-import type { DriveSyncResult } from "../domain/drive"
+import type { DriveRecordingUpload, DriveSyncResult } from "../domain/drive"
 import { type DriveEvent, type DriveState, initialDrive, reduceDrive } from "./drive-machine"
 
-const connected = { state: "connected", email: "dev@example.com" } as const
+const connected = { state: "connected", email: "dev@example.com", saveRecordings: false } as const
 const disconnected = { state: "disconnected", onboardingDismissed: false } as const
 const dismissed = { state: "disconnected", onboardingDismissed: true } as const
+
+const uploaded: DriveRecordingUpload = {
+  state: "uploaded",
+  folderLink: "https://drive.google.com/drive/folders/m1",
+  webViewLink: null,
+}
 
 const result: DriveSyncResult = {
   folderLink: "https://drive.google.com/drive/folders/m1",
@@ -23,7 +29,11 @@ describe("reduceDrive", () => {
   test("the loaded status decides between the onboarding card and the connection", () => {
     expect(initialDrive.connection).toEqual({ status: "unknown" })
     expect(offline.connection).toEqual({ status: "disconnected", onboardingDismissed: false })
-    expect(online.connection).toEqual({ status: "connected", email: "dev@example.com" })
+    expect(online.connection).toEqual({
+      status: "connected",
+      email: "dev@example.com",
+      saveRecordings: false,
+    })
   })
 
   test("connecting succeeds, fails with a reason, or is cancelled back to idle", () => {
@@ -126,6 +136,8 @@ describe("reduceDrive", () => {
       activity: "idle",
       message: "다시 연결해 주세요.",
       sync: { status: "failed", jobId: "job-1", message: "다시 연결해 주세요." },
+      savingRecordings: false,
+      recording: null,
     })
   })
 
@@ -133,5 +145,96 @@ describe("reduceDrive", () => {
     const busy = run([{ type: "importStarted" }, { type: "syncStarted", jobId: "job-1" }], online)
 
     expect(reduceDrive(busy, { type: "signedOut" })).toEqual(initialDrive)
+  })
+
+  test("the recordings choice saves only while connected, one write at a time", () => {
+    // Given
+    const saving = reduceDrive(online, { type: "saveRecordingsStarted" })
+    const saved = reduceDrive(saving, {
+      type: "saveRecordingsSaved",
+      status: { ...connected, saveRecordings: true },
+    })
+
+    // Then
+    expect(saving.savingRecordings).toBe(true)
+    expect(reduceDrive(saving, { type: "saveRecordingsStarted" })).toBe(saving)
+    expect(reduceDrive(offline, { type: "saveRecordingsStarted" })).toBe(offline)
+    expect(saved.savingRecordings).toBe(false)
+    expect(saved.connection).toEqual({
+      status: "connected",
+      email: "dev@example.com",
+      saveRecordings: true,
+    })
+    expect(reduceDrive(saving, { type: "saveRecordingsFailed" })).toEqual(online)
+    expect(reduceDrive(online, { type: "saveRecordingsSaved", status: connected })).toBe(online)
+    expect(reduceDrive(online, { type: "saveRecordingsFailed" })).toBe(online)
+  })
+
+  test("a recording upload reports the latest recording and drops answers for any other", () => {
+    // Given
+    const uploading = reduceDrive(online, { type: "recordingUploadStarted", recordingId: "rec-2" })
+
+    // Then
+    expect(uploading.recording).toEqual({ status: "uploading", recordingId: "rec-2" })
+    expect(
+      reduceDrive(uploading, {
+        type: "recordingUploadFinished",
+        recordingId: "rec-2",
+        result: uploaded,
+      }).recording,
+    ).toEqual({ status: "done", recordingId: "rec-2", result: uploaded })
+    expect(
+      reduceDrive(uploading, {
+        type: "recordingUploadFailed",
+        recordingId: "rec-2",
+        message: "끊김",
+      }).recording,
+    ).toEqual({ status: "failed", recordingId: "rec-2", message: "끊김" })
+    expect(
+      reduceDrive(uploading, {
+        type: "recordingUploadFinished",
+        recordingId: "rec-1",
+        result: uploaded,
+      }),
+    ).toBe(uploading)
+    expect(reduceDrive(uploading, { type: "recordingUploadCleared" }).recording).toBeNull()
+    expect(reduceDrive(offline, { type: "recordingUploadStarted", recordingId: "rec-2" })).toBe(
+      offline,
+    )
+  })
+
+  test("a failed recording upload can start again, a finished one cannot be failed later", () => {
+    // Given
+    const failed = run(
+      [
+        { type: "recordingUploadStarted", recordingId: "rec-1" },
+        { type: "recordingUploadFailed", recordingId: "rec-1", message: "끊김" },
+      ],
+      online,
+    )
+    const retrying = reduceDrive(failed, { type: "recordingUploadStarted", recordingId: "rec-1" })
+    const done = reduceDrive(retrying, {
+      type: "recordingUploadFinished",
+      recordingId: "rec-1",
+      result: uploaded,
+    })
+
+    // Then
+    expect(retrying.recording).toEqual({ status: "uploading", recordingId: "rec-1" })
+    expect(
+      reduceDrive(done, { type: "recordingUploadFailed", recordingId: "rec-1", message: "늦음" }),
+    ).toBe(done)
+  })
+
+  test("disconnecting or losing the connection ends the recording upload", () => {
+    // Given
+    const uploading = reduceDrive(online, { type: "recordingUploadStarted", recordingId: "rec-1" })
+
+    // When / Then
+    expect(reduceDrive(uploading, { type: "disconnected", status: dismissed }).recording).toBeNull()
+    expect(
+      reduceDrive(uploading, { type: "reconnectRequired", message: "다시 연결해 주세요." })
+        .recording,
+    ).toEqual({ status: "failed", recordingId: "rec-1", message: "다시 연결해 주세요." })
   })
 })

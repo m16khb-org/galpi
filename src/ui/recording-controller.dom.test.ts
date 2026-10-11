@@ -31,14 +31,19 @@ const started: RecordingStatus = {
   channels: 1,
 }
 
-function harness(result: RecordingResult, clock: () => number) {
+function harness(
+  result: RecordingResult,
+  clock: () => number,
+  stopped: () => Promise<RecordingResult> = async () => result,
+) {
   const states: RecordingViewState[] = []
   // A tick that only advances the clock takes the narrow path, so the elapsed
   // time reaches the view through either call.
   const times: number[] = []
+  const events: string[] = []
   const backend = {
     startRecording: async () => started,
-    stopRecording: async () => result,
+    stopRecording: stopped,
     cancelRecording: async () => undefined,
   } as unknown as BackendPort
   const view = {
@@ -49,7 +54,14 @@ function harness(result: RecordingResult, clock: () => number) {
   return {
     states,
     times,
-    controller: new RecordingController(backend, view, () => undefined, clock),
+    events,
+    controller: new RecordingController(
+      backend,
+      view,
+      (path) => events.push(`select:${path}`),
+      (recordingId) => events.push(`recorded:${recordingId}`),
+      clock,
+    ),
   }
 }
 
@@ -89,5 +101,57 @@ describe("RecordingController elapsed time", () => {
     await controller.stop()
 
     expect(states.at(-1)).toMatchObject({ status: "completed", elapsedSeconds: 90 })
+  })
+})
+
+describe("RecordingController after a recording", () => {
+  const finished: RecordingResult = {
+    ...started,
+    path: "/tmp/meeting.wav",
+    frames: 48_000,
+    droppedFrames: 0,
+    durationSeconds: 1,
+  }
+
+  test("announces a cleanly stopped recording once, after its audio is selected", async () => {
+    // Given
+    const { controller, events } = harness(finished, () => 0)
+    await controller.start("/tmp")
+
+    // When
+    await controller.stop()
+    await controller.stop()
+
+    // Then
+    expect(events).toEqual(["select:/tmp/meeting.wav", "recorded:recording-1"])
+  })
+
+  test("announces nothing when stopping fails or the recording is discarded", async () => {
+    // Given a recording whose file cannot be finished
+    const failing = harness(
+      finished,
+      () => 0,
+      async () => {
+        throw new Error("disk full")
+      },
+    )
+    await failing.controller.start("/tmp")
+
+    // When
+    await failing.controller.stop()
+
+    // Then
+    expect(failing.events).toEqual([])
+    expect(failing.states.at(-1)?.status).toBe("failed")
+
+    // Given another recording that is discarded
+    const discarded = harness(finished, () => 0)
+    await discarded.controller.start("/tmp")
+
+    // When
+    await discarded.controller.cancel()
+
+    // Then
+    expect(discarded.events).toEqual([])
   })
 })

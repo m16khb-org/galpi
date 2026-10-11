@@ -10,6 +10,7 @@ pub struct Recorded {
     pub path: String,
     pub authorization: Option<String>,
     pub content_type: Option<String>,
+    pub headers: Vec<(String, String)>,
     pub body: String,
 }
 
@@ -34,9 +35,26 @@ impl Recorded {
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.into_owned())
     }
+
+    /// A request header by lowercase name.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 pub type Handler = Arc<dyn Fn(&Recorded) -> (u16, String) + Send + Sync>;
+
+/// An answer with response headers, e.g. a resumable upload's `Location`.
+pub struct Reply {
+    pub status: u16,
+    pub headers: Vec<(&'static str, String)>,
+    pub body: String,
+}
+
+pub type ReplyHandler = Arc<dyn Fn(&Recorded) -> Reply + Send + Sync>;
 
 pub struct FakeServer {
     pub base: String,
@@ -45,6 +63,19 @@ pub struct FakeServer {
 
 impl FakeServer {
     pub async fn start(handler: Handler) -> std::io::Result<Self> {
+        Self::start_replying(Arc::new(move |request| {
+            let (status, body) = handler(request);
+            Reply {
+                status,
+                headers: Vec::new(),
+                body,
+            }
+        }))
+        .await
+    }
+
+    /// Like [`FakeServer::start`], for answers that carry response headers.
+    pub async fn start_replying(handler: ReplyHandler) -> std::io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let base = format!("http://{}", listener.local_addr()?);
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -76,7 +107,7 @@ impl FakeServer {
     }
 }
 
-async fn serve(mut stream: TcpStream, handler: Handler, log: Arc<Mutex<Vec<Recorded>>>) {
+async fn serve(mut stream: TcpStream, handler: ReplyHandler, log: Arc<Mutex<Vec<Recorded>>>) {
     let mut buffer = Vec::new();
     let mut chunk = [0_u8; 2048];
     let (head_end, length) = loop {
@@ -121,15 +152,30 @@ async fn serve(mut stream: TcpStream, handler: Handler, log: Arc<Mutex<Vec<Recor
                 .starts_with("content-type:")
                 .then(|| line[13..].trim().to_owned())
         }),
+        headers: head
+            .lines()
+            .skip(1)
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, value)| (name.trim().to_lowercase(), value.trim().to_owned()))
+            .collect(),
         body: String::from_utf8_lossy(&buffer[head_end..head_end + length]).into_owned(),
     };
-    let (status, body) = handler(&recorded);
+    let reply = handler(&recorded);
     if let Ok(mut log) = log.lock() {
         log.push(recorded);
     }
+    let mut extra = String::new();
+    for (name, value) in &reply.headers {
+        extra.push_str(name);
+        extra.push_str(": ");
+        extra.push_str(value);
+        extra.push_str("\r\n");
+    }
     let response = format!(
-        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
+        "HTTP/1.1 {} X\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+        reply.status,
+        reply.body.len(),
+        reply.body
     );
     let _written = stream.write_all(response.as_bytes()).await;
     let _closed = stream.shutdown().await;

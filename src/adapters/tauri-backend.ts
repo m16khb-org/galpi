@@ -32,7 +32,7 @@ import type {
   ChatGptSignInPhase,
   ChatGptSignOutResult,
 } from "../domain/chatgpt"
-import type { DriveImport, DriveStatus, DriveSyncResult } from "../domain/drive"
+import type { DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult } from "../domain/drive"
 
 const enginePresetSchema = z.enum(["qwen3", "whisperx"])
 const computeDeviceSchema = z.enum(["cpu", "cuda"])
@@ -140,7 +140,11 @@ export const appAccessSchema = z.discriminatedUnion("state", [
 // Strict like the sign-in schemas: no Drive token may ever reach the window.
 export const driveStatusSchema = z.discriminatedUnion("state", [
   z.strictObject({ state: z.literal("disconnected"), onboardingDismissed: z.boolean() }),
-  z.strictObject({ state: z.literal("connected"), email: z.string() }),
+  z.strictObject({
+    state: z.literal("connected"),
+    email: z.string(),
+    saveRecordings: z.boolean(),
+  }),
 ])
 
 export const driveImportSchema = z.strictObject({
@@ -169,6 +173,12 @@ export const driveSyncResultSchema = z.strictObject({
       }),
     ]),
   ),
+})
+
+export const driveRecordingUploadSchema = z.strictObject({
+  state: z.enum(["uploaded", "updated", "unchanged", "conflict"]),
+  folderLink: z.string().nullable(),
+  webViewLink: z.string().nullable(),
 })
 
 /** Only Drive pages may be opened from a sync result. */
@@ -449,6 +459,16 @@ export class TauriBackend implements BackendPort {
   async syncMeetingToDrive(jobId: string, overwrite: boolean): Promise<DriveSyncResult> {
     return driveSyncResultSchema.parse(
       await invoke<unknown>("sync_meeting_to_drive", { jobId, overwrite }),
+    )
+  }
+
+  async setDriveSaveRecordings(enabled: boolean): Promise<DriveStatus> {
+    return driveStatusSchema.parse(await invoke<unknown>("set_drive_save_recordings", { enabled }))
+  }
+
+  async uploadRecordingToDrive(recordingId: string): Promise<DriveRecordingUpload> {
+    return driveRecordingUploadSchema.parse(
+      await invoke<unknown>("upload_recording_to_drive", { recordingId }),
     )
   }
 

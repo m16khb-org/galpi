@@ -25,6 +25,8 @@ export class RecordingController {
     private readonly backend: BackendPort,
     private readonly view: AppView,
     private readonly selectAudio: (path: string) => void,
+    /** Told once per recording that stopped cleanly, after the audio is selected. */
+    private readonly onRecorded: (recordingId: string) => void = () => undefined,
     private readonly now: () => number = () => Date.now(),
   ) {}
 
@@ -68,6 +70,7 @@ export class RecordingController {
     this.clearTimer()
     this.state = stopRecordingState(this.state)
     this.render()
+    let recorded = false
     try {
       const result = await this.backend.stopRecording(recordingId)
       this.selectAudio(result.path)
@@ -77,10 +80,13 @@ export class RecordingController {
         result.durationSeconds,
         result.droppedFrames,
       )
+      recorded = true
     } catch (error) {
       this.state = failRecordingState(errorMessage(error))
     }
     this.render()
+    // Last, and only for a recording that exists: what follows never decides its outcome.
+    if (recorded) this.onRecorded(recordingId)
   }
 
   async cancel(): Promise<void> {

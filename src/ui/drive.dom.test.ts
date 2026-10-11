@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Window } from "happy-dom"
 
 import type { BackendPort, TranscriptionRequest } from "../domain/backend"
-import type { DriveImport, DriveStatus, DriveSyncResult } from "../domain/drive"
+import type {
+  DriveImport,
+  DriveRecordingUpload,
+  DriveStatus,
+  DriveSyncResult,
+} from "../domain/drive"
 import type { TranscriptionResult } from "../domain/job"
 import { AppView } from "./app-view"
 import { AppController } from "./controller"
@@ -27,7 +32,11 @@ afterAll(() => {
   void globalDom.happyDOM.close()
 })
 
-const connected: DriveStatus = { state: "connected", email: "dev@example.com" }
+const connected: DriveStatus = {
+  state: "connected",
+  email: "dev@example.com",
+  saveRecordings: false,
+}
 const fresh: DriveStatus = { state: "disconnected", onboardingDismissed: false }
 const dismissed: DriveStatus = { state: "disconnected", onboardingDismissed: true }
 
@@ -146,6 +155,8 @@ function backend(overrides: Partial<BackendPort>, calls: string[] = []): Backend
       calls.push(`sync:${jobId}:${overwrite}`)
       return uploaded
     },
+    setDriveSaveRecordings: unused("setDriveSaveRecordings"),
+    uploadRecordingToDrive: unused("uploadRecordingToDrive"),
     openDriveLink: unused("openDriveLink"),
     ...overrides,
   }
@@ -679,6 +690,246 @@ describe("Drive import as a job", () => {
     ])
     // The key itself is absent, so the host sees no claim at all.
     expect(requests.slice(1).some((request) => "driveSourceId" in request)).toBe(false)
+    controller.stop()
+  })
+})
+
+describe("Drive saves a finished recording", () => {
+  const saving: DriveStatus = {
+    state: "connected",
+    email: "dev@example.com",
+    saveRecordings: true,
+  }
+  const folder = "https://drive.google.com/drive/folders/m1"
+  const saved: DriveRecordingUpload = { state: "uploaded", folderLink: folder, webViewLink: null }
+  const recorder: Partial<BackendPort> = {
+    startRecording: async () => ({
+      recordingId: "rec-1",
+      path: "/out/녹음/녹음.wav.part",
+      sampleRate: 48_000,
+      channels: 1,
+    }),
+    stopRecording: async () => ({
+      recordingId: "rec-1",
+      path: "/out/녹음/녹음.wav",
+      sampleRate: 48_000,
+      channels: 1,
+      frames: 48_000,
+      droppedFrames: 0,
+      durationSeconds: 1,
+    }),
+  }
+
+  async function recorded(overrides: Partial<BackendPort>, calls: string[] = []) {
+    const mounted = await mount(
+      backend(
+        {
+          ...recorder,
+          openDriveLink: async (url) => {
+            calls.push(`open:${url}`)
+          },
+          ...overrides,
+        },
+        calls,
+      ),
+    )
+    await click(mounted.root, "#record-button")
+    await click(mounted.root, "#stop-recording-button")
+    return mounted
+  }
+
+  const line = (root: HTMLElement) => pick(root, "#recording-drive-status")
+
+  test("uploads right after stopping, while the recording is already selected", async () => {
+    // Given: the choice is on and Drive is still working
+    const calls: string[] = []
+    const working = Promise.withResolvers<DriveRecordingUpload>()
+    const { controller, root } = await recorded(
+      {
+        loadDriveStatus: async () => saving,
+        uploadRecordingToDrive: (recordingId) => {
+          calls.push(`upload:${recordingId}`)
+          return working.promise
+        },
+      },
+      calls,
+    )
+
+    // Then: the audio is chosen and the recorder is done before Drive answers
+    expect(calls).toContain("upload:rec-1")
+    expect(pick(root, "#audio-selection").dataset["selected"]).toBe("true")
+    expect(pick(root, "#recording-status").textContent).toBe(
+      "녹음이 완료되어 전사 파일로 선택했습니다.",
+    )
+    expect(line(root).textContent).toBe("녹음 파일을 Drive에 올리는 중입니다.")
+    expect(line(root).dataset["state"]).toBe("pending")
+
+    // When
+    working.resolve(saved)
+    await settle()
+
+    // Then: the outcome is in words, with a way into the folder
+    expect(line(root).textContent).toBe("녹음 파일을 Drive의 Galpi 폴더에 저장했습니다.")
+    expect(line(root).dataset["state"]).toBe("ready")
+    expect(visible(root, "#recording-drive-folder-button")).toBe(true)
+    await click(root, "#recording-drive-folder-button")
+    expect(calls).toContain(`open:${folder}`)
+    controller.stop()
+  })
+
+  test("uploads nothing when the choice is off or Drive is not connected", async () => {
+    for (const status of [connected, dismissed]) {
+      // Given
+      const calls: string[] = []
+      const { controller, root } = await recorded(
+        {
+          loadDriveStatus: async () => status,
+          uploadRecordingToDrive: async (recordingId) => {
+            calls.push(`upload:${recordingId}`)
+            return saved
+          },
+        },
+        calls,
+      )
+
+      // Then
+      expect(calls.some((call) => call.startsWith("upload:"))).toBe(false)
+      expect(line(root).textContent).toBe("")
+      controller.stop()
+    }
+  })
+
+  test("a failed upload leaves the recording alone and retries on request", async () => {
+    // Given: Drive is full on the first try
+    const calls: string[] = []
+    let attempts = 0
+    const { controller, root } = await recorded(
+      {
+        loadDriveStatus: async () => saving,
+        uploadRecordingToDrive: async (recordingId) => {
+          attempts += 1
+          calls.push(`upload:${recordingId}`)
+          if (attempts === 1) {
+            return failWith("DRIVE_STORAGE_FULL", "Google Drive 저장 공간이 부족합니다.")()
+          }
+          return saved
+        },
+      },
+      calls,
+    )
+
+    // Then: the failure is stated and offers a retry; the local recording stays chosen
+    expect(line(root).textContent).toBe(
+      "녹음 파일을 Drive에 올리지 못했습니다. Google Drive 저장 공간이 부족합니다.",
+    )
+    expect(line(root).dataset["state"]).toBe("error")
+    expect(visible(root, "#recording-drive-retry-button")).toBe(true)
+    expect(visible(root, "#recording-drive-folder-button")).toBe(false)
+    expect(pick(root, "#recorder").dataset["state"]).toBe("completed")
+    expect(pick(root, "#audio-selection").dataset["selected"]).toBe("true")
+
+    // When
+    await click(root, "#recording-drive-retry-button")
+
+    // Then: the same recording goes again, nothing else
+    expect(calls.filter((call) => call.startsWith("upload:"))).toEqual([
+      "upload:rec-1",
+      "upload:rec-1",
+    ])
+    expect(line(root).dataset["state"]).toBe("ready")
+    expect(visible(root, "#recording-drive-retry-button")).toBe(false)
+    controller.stop()
+  })
+
+  test("a lost connection offers no retry, and a new recording clears the line", async () => {
+    // Given: the connection expired while uploading
+    const { controller, root } = await recorded({
+      loadDriveStatus: async () => saving,
+      uploadRecordingToDrive: failWith(
+        "DRIVE_RECONNECT_REQUIRED",
+        "Drive 연결이 만료되었습니다. 다시 연결해 주세요.",
+      ),
+    })
+
+    // Then
+    expect(line(root).textContent).toContain("Drive 연결이 만료되었습니다.")
+    expect(visible(root, "#recording-drive-retry-button")).toBe(false)
+    expect(visible(root, "#drive-onboarding")).toBe(true)
+
+    // When
+    await click(root, "#record-button")
+
+    // Then
+    expect(line(root).textContent).toBe("")
+    controller.stop()
+  })
+})
+
+describe("Drive settings: save recordings", () => {
+  const saving: DriveStatus = {
+    state: "connected",
+    email: "dev@example.com",
+    saveRecordings: true,
+  }
+  const toggle = (root: HTMLElement) => pick<HTMLInputElement>(root, "#drive-save-recordings")
+
+  test("the switch saves at once and follows what the host stored", async () => {
+    // Given
+    const calls: string[] = []
+    const { controller, root } = await mount(
+      backend(
+        {
+          setDriveSaveRecordings: async (enabled) => {
+            calls.push(`save:${enabled}`)
+            return saving
+          },
+        },
+        calls,
+      ),
+    )
+    await click(root, '[data-action="open-settings"]')
+    expect(toggle(root).disabled).toBe(false)
+    expect(toggle(root).checked).toBe(false)
+
+    // When
+    await click(root, "#drive-save-recordings")
+
+    // Then
+    expect(calls).toContain("save:true")
+    expect(toggle(root).checked).toBe(true)
+    expect(toggle(root).disabled).toBe(false)
+    expect(pick(root, "#settings-message").textContent).toBe("변경사항을 자동 저장했습니다.")
+    controller.stop()
+  })
+
+  test("a refused save puts the switch back and says why", async () => {
+    // Given
+    const { controller, root } = await mount(
+      backend({
+        setDriveSaveRecordings: failWith("STATE_ERROR", "설정을 저장하지 못했습니다."),
+      }),
+    )
+    await click(root, '[data-action="open-settings"]')
+
+    // When
+    await click(root, "#drive-save-recordings")
+
+    // Then
+    expect(toggle(root).checked).toBe(false)
+    expect(toggle(root).disabled).toBe(false)
+    expect(pick(root, "#settings-message").dataset["state"]).toBe("error")
+    expect(pick(root, "#settings-message").textContent).toContain("설정을 저장하지 못했습니다.")
+    controller.stop()
+  })
+
+  test("the switch is off and disabled until Drive is connected", async () => {
+    // Given / When
+    const { controller, root } = await mount(backend({ loadDriveStatus: async () => dismissed }))
+    await click(root, '[data-action="open-settings"]')
+
+    // Then
+    expect(toggle(root).disabled).toBe(true)
+    expect(toggle(root).checked).toBe(false)
     controller.stop()
   })
 })

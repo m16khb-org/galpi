@@ -16,12 +16,13 @@ use crate::application::error::AppError;
 use crate::application::gateway::{AppAccessGate, auth_required};
 use crate::application::ports::{
     ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DriveSessionStore,
+    LargeUpload,
 };
 use crate::domain::artifact::{ArtifactKind, Artifacts};
 use crate::domain::drive::{
-    DRIVE_ACCESS_REFRESH_MARGIN_SECONDS, DriveConnection, DriveFileId, DriveMeeting, DriveStatus,
-    DriveSyncFile, DriveSyncResult, DriveSyncState, DriveTokenFailure, DriveTokens, MeetingKey,
-    SyncDecision, decide,
+    DRIVE_ACCESS_REFRESH_MARGIN_SECONDS, DriveConnection, DriveFileId, DriveMeeting,
+    DriveRecordingState, DriveRecordingUpload, DriveStatus, DriveSyncFile, DriveSyncResult,
+    DriveSyncState, DriveTokenFailure, DriveTokens, MeetingKey, SyncDecision, decide,
 };
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -144,6 +145,17 @@ impl DriveAccounts {
         self.store.load_status().await
     }
 
+    /// Choose whether finished recordings upload on their own. Only a
+    /// connected account can have the choice; it ends with the connection.
+    pub async fn set_save_recordings(&self, enabled: bool) -> Result<DriveStatus, AppError> {
+        let _writing = self.store_lock.lock().await;
+        if self.store.load_connection().await?.is_none() {
+            return Err(not_connected());
+        }
+        self.store.save_recordings_preference(enabled).await?;
+        self.store.load_status().await
+    }
+
     /// Fail with `DRIVE_NOT_CONNECTED` unless a connection is on file.
     async fn connection(&self) -> Result<DriveConnection, AppError> {
         self.store
@@ -181,9 +193,8 @@ impl DriveAccounts {
                 return Err(error);
             }
         };
-        let email = connection.email.clone();
         self.store.save_connection(connection, tokens).await?;
-        Ok(DriveStatus::Connected { email })
+        self.store.load_status().await
     }
 
     /// One browser consent, exchanged through the gateway. The bearer is
@@ -408,6 +419,107 @@ impl DriveAccounts {
         }
     }
 
+    /// The `Galpi` folder, remembered again when Drive had to replace it.
+    async fn ensure_root(
+        &self,
+        access: &AppAccessGate,
+        connection: &DriveConnection,
+        token: &str,
+    ) -> Result<String, AppError> {
+        let root = self
+            .recovered(
+                access,
+                self.files
+                    .ensure_root_folder(token, Some(&connection.folder_id))
+                    .await,
+            )
+            .await?;
+        if root != connection.folder_id {
+            let _writing = self.store_lock.lock().await;
+            if self.store.load_connection().await?.is_some() {
+                self.store.save_folder_id(root.clone()).await?;
+            }
+        }
+        Ok(root)
+    }
+
+    /// Store a finished recording in `Galpi/<meeting>` with a resumable upload.
+    ///
+    /// The file is read in chunks, never whole. A recording Drive already
+    /// holds with the checksum Galpi recorded is left alone, and so is a
+    /// Drive copy that changed elsewhere since.
+    pub async fn upload_recording(
+        &self,
+        access: &AppAccessGate,
+        meeting: &DriveMeeting,
+        path: &Path,
+    ) -> Result<DriveRecordingUpload, AppError> {
+        let connection = self.connection().await?;
+        let digest = self.files.digest_local(path).await?;
+        let token = self.access_token(access).await?;
+        let root = self.ensure_root(access, &connection, &token).await?;
+        let folder = self
+            .recovered(
+                access,
+                self.files
+                    .ensure_meeting_folder(&token, &root, &meeting.key, &meeting.name)
+                    .await,
+            )
+            .await?;
+        let remote = self
+            .recovered(
+                access,
+                self.files
+                    .find_artifact(&token, &folder.id, ArtifactKind::Recording)
+                    .await,
+            )
+            .await?;
+        let create = LargeUpload {
+            folder: &folder.id,
+            key: &meeting.key,
+            kind: ArtifactKind::Recording,
+            existing: None,
+            path,
+            digest: &digest,
+        };
+        let decision = decide(remote.as_ref(), &digest.sha256, false);
+        let (state, web_view_link) = match (decision, remote) {
+            // `decide` never asks to update a file that is not there.
+            (SyncDecision::Create, _) | (SyncDecision::Update, None) => {
+                let sent = self
+                    .recovered(access, self.files.upload_large(&token, &create).await)
+                    .await?;
+                (DriveRecordingState::Uploaded, sent.web_view_link)
+            }
+            (SyncDecision::Update, Some(remote)) => {
+                let replace = LargeUpload {
+                    existing: Some(&remote.id),
+                    ..create
+                };
+                let sent = self
+                    .recovered(access, self.files.upload_large(&token, &replace).await)
+                    .await?;
+                (
+                    DriveRecordingState::Updated,
+                    sent.web_view_link.or(remote.web_view_link),
+                )
+            }
+            (SyncDecision::Unchanged, remote) => (
+                DriveRecordingState::Unchanged,
+                remote.and_then(|remote| remote.web_view_link),
+            ),
+            (SyncDecision::Conflict, remote) => (
+                DriveRecordingState::Conflict,
+                remote.and_then(|remote| remote.web_view_link),
+            ),
+        };
+        Ok(DriveRecordingUpload {
+            state,
+            folder_link: folder.link,
+            web_view_link,
+        })
+    }
+
     /// Upload or update this meeting's results in `Galpi/<meeting>`.
     ///
     /// One file's failure is reported in its slot and the others continue; a
@@ -422,20 +534,7 @@ impl DriveAccounts {
     ) -> Result<DriveSyncResult, AppError> {
         let connection = self.connection().await?;
         let token = self.access_token(access).await?;
-        let root = self
-            .recovered(
-                access,
-                self.files
-                    .ensure_root_folder(&token, Some(&connection.folder_id))
-                    .await,
-            )
-            .await?;
-        if root != connection.folder_id {
-            let _writing = self.store_lock.lock().await;
-            if self.store.load_connection().await?.is_some() {
-                self.store.save_folder_id(root.clone()).await?;
-            }
-        }
+        let root = self.ensure_root(access, &connection, &token).await?;
         let folder = self
             .recovered(
                 access,

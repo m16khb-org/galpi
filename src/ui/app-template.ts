@@ -123,6 +123,11 @@ export const appTemplate = `
                   <button id="cancel-recording-button" class="record-discard ${recordAction}" type="button" data-action="cancel-recording">버리기</button>
                 </div>
                 <p id="recording-status" class="recording-status" aria-live="polite">마이크로 바로 녹음할 수 있습니다.</p>
+                <p id="recording-drive-status" class="drive-status" role="status" aria-live="polite" data-state="pending"></p>
+                <div class="drive-sync-actions">
+                  <button id="recording-drive-folder-button" class="${ghost}" type="button" data-action="open-recording-drive-folder" hidden><i class="ph ph-arrow-up-right" aria-hidden="true"></i> Drive 폴더 열기</button>
+                  <button id="recording-drive-retry-button" class="secondary-button ${secondary}" type="button" data-action="retry-recording-upload" hidden>다시 올리기</button>
+                </div>
               </div>
               <div class="choice-divider"><span>또는 기존 파일</span></div>
               <button id="audio-selection" class="file-picker" type="button" data-action="choose-audio" data-selected="false">
@@ -398,6 +403,11 @@ export const appTemplate = `
             <button id="drive-settings-cancel-button" class="secondary-button ${secondary}" type="button" data-action="cancel-drive-operation" hidden>취소</button>
             <button id="drive-disconnect-button" class="secondary-button danger ${secondary}" type="button" data-action="disconnect-drive" hidden>연결 해제</button>
           </div>
+          <label class="settings-switch" for="drive-save-recordings">
+            <input id="drive-save-recordings" type="checkbox" aria-describedby="drive-save-recordings-help" disabled />
+            <span>녹음을 마치면 Drive에 바로 저장</span>
+          </label>
+          <p id="drive-save-recordings-help">마이크로 녹음한 파일을 정지하는 즉시 Drive의 Galpi 폴더에 올립니다. Drive에 연결해야 쓸 수 있고, 올리는 동안에도 전사를 시작할 수 있습니다.</p>
           <p id="drive-settings-help">연결을 해제해도 Drive에 올린 파일은 지워지지 않습니다.</p>
         </section>
         <div class="settings-actions">

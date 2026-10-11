@@ -182,10 +182,12 @@ Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Ga
 2. 시스템 브라우저에서 Drive 권한을 허용합니다. 연결이 끝나면 내 Drive에 `Galpi` 폴더가 생기고(이미 있으면 그 폴더를 씁니다), 상단에 연결한 계정이 표시됩니다.
 3. `Drive에서 가져오기`를 누르면 브라우저에서 Google Picker가 열립니다. 녹음 파일을 하나 고르면 이 컴퓨터로 내려받고, `전사 시작`으로 전사할 수 있습니다. Drive에 연결한 계정과 다른 계정에서 고른 파일은 가져오지 않습니다.
 4. Drive가 연결되어 있으면 전사, 전사문 가져오기, AI 증강이 끝날 때마다 결과(`.srt`, `_화자별.txt`, `_회의록.md`)가 `Galpi/<회의 이름>` 폴더에 올라갑니다. 같은 회의를 다시 처리하면 새 파일을 만들지 않고 같은 파일을 갱신합니다.
+5. `설정` → **Google Drive**에서 **녹음을 마치면 Drive에 바로 저장**을 켜면, 마이크로 녹음한 파일을 정지하는 즉시 `Galpi/<녹음 이름>` 폴더에 올립니다. 올리는 동안에도 전사를 시작할 수 있고, 같은 녹음의 전사 결과는 같은 폴더에 올라갑니다. 이 스위치는 Drive에 연결해야 켤 수 있으며 연결을 해제하면 꺼집니다.
 
 - 권한 범위는 `drive.file` 하나입니다. Galpi는 직접 만든 파일과 Picker에서 직접 고른 파일에만 접근하며, Drive의 다른 파일은 볼 수 없습니다.
 - 마지막으로 올린 뒤 Drive에서 파일이 바뀌었으면 덮어쓰지 않고 충돌로 알립니다. 결과 영역의 `Drive 버전 덮어쓰기`를 눌러야 덮어씁니다.
 - 업로드가 실패해도 로컬 결과는 그대로 남고, 실패는 결과 영역에 따로 표시됩니다. 앱은 실패한 업로드를 자동으로 다시 보내지 않습니다.
+- 녹음 업로드가 실패하면 녹음 영역에 이유와 `다시 올리기` 버튼이 나타나며, 로컬 녹음 파일은 그대로 남습니다. 이미 올린 녹음은 다시 올리지 않고, 그 사이 Drive의 사본이 바뀌었으면 덮어쓰지 않습니다. 긴 녹음도 디스크에서 4MB씩 읽어 이어 올리므로 파일 전체를 메모리에 올리지 않습니다.
 - Drive에서 고른 원본은 읽기만 하고 옮기거나 지우지 않습니다. 내려받은 사본은 앱 캐시의 `drive-imports` 폴더에 두며, 앱을 다시 실행하면 지웁니다.
 - `설정` → **Google Drive** → `연결 해제`를 누르면 Google에 토큰 폐기를 요청하고 로컬 연결 정보를 지웁니다. Drive에 올린 파일은 지우지 않습니다.
 - 코드 교환과 토큰 갱신은 Galpi 로그인 서버(auth-gateway)가 대신 처리합니다. 앱 소스에는 OAuth 클라이언트 보안 비밀번호가 없습니다.
@@ -247,7 +249,7 @@ Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Ga
 - 음성과 전사 산출물은 사용자가 선택한 로컬 폴더에 저장됩니다.
 - 전사·정렬·화자분리 모델(Qwen3, WhisperX, pyannote)은 Galpi의 앱 전용 Hugging Face 캐시에 저장됩니다.
 - Hugging Face 토큰, AI 증강 API 키, ChatGPT 로그인 토큰, Google 로그인 세션(auth-gateway)은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens`, `com.m16khb.galpi:gateway-session` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)과 Google 로그인 세션도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이나 Galpi 로그인이 노출될 수 있습니다. 로그인한 Google 계정의 이메일은 두 플랫폼 모두 `settings.json`에 저장됩니다.
-- Google Drive 토큰도 같은 경로로 저장됩니다. Windows에서는 `com.m16khb.galpi:drive-session` 항목에, macOS에서는 `settings.json`에 평문으로 저장됩니다. 연결한 Drive 계정의 이메일과 `Galpi` 폴더 ID는 두 플랫폼 모두 `settings.json`에 저장됩니다.
+- Google Drive 토큰도 같은 경로로 저장됩니다. Windows에서는 `com.m16khb.galpi:drive-session` 항목에, macOS에서는 `settings.json`에 평문으로 저장됩니다. 연결한 Drive 계정의 이메일과 `Galpi` 폴더 ID는 두 플랫폼 모두 `settings.json`에 저장됩니다. 녹음을 마치면 Drive에 바로 저장하는 선택(`driveSaveRecordings`)도 `settings.json`에 있으며, 연결을 해제하면 꺼집니다.
 - macOS에서는 자격 증명을 아직 Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. macOS의 Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다.
 - AI 회의록을 실행하지 않으면 전사문은 외부 LLM API로 전송되지 않습니다.
 - worker는 고정된 프로그램과 argv로 실행되며 셸 문자열을 실행하지 않습니다.

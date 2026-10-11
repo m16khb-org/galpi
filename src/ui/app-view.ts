@@ -160,6 +160,12 @@ export class AppView {
     }
   }
 
+  /** The switch saves immediately; the handler learns the value the user chose. */
+  onDriveSaveRecordingsChange(handler: (enabled: boolean) => void): void {
+    const toggle = this.element<HTMLInputElement>("#drive-save-recordings")
+    toggle.addEventListener("change", () => handler(toggle.checked))
+  }
+
   speakerForm(): SpeakerForm {
     const checked = this.root.querySelector<HTMLInputElement>('input[name="speaker-mode"]:checked')
     return {

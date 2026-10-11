@@ -15,7 +15,7 @@ import type {
   ChatGptSignInPhase,
   ChatGptSignOutResult,
 } from "./chatgpt"
-import type { DriveImport, DriveStatus, DriveSyncResult } from "./drive"
+import type { DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult } from "./drive"
 import type { SpeakerHint } from "./speaker"
 
 /**
@@ -79,6 +79,10 @@ export interface BackendPort {
   importFromDrive(jobId: string): Promise<DriveImport>
   /** `jobId` is the transcription or transcript-import job the results belong to. */
   syncMeetingToDrive(jobId: string, overwrite: boolean): Promise<DriveSyncResult>
+  /** Turns the upload of each finished recording on or off; only a connected account can. */
+  setDriveSaveRecordings(enabled: boolean): Promise<DriveStatus>
+  /** Uploads a recording `stopRecording` reported, named by its id, in resumable chunks. */
+  uploadRecordingToDrive(recordingId: string): Promise<DriveRecordingUpload>
   openDriveLink(url: string): Promise<void>
 }
 

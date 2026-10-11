@@ -141,6 +141,12 @@ function createBackend(
     syncMeetingToDrive: async () => {
       throw new Error("unused Drive sync")
     },
+    setDriveSaveRecordings: async () => {
+      throw new Error("unused Drive recording choice")
+    },
+    uploadRecordingToDrive: async () => {
+      throw new Error("unused Drive recording upload")
+    },
     openDriveLink: async () => undefined,
   }
 }

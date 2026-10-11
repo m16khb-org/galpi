@@ -80,11 +80,14 @@ pub struct DriveAccount {
 #[serde(rename_all = "camelCase", tag = "state")]
 pub enum DriveStatus {
     #[serde(rename_all = "camelCase")]
-    Disconnected {
-        onboarding_dismissed: bool,
-    },
+    Disconnected { onboarding_dismissed: bool },
+    #[serde(rename_all = "camelCase")]
     Connected {
         email: String,
+        /// Upload each finished microphone recording right away. Cleared on
+        /// disconnect, so a later connection, maybe to another account, never
+        /// starts uploading recordings by itself.
+        save_recordings: bool,
     },
 }
 
@@ -269,12 +272,33 @@ pub struct DriveImport {
     pub name: String,
 }
 
+/// How uploading one finished recording ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DriveRecordingState {
+    Uploaded,
+    /// The local file changed since Galpi last uploaded it.
+    Updated,
+    Unchanged,
+    /// The Drive copy changed elsewhere; it was left alone.
+    Conflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveRecordingUpload {
+    pub state: DriveRecordingState,
+    pub folder_link: Option<String>,
+    pub web_view_link: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        APP_PROPERTY_BYTES, DriveFileId, DriveIdError, DriveMeeting, DriveStatus, DriveSyncFile,
-        DriveSyncState, DriveTokens, MEETING_PROPERTY, MeetingKey, RemoteFile, SyncDecision,
-        decide, parse_picked_ids, stable_hash,
+        APP_PROPERTY_BYTES, DriveFileId, DriveIdError, DriveMeeting, DriveRecordingState,
+        DriveRecordingUpload, DriveStatus, DriveSyncFile, DriveSyncState, DriveTokens,
+        MEETING_PROPERTY, MeetingKey, RemoteFile, SyncDecision, decide, parse_picked_ids,
+        stable_hash,
     };
     use crate::domain::artifact::ArtifactKind;
     use serde_json::json;
@@ -419,11 +443,20 @@ mod tests {
         let disconnected = DriveStatus::Disconnected {
             onboarding_dismissed: true,
         };
+        let connected = DriveStatus::Connected {
+            email: "user@example.com".to_owned(),
+            save_recordings: true,
+        };
         let failed = DriveSyncFile {
             kind: ArtifactKind::SpeakerText,
             state: DriveSyncState::Failed {
                 message: "실패".to_owned(),
             },
+            web_view_link: None,
+        };
+        let recording = DriveRecordingUpload {
+            state: DriveRecordingState::Unchanged,
+            folder_link: Some("https://drive.google.com/drive/folders/m1".to_owned()),
             web_view_link: None,
         };
 
@@ -432,8 +465,20 @@ mod tests {
             json!({"state": "disconnected", "onboardingDismissed": true})
         );
         assert_eq!(
+            serde_json::to_value(&connected)?,
+            json!({"state": "connected", "email": "user@example.com", "saveRecordings": true})
+        );
+        assert_eq!(
             serde_json::to_value(&failed)?,
             json!({"kind": "speaker_text", "state": "failed", "message": "실패", "webViewLink": null})
+        );
+        assert_eq!(
+            serde_json::to_value(&recording)?,
+            json!({
+                "state": "unchanged",
+                "folderLink": "https://drive.google.com/drive/folders/m1",
+                "webViewLink": null,
+            })
         );
         Ok(())
     }

@@ -8,21 +8,24 @@
 use super::super::paths::{AppPaths, canonical, sanitized_stem};
 use super::Tuning;
 use crate::application::error::AppError;
-use crate::application::ports::{DriveFilesPort, LocalUpload, PickedFile, RemoteFolder};
+use crate::application::ports::{
+    DriveFilesPort, LargeUpload, LocalFileDigest, LocalUpload, PickedFile, RemoteFolder,
+};
 use crate::domain::artifact::ArtifactKind;
 use crate::domain::drive::{DriveAccount, DriveFileId, MEETING_PROPERTY, MeetingKey, RemoteFile};
 use async_trait::async_trait;
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{CONTENT_RANGE, CONTENT_TYPE, LOCATION, RANGE};
 use reqwest::{Client, RequestBuilder, Response, StatusCode, Url};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use tauri::AppHandle;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -43,6 +46,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// A download may take as long as it needs, but neither its first answer nor
 /// any later chunk may stall longer than this.
 const CHUNK_TIMEOUT: Duration = Duration::from_secs(60);
+/// Drive wants every chunk of a resumable upload but the last to be a multiple of this.
+const UPLOAD_CHUNK_ALIGNMENT: u64 = 256 * 1024;
+/// How much of a local file is read at a time while hashing it.
+const DIGEST_BUFFER_BYTES: usize = 1024 * 1024;
 
 fn unavailable() -> AppError {
     AppError::new(
@@ -60,6 +67,17 @@ fn unreadable() -> AppError {
 
 fn cancelled() -> AppError {
     AppError::new("CANCELLED", "사용자가 작업을 취소했습니다.")
+}
+
+fn read_failed(error: &std::io::Error) -> AppError {
+    AppError::io("올릴 녹음 파일을 읽지 못했습니다", error)
+}
+
+fn changed_during_upload() -> AppError {
+    AppError::new(
+        "DRIVE_UPLOAD_CHANGED",
+        "녹음 파일이 올리는 도중 바뀌어 Drive에 올리지 않았습니다.",
+    )
 }
 
 fn download_failed() -> AppError {
@@ -158,6 +176,7 @@ const fn kind_name(kind: ArtifactKind) -> &'static str {
         ArtifactKind::SpeakerText => "speaker_text",
         ArtifactKind::Checkpoint => "checkpoint",
         ArtifactKind::Minutes => "minutes",
+        ArtifactKind::Recording => "recording",
     }
 }
 
@@ -167,6 +186,7 @@ const fn mime_type(kind: ArtifactKind) -> &'static str {
         ArtifactKind::SpeakerText => "text/plain",
         ArtifactKind::Checkpoint => "application/json",
         ArtifactKind::Minutes => "text/markdown",
+        ArtifactKind::Recording => "audio/wav",
     }
 }
 
@@ -271,12 +291,31 @@ fn remote_file(mut body: FileBody, synced_sha256: Option<String>) -> Result<Remo
     })
 }
 
+/// Drive's answer to one chunk of a resumable upload.
+enum ChunkAnswer {
+    /// Drive keeps the file up to this offset and waits for the rest.
+    Resume(u64),
+    /// The upload is complete; this is the file's metadata.
+    Done(Vec<u8>),
+}
+
+/// The byte count a `Range: bytes=0-N` header says Drive holds.
+fn persisted_bytes(range: &str) -> Option<u64> {
+    range
+        .strip_prefix("bytes=0-")?
+        .parse::<u64>()
+        .ok()?
+        .checked_add(1)
+}
+
 pub struct DriveRestAdapter {
     http: Client,
     api: String,
     upload: String,
     /// `cache/drive-imports`: one fresh folder per download.
     imports: PathBuf,
+    /// Size of every chunk of a resumable upload but the last.
+    upload_chunk: u64,
 }
 
 impl DriveRestAdapter {
@@ -297,6 +336,8 @@ impl DriveRestAdapter {
             api: tuning.drive_api_url.clone(),
             upload: tuning.drive_upload_url.clone(),
             imports,
+            upload_chunk: (tuning.upload_chunk_bytes / UPLOAD_CHUNK_ALIGNMENT).max(1)
+                * UPLOAD_CHUNK_ALIGNMENT,
         })
     }
 
@@ -381,6 +422,138 @@ impl DriveRestAdapter {
             Ok(bytes) => Ok(!parse::<FileBody>(&bytes)?.trashed),
             Err(error) if error.code == "DRIVE_NOT_FOUND" => Ok(false),
             Err(error) => Err(error),
+        }
+    }
+
+    /// Open a resumable session for `upload` and return its URI.
+    async fn open_session(
+        &self,
+        access_token: &str,
+        upload: &LargeUpload<'_>,
+    ) -> Result<String, AppError> {
+        let query = [
+            ("uploadType", "resumable"),
+            ("fields", "id,webViewLink,sha256Checksum"),
+        ];
+        let properties = file_properties(upload.key, upload.kind, &upload.digest.sha256);
+        let (request, metadata) = if let Some(id) = upload.existing {
+            let id = DriveFileId::parse(id).map_err(|_| unreadable())?;
+            let url = Self::url(&self.upload, &format!("/files/{}", id.as_str()), &query)?;
+            (self.http.patch(url), json!({"appProperties": properties}))
+        } else {
+            let url = Self::url(&self.upload, "/files", &query)?;
+            let metadata = json!({
+                "name": upload.digest.name,
+                "parents": [upload.folder],
+                "mimeType": mime_type(upload.kind),
+                "appProperties": properties,
+            });
+            (self.http.post(url), metadata)
+        };
+        let response = request
+            .bearer_auth(access_token)
+            .timeout(REQUEST_TIMEOUT)
+            .header(CONTENT_TYPE, "application/json; charset=UTF-8")
+            .header("X-Upload-Content-Type", mime_type(upload.kind))
+            .header("X-Upload-Content-Length", upload.digest.size)
+            .body(metadata.to_string())
+            .send()
+            .await
+            .map_err(|_| unavailable())?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.bytes().await.unwrap_or_default();
+            return Err(api_error(status, &body));
+        }
+        response
+            .headers()
+            .get(LOCATION)
+            .and_then(|location| location.to_str().ok())
+            .map(str::to_owned)
+            .ok_or_else(unreadable)
+    }
+
+    /// Send one chunk to the session. The session URI itself authorizes the
+    /// request, so the access token never goes to the address Drive named.
+    async fn put_chunk(
+        &self,
+        session: &str,
+        content_range: &str,
+        chunk: Vec<u8>,
+    ) -> Result<ChunkAnswer, AppError> {
+        let response = self
+            .http
+            .put(session)
+            .timeout(CHUNK_TIMEOUT)
+            .header(CONTENT_RANGE, content_range)
+            .body(chunk)
+            .send()
+            .await
+            .map_err(|_| unavailable())?;
+        let status = response.status();
+        let held = response
+            .headers()
+            .get(RANGE)
+            .and_then(|range| range.to_str().ok())
+            .and_then(persisted_bytes);
+        let body = response.bytes().await.map_err(|_| unavailable())?;
+        if status == StatusCode::PERMANENT_REDIRECT {
+            Ok(ChunkAnswer::Resume(held.unwrap_or(0)))
+        } else if status.is_success() {
+            Ok(ChunkAnswer::Done(body.to_vec()))
+        } else {
+            Err(api_error(status, &body))
+        }
+    }
+
+    /// Stream the file to the session in chunks and return the finished
+    /// file's metadata. The file is hashed once more on the way; the last
+    /// chunk, which completes the file on Drive, is sent only when the hash
+    /// still matches the one the checksum property was built from.
+    async fn stream_file(
+        &self,
+        session: &str,
+        upload: &LargeUpload<'_>,
+    ) -> Result<Vec<u8>, AppError> {
+        let size = upload.digest.size;
+        let mut file = tokio::fs::File::open(upload.path)
+            .await
+            .map_err(|error| AppError::io("올릴 녹음 파일을 열지 못했습니다", &error))?;
+        let mut hasher = Sha256::new();
+        let mut hashed_until = 0_u64;
+        let mut offset = 0_u64;
+        loop {
+            let end = offset.saturating_add(self.upload_chunk).min(size);
+            let length = usize::try_from(end - offset).map_err(|_| unavailable())?;
+            file.seek(SeekFrom::Start(offset))
+                .await
+                .map_err(|error| read_failed(&error))?;
+            let mut chunk = vec![0_u8; length];
+            file.read_exact(&mut chunk)
+                .await
+                .map_err(|error| read_failed(&error))?;
+            // Bytes sent again after a partial answer were hashed the first time.
+            let seen = usize::try_from(hashed_until.saturating_sub(offset))
+                .map_or(length, |seen| seen.min(length));
+            hasher.update(&chunk[seen..]);
+            hashed_until = hashed_until.max(end);
+            if end == size && format!("{:x}", hasher.clone().finalize()) != upload.digest.sha256 {
+                return Err(changed_during_upload());
+            }
+            let content_range = if size == 0 {
+                "bytes */0".to_owned()
+            } else {
+                format!("bytes {offset}-{}/{size}", end - 1)
+            };
+            match self.put_chunk(session, &content_range, chunk).await? {
+                ChunkAnswer::Done(body) => return Ok(body),
+                // Drive must keep part of what it was just sent, but never more
+                // than that and never the whole file without finishing it.
+                ChunkAnswer::Resume(held) if held > offset && held <= end && held < size => {
+                    offset = held;
+                }
+                ChunkAnswer::Resume(_) => return Err(unavailable()),
+            }
         }
     }
 
@@ -603,6 +776,45 @@ impl DriveFilesPort for DriveRestAdapter {
             sha256: sha256_hex(&content),
             content,
         })
+    }
+
+    async fn digest_local(&self, path: &Path) -> Result<LocalFileDigest, AppError> {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .ok_or_else(|| AppError::new("DRIVE_REQUEST_FAILED", "녹음 파일 이름이 없습니다."))?;
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .map_err(|error| AppError::io("올릴 녹음 파일을 열지 못했습니다", &error))?;
+        let mut hasher = Sha256::new();
+        let mut buffer = vec![0_u8; DIGEST_BUFFER_BYTES];
+        let mut size = 0_u64;
+        loop {
+            let read = file
+                .read(&mut buffer)
+                .await
+                .map_err(|error| read_failed(&error))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            size = size.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+        }
+        Ok(LocalFileDigest {
+            name,
+            size,
+            sha256: format!("{:x}", hasher.finalize()),
+        })
+    }
+
+    async fn upload_large(
+        &self,
+        access_token: &str,
+        upload: &LargeUpload<'_>,
+    ) -> Result<RemoteFile, AppError> {
+        let session = self.open_session(access_token, upload).await?;
+        let finished = self.stream_file(&session, upload).await?;
+        remote_file(parse(&finished)?, Some(upload.digest.sha256.clone()))
     }
 
     async fn create_file(

@@ -1,17 +1,21 @@
 use super::{DriveOAuthAdapter, DriveRestAdapter, Tuning};
-use crate::adapters::outbound::browser_sign_in::fake_server::{FakeServer, Handler, Recorded};
+use crate::adapters::outbound::browser_sign_in::fake_server::{
+    FakeServer, Handler, Recorded, Reply, ReplyHandler,
+};
 use crate::adapters::outbound::browser_sign_in::pkce::code_challenge;
 use crate::adapters::outbound::browser_sign_in::{BrowserOpener, SignInCodes};
 use crate::application::error::AppError;
 use crate::application::ports::{
-    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, LocalUpload,
-    PickedFile,
+    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, LargeUpload,
+    LocalFileDigest, LocalUpload, PickedFile,
 };
 use crate::domain::artifact::ArtifactKind;
 use crate::domain::drive::{DriveFileId, DriveTokenFailure, DriveTokens, MeetingKey};
 use reqwest::Url;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 use tokio::sync::oneshot;
@@ -71,6 +75,7 @@ fn tuning(base: &str) -> Tuning {
         google_revoke_url: format!("{base}/revoke"),
         drive_api_url: format!("{base}/drive/v3"),
         drive_upload_url: format!("{base}/upload/drive/v3"),
+        upload_chunk_bytes: 256 * 1024,
         preferred_port: 0,
         sign_in_timeout: Duration::from_secs(30),
     }
@@ -422,6 +427,17 @@ impl RestHarness {
         let server = FakeServer::start(handler)
             .await
             .map_err(|error| AppError::io("server", &error))?;
+        Self::with_server(server)
+    }
+
+    async fn start_replying(handler: ReplyHandler) -> Result<Self, AppError> {
+        let server = FakeServer::start_replying(handler)
+            .await
+            .map_err(|error| AppError::io("server", &error))?;
+        Self::with_server(server)
+    }
+
+    fn with_server(server: FakeServer) -> Result<Self, AppError> {
         let imports = std::env::temp_dir().join(format!("galpi-drive-imports-{}", Uuid::now_v7()));
         let adapter = DriveRestAdapter::with_tuning(&tuning(&server.base), imports.clone())?;
         Ok(Self {
@@ -920,5 +936,377 @@ async fn startup_clears_leftover_imports() -> Result<(), AppError> {
         .adapter
         .clear_imports()
         .map_err(|error| AppError::io("clear again", &error))?;
+    Ok(())
+}
+
+/// The smallest chunk Drive accepts, which `tuning` also sets.
+const CHUNK: usize = 256 * 1024;
+
+/// Printable bytes, so the fake server's text body keeps them intact.
+fn pattern(len: usize) -> Vec<u8> {
+    (0..len)
+        .map(|index| b'a' + u8::try_from(index % 26).unwrap_or_default())
+        .collect()
+}
+
+fn sha256_of(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// A recording on disk, removed when dropped.
+struct RecordingFile {
+    directory: PathBuf,
+    path: PathBuf,
+}
+
+impl RecordingFile {
+    fn create(content: &[u8]) -> Result<Self, AppError> {
+        let directory =
+            std::env::temp_dir().join(format!("galpi-drive-recording-{}", Uuid::now_v7()));
+        std::fs::create_dir_all(&directory).map_err(|error| AppError::io("dir", &error))?;
+        let path = directory.join("주간 회의.wav");
+        std::fs::write(&path, content).map_err(|error| AppError::io("write", &error))?;
+        Ok(Self { directory, path })
+    }
+}
+
+impl Drop for RecordingFile {
+    fn drop(&mut self) {
+        let _removed = std::fs::remove_dir_all(&self.directory);
+    }
+}
+
+fn content_range(request: &Recorded) -> Option<(u64, u64, u64)> {
+    let value = request.header("content-range")?.strip_prefix("bytes ")?;
+    let (range, total) = value.split_once('/')?;
+    let (start, end) = range.split_once('-')?;
+    Some((start.parse().ok()?, end.parse().ok()?, total.parse().ok()?))
+}
+
+fn empty_reply(status: u16, headers: Vec<(&'static str, String)>) -> Reply {
+    Reply {
+        status,
+        headers,
+        body: String::new(),
+    }
+}
+
+/// The session address Drive hands out after the opening request.
+fn session_reply(request: &Recorded) -> Reply {
+    let host = request.header("host").unwrap_or_default();
+    empty_reply(200, vec![("Location", format!("http://{host}/session"))])
+}
+
+/// Drive's resumable protocol: the opening request answers with the session
+/// address, every chunk but the last with 308, the last with `finished`.
+/// `held_first` makes Drive keep only that many bytes of the first chunk.
+fn resumable_drive(finished: &Value, held_first: Option<u64>) -> ReplyHandler {
+    let finished = finished.to_string();
+    let first = Arc::new(AtomicBool::new(true));
+    Arc::new(move |request| {
+        if request.route() != "/session" {
+            return session_reply(request);
+        }
+        let Some((_, end, total)) = content_range(request) else {
+            return empty_reply(400, Vec::new());
+        };
+        let held = match held_first {
+            Some(held) if first.swap(false, Ordering::SeqCst) => held,
+            _ => end + 1,
+        };
+        if held < total {
+            empty_reply(308, vec![("Range", format!("bytes=0-{}", held - 1))])
+        } else {
+            Reply {
+                status: 200,
+                headers: Vec::new(),
+                body: finished.clone(),
+            }
+        }
+    })
+}
+
+fn recording_upload<'a>(
+    folder: &'a str,
+    key: &'a MeetingKey,
+    existing: Option<&'a str>,
+    file: &'a RecordingFile,
+    digest: &'a LocalFileDigest,
+) -> LargeUpload<'a> {
+    LargeUpload {
+        folder,
+        key,
+        kind: ArtifactKind::Recording,
+        existing,
+        path: &file.path,
+        digest,
+    }
+}
+
+#[tokio::test]
+async fn recordings_upload_in_aligned_chunks_through_one_resumable_session() -> Result<(), AppError>
+{
+    // Given: a 600 KB recording and a Drive that answers 308 until the last chunk
+    let content = pattern(600_000);
+    let file = RecordingFile::create(&content)?;
+    let finished = json!({"id": "rec-1", "webViewLink": "https://drive.google.com/file/d/rec-1"});
+    let harness = RestHarness::start_replying(resumable_drive(&finished, None)).await?;
+    let digest = harness.adapter.digest_local(&file.path).await?;
+    let key = MeetingKey::local(&file.path);
+
+    // When
+    let created = harness
+        .adapter
+        .upload_large(
+            TOKEN,
+            &recording_upload("meeting-1", &key, None, &file, &digest),
+        )
+        .await?;
+
+    // Then: the digest streams the whole file, and Drive's file carries Galpi's checksum
+    assert_eq!(digest.size, 600_000);
+    assert_eq!(digest.name, "주간 회의.wav");
+    assert_eq!(digest.sha256, sha256_of(&content));
+    assert_eq!(created.id, "rec-1");
+    assert_eq!(
+        created.synced_sha256.as_deref(),
+        Some(digest.sha256.as_str())
+    );
+
+    // Then: one opening request carries the metadata with the bearer
+    let opened = harness.requests_to("POST", "/upload/drive/v3/files");
+    let opening = opened
+        .first()
+        .ok_or_else(|| AppError::new("TEST", "no opening request"))?;
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opening.query("uploadType").as_deref(), Some("resumable"));
+    assert_eq!(
+        opening.authorization.as_deref(),
+        Some("Bearer galpi-test-drive-access")
+    );
+    assert_eq!(opening.header("x-upload-content-type"), Some("audio/wav"));
+    assert_eq!(opening.header("x-upload-content-length"), Some("600000"));
+    let metadata = json_body(opening);
+    assert_eq!(metadata["name"], "주간 회의.wav");
+    assert_eq!(metadata["parents"], json!(["meeting-1"]));
+    assert_eq!(metadata["mimeType"], "audio/wav");
+    assert_eq!(metadata["appProperties"]["galpiKind"], "recording");
+    assert_eq!(metadata["appProperties"]["galpiMeeting"], key.as_str());
+    assert_eq!(metadata["appProperties"]["galpiSha256"], digest.sha256);
+
+    // Then: chunks are multiples of 256 KiB but the last, cover the file in order,
+    // and never carry the access token to the session address
+    let chunks = harness.requests_to("PUT", "/session");
+    let ranges: Vec<&str> = chunks
+        .iter()
+        .filter_map(|chunk| chunk.header("content-range"))
+        .collect();
+    assert_eq!(
+        ranges,
+        [
+            "bytes 0-262143/600000",
+            "bytes 262144-524287/600000",
+            "bytes 524288-599999/600000",
+        ]
+    );
+    assert_eq!(CHUNK, 262_144);
+    assert!(chunks.iter().all(|chunk| chunk.authorization.is_none()));
+    let sent: String = chunks.iter().map(|chunk| chunk.body.as_str()).collect();
+    assert_eq!(sent.as_bytes(), content.as_slice());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_partly_kept_chunk_is_sent_again_from_where_drive_stopped() -> Result<(), AppError> {
+    // Given: Drive keeps only half of the first chunk
+    let content = pattern(300_000);
+    let file = RecordingFile::create(&content)?;
+    let harness =
+        RestHarness::start_replying(resumable_drive(&json!({"id": "rec-1"}), Some(131_072)))
+            .await?;
+    let digest = harness.adapter.digest_local(&file.path).await?;
+    let key = MeetingKey::local(&file.path);
+
+    // When
+    let created = harness
+        .adapter
+        .upload_large(
+            TOKEN,
+            &recording_upload("meeting-1", &key, None, &file, &digest),
+        )
+        .await?;
+
+    // Then: the next chunk starts at the byte Drive reported, and the file still verifies
+    assert_eq!(created.id, "rec-1");
+    let chunks = harness.requests_to("PUT", "/session");
+    let ranges: Vec<&str> = chunks
+        .iter()
+        .filter_map(|chunk| chunk.header("content-range"))
+        .collect();
+    assert_eq!(
+        ranges,
+        ["bytes 0-262143/300000", "bytes 131072-299999/300000"]
+    );
+    let resent = chunks
+        .get(1)
+        .ok_or_else(|| AppError::new("TEST", "no second chunk"))?;
+    assert_eq!(resent.body.as_bytes(), &content[131_072..]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_file_that_changed_after_hashing_never_gets_its_last_chunk() -> Result<(), AppError> {
+    // Given: the checksum the digest took no longer matches the file
+    let content = pattern(600_000);
+    let file = RecordingFile::create(&content)?;
+    let harness =
+        RestHarness::start_replying(resumable_drive(&json!({"id": "rec-1"}), None)).await?;
+    let digest = harness.adapter.digest_local(&file.path).await?;
+    let stale = LocalFileDigest {
+        name: digest.name.clone(),
+        size: digest.size,
+        sha256: "0".repeat(64),
+    };
+    let key = MeetingKey::local(&file.path);
+
+    // When
+    let error = harness
+        .adapter
+        .upload_large(
+            TOKEN,
+            &recording_upload("meeting-1", &key, None, &file, &stale),
+        )
+        .await
+        .err()
+        .map(|error| error.code);
+
+    // Then: Drive never receives the chunk that would complete the file
+    assert_eq!(error.as_deref(), Some("DRIVE_UPLOAD_CHANGED"));
+    assert_eq!(harness.requests_to("PUT", "/session").len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_changed_recording_replaces_the_content_of_the_same_drive_file() -> Result<(), AppError> {
+    // Given
+    let content = pattern(1_000);
+    let file = RecordingFile::create(&content)?;
+    let harness =
+        RestHarness::start_replying(resumable_drive(&json!({"id": "file-9"}), None)).await?;
+    let digest = harness.adapter.digest_local(&file.path).await?;
+    let key = MeetingKey::local(&file.path);
+
+    // When
+    let updated = harness
+        .adapter
+        .upload_large(
+            TOKEN,
+            &recording_upload("meeting-1", &key, Some("file-9"), &file, &digest),
+        )
+        .await?;
+
+    // Then: a PATCH of that id that sets only the Galpi properties
+    assert_eq!(updated.id, "file-9");
+    let patches = harness.requests_to("PATCH", "/upload/drive/v3/files/file-9");
+    let opening = patches
+        .first()
+        .ok_or_else(|| AppError::new("TEST", "no patch"))?;
+    assert_eq!(opening.query("uploadType").as_deref(), Some("resumable"));
+    let metadata = json_body(opening);
+    assert_eq!(metadata["appProperties"]["galpiSha256"], digest.sha256);
+    assert!(metadata.get("parents").is_none());
+    assert!(metadata.get("name").is_none());
+    assert_eq!(
+        harness
+            .requests_to("PUT", "/session")
+            .first()
+            .and_then(|chunk| chunk.header("content-range")),
+        Some("bytes 0-999/1000")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_upload_that_makes_no_progress_stops_instead_of_looping() -> Result<(), AppError> {
+    // Given: Drive answers 308 without holding any byte
+    let content = pattern(1_000);
+    let file = RecordingFile::create(&content)?;
+    let harness = RestHarness::start_replying(Arc::new(|request| {
+        if request.route() == "/session" {
+            empty_reply(308, Vec::new())
+        } else {
+            session_reply(request)
+        }
+    }))
+    .await?;
+    let digest = harness.adapter.digest_local(&file.path).await?;
+    let key = MeetingKey::local(&file.path);
+
+    // When
+    let error = harness
+        .adapter
+        .upload_large(
+            TOKEN,
+            &recording_upload("meeting-1", &key, None, &file, &digest),
+        )
+        .await
+        .err()
+        .map(|error| error.code);
+
+    // Then
+    assert_eq!(error.as_deref(), Some("DRIVE_UNAVAILABLE"));
+    assert_eq!(harness.requests_to("PUT", "/session").len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_refused_upload_session_maps_to_the_stable_drive_codes() -> Result<(), AppError> {
+    let quota = json!({"error": {"errors": [{"reason": "storageQuotaExceeded"}]}}).to_string();
+    let file = RecordingFile::create(&pattern(1_000))?;
+    for (status, body, code) in [
+        (401, String::new(), "DRIVE_TOKEN_REJECTED"),
+        (403, quota, "DRIVE_STORAGE_FULL"),
+        (503, String::new(), "DRIVE_UNAVAILABLE"),
+    ] {
+        let harness = RestHarness::start(fixed(status, body)).await?;
+        let digest = harness.adapter.digest_local(&file.path).await?;
+        let key = MeetingKey::local(&file.path);
+
+        let error = harness
+            .adapter
+            .upload_large(
+                TOKEN,
+                &recording_upload("meeting-1", &key, None, &file, &digest),
+            )
+            .await
+            .err()
+            .map(|error| error.code);
+
+        assert_eq!(error.as_deref(), Some(code), "status {status}");
+        assert!(harness.requests_to("PUT", "/session").is_empty());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn digests_stream_files_larger_than_the_read_buffer() -> Result<(), AppError> {
+    // Given: more than one read buffer of content
+    let content = pattern(1_500_000);
+    let file = RecordingFile::create(&content)?;
+    let harness = RestHarness::start(no_server()).await?;
+
+    // When
+    let digest = harness.adapter.digest_local(&file.path).await?;
+    let missing = harness
+        .adapter
+        .digest_local(&file.directory.join("missing.wav"))
+        .await
+        .err()
+        .map(|error| error.code);
+
+    // Then
+    assert_eq!(digest.size, 1_500_000);
+    assert_eq!(digest.sha256, sha256_of(&content));
+    assert_eq!(missing.as_deref(), Some("IO_ERROR"));
     Ok(())
 }

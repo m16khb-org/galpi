@@ -28,6 +28,9 @@ pub enum ArtifactKind {
     SpeakerText,
     Checkpoint,
     Minutes,
+    /// The meeting's source recording. Only its Drive copy is named by this
+    /// kind; it is not a result file, so it has no path in [`Artifacts`].
+    Recording,
 }
 
 impl Artifacts {
@@ -37,6 +40,7 @@ impl Artifacts {
             ArtifactKind::SpeakerText => Some(&self.txt),
             ArtifactKind::Checkpoint => self.checkpoint.as_ref(),
             ArtifactKind::Minutes => self.minutes.as_ref(),
+            ArtifactKind::Recording => None,
         }
     }
 }
@@ -102,5 +106,6 @@ mod tests {
         assert_eq!(artifacts.path_for(ArtifactKind::Srt), None);
         assert_eq!(artifacts.path_for(ArtifactKind::Checkpoint), None);
         assert_eq!(artifacts.path_for(ArtifactKind::Minutes), None);
+        assert_eq!(artifacts.path_for(ArtifactKind::Recording), None);
     }
 }

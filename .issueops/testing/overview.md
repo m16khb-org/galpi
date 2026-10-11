@@ -51,7 +51,7 @@ Manual Windows gates (not automated):
 Google Drive checks:
 
 - Adapter contracts (consent URL, gateway-brokered exchange, Drive v3 REST,
-  streamed download) run against `browser_sign_in/fake_server.rs` in
+  resumable recording upload with `Content-Range` and 308, streamed download) run against `browser_sign_in/fake_server.rs` in
   `cargo test --lib adapters::outbound::drive`; use cases run against the
   in-memory Drive in `application/tests/drive.rs`. Neither touches the network.
 - A live check needs auth-gateway `POST /drive/native/token` deployed (without a

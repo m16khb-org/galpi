@@ -37,6 +37,9 @@ const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
 const DRIVE_API_URL: &str = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3";
+/// Small enough that a slow uplink still finishes one chunk inside the request
+/// timeout, large enough that a long recording needs few requests.
+const UPLOAD_CHUNK_BYTES: u64 = 4 * 1024 * 1024;
 
 const CODES: SignInCodes = SignInCodes {
     failed: "DRIVE_CONNECT_FAILED",
@@ -54,6 +57,8 @@ pub struct Tuning {
     pub google_revoke_url: String,
     pub drive_api_url: String,
     pub drive_upload_url: String,
+    /// Chunk size of a resumable upload; rounded down to a multiple of 256 KiB.
+    pub upload_chunk_bytes: u64,
     pub preferred_port: u16,
     pub sign_in_timeout: Duration,
 }
@@ -66,6 +71,7 @@ impl Tuning {
             google_revoke_url: GOOGLE_REVOKE_URL.to_owned(),
             drive_api_url: DRIVE_API_URL.to_owned(),
             drive_upload_url: DRIVE_UPLOAD_URL.to_owned(),
+            upload_chunk_bytes: UPLOAD_CHUNK_BYTES,
             preferred_port: PREFERRED_PORT,
             sign_in_timeout: SIGN_IN_TIMEOUT,
         }

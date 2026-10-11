@@ -50,10 +50,15 @@ export class AppController {
   constructor(backend: BackendPort, view: AppView) {
     this.backend = backend
     this.view = view
-    this.recording = new RecordingController(backend, view, (path) => {
-      this.audio = { path, driveSourceId: null }
-      this.view.setAudio(path)
-    })
+    this.recording = new RecordingController(
+      backend,
+      view,
+      (path) => {
+        this.audio = { path, driveSourceId: null }
+        this.view.setAudio(path)
+      },
+      (recordingId) => this.drive.uploadRecordingAfter(recordingId),
+    )
     this.chatgpt = new ChatGptController(backend, view, () => this.requestSettingsSave())
     this.access = new AccessController(
       backend,
@@ -169,7 +174,11 @@ export class AppController {
     this.view.on("import-transcript", () => void this.importTranscript())
     this.view.on("choose-output", () => void this.chooseOutput())
     this.view.on("transcribe", () => void this.transcribe())
-    this.view.on("record", () => void this.recording.start(this.outputRoot))
+    this.view.on("record", () => {
+      // A new recording is a new meeting; the old recording's Drive line goes.
+      this.drive.clearRecordingUpload()
+      void this.recording.start(this.outputRoot)
+    })
     this.view.on("stop-recording", () => void this.recording.stop())
     this.view.on("cancel-recording", () => void this.recording.cancel())
     this.view.on("sign-in-chatgpt", () => void this.chatgpt.signIn())
@@ -193,6 +202,9 @@ export class AppController {
     this.view.on("import-from-drive", () => void this.drive.importFromDrive())
     this.view.on("overwrite-drive", () => void this.drive.overwrite())
     this.view.on("open-drive-folder", () => void this.drive.openFolder())
+    this.view.on("open-recording-drive-folder", () => void this.drive.openRecordingFolder())
+    this.view.on("retry-recording-upload", () => void this.drive.retryRecordingUpload())
+    this.view.onDriveSaveRecordingsChange((enabled) => void this.drive.setSaveRecordings(enabled))
     this.view.onSpeakerMode((mode) => this.view.setSpeakerMode(mode))
   }
 

@@ -1,5 +1,12 @@
 import type { DriveState } from "../application/drive-machine"
-import { type DriveTone, syncFileLine, syncSummary } from "../domain/drive"
+import {
+  type DriveTone,
+  RECORDING_UPLOADING,
+  recordingUploadFailure,
+  recordingUploadSummary,
+  syncFileLine,
+  syncSummary,
+} from "../domain/drive"
 import { required } from "./dom"
 
 const CONNECTING =
@@ -20,16 +27,19 @@ const FOCUS_HANDOFF: Readonly<Record<string, readonly string[]>> = {
   "drive-settings-connect-button": ["#drive-settings-cancel-button", "#drive-disconnect-button"],
   "drive-settings-cancel-button": ["#drive-settings-connect-button", "#drive-disconnect-button"],
   "drive-disconnect-button": ["#drive-settings-connect-button"],
+  "recording-drive-retry-button": ["#recording-drive-folder-button", "#record-button", SETTINGS],
 }
 
 /**
  * Every Drive surface: the onboarding card, the top-bar chip, the settings
- * section, and the sync row under the results. Status always pairs its color
- * with text. The import button lives with the other start actions in
- * `AppView`, which knows when a job or a recording is running.
+ * section, the sync row under the results, and the upload line under the
+ * recorder. Status always pairs its color with text. The import button lives
+ * with the other start actions in `AppView`, which knows when a job or a
+ * recording is running.
  */
 export class DriveView {
   private readonly root: HTMLElement
+  private toggleHadFocus = false
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -69,6 +79,8 @@ export class DriveView {
     this.element("#drive-disconnect-button").hidden = !connected
 
     this.renderSync(state)
+    this.renderRecording(state)
+    this.renderSaveRecordings(state)
     this.handOffFocus(focused)
   }
 
@@ -122,6 +134,45 @@ export class DriveView {
     folder.hidden = sync.result.folderLink === null
     overwrite.hidden = !summary.conflict
     overwrite.disabled = false
+  }
+
+  private renderRecording({ recording, connection }: DriveState): void {
+    const folder = this.element<HTMLButtonElement>("#recording-drive-folder-button")
+    const retry = this.element<HTMLButtonElement>("#recording-drive-retry-button")
+    folder.hidden = true
+    retry.hidden = true
+    if (recording === null) {
+      this.status("#recording-drive-status", "", "pending")
+    } else if (recording.status === "uploading") {
+      this.status("#recording-drive-status", RECORDING_UPLOADING, "pending")
+    } else if (recording.status === "failed") {
+      this.status("#recording-drive-status", recordingUploadFailure(recording.message), "error")
+      // After a lost connection there is nothing to retry against.
+      retry.hidden = connection.status !== "connected"
+    } else {
+      const summary = recordingUploadSummary(recording.result)
+      this.status("#recording-drive-status", summary.text, summary.tone)
+      folder.hidden = recording.result.folderLink === null
+    }
+  }
+
+  private renderSaveRecordings({ connection, savingRecordings }: DriveState): void {
+    const toggle = this.element<HTMLInputElement>("#drive-save-recordings")
+    const document = this.root.ownerDocument
+    if (savingRecordings && document.activeElement === toggle) this.toggleHadFocus = true
+    // While the write is in flight the switch shows what the user chose; the
+    // stored value takes over when it answers, so a refusal puts it back.
+    if (!savingRecordings) {
+      toggle.checked = connection.status === "connected" && connection.saveRecordings
+    }
+    toggle.disabled = connection.status !== "connected" || savingRecordings
+    // A switch that disables itself while saving gives focus up; take it back afterwards.
+    if (!toggle.disabled && this.toggleHadFocus) {
+      this.toggleHadFocus = false
+      if (document.activeElement === null || document.activeElement === document.body) {
+        toggle.focus()
+      }
+    }
   }
 
   private status(selector: string, text: string, tone: DriveTone): void {

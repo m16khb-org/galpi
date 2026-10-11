@@ -138,6 +138,64 @@ export class DriveController {
     this.dispatch({ type: "syncCleared" })
   }
 
+  /** The settings switch: save the choice, then show what the host stored. */
+  async setSaveRecordings(enabled: boolean): Promise<void> {
+    if (this.state.connection.status !== "connected" || this.state.savingRecordings) return
+    const settings = this.view.tokenSettings
+    this.dispatch({ type: "saveRecordingsStarted" })
+    settings.showMessage("변경사항을 자동 저장하는 중입니다.", "saving")
+    try {
+      const status = await this.backend.setDriveSaveRecordings(enabled)
+      this.dispatch({ type: "saveRecordingsSaved", status })
+      settings.showMessage("변경사항을 자동 저장했습니다.")
+    } catch (error) {
+      this.dispatch({ type: "saveRecordingsFailed" })
+      settings.showMessage(`${errorMessage(error)} · 스위치는 저장된 값으로 돌아갑니다.`, "error")
+      this.noteLostConnection(error)
+    }
+  }
+
+  /** Upload a just-finished recording when the user asked for it; otherwise does nothing. */
+  uploadRecordingAfter(recordingId: string): void {
+    const { connection } = this.state
+    if (connection.status !== "connected" || !connection.saveRecordings) return
+    void this.uploadRecording(recordingId)
+  }
+
+  /** Try the failed upload again, after the user asked to. */
+  async retryRecordingUpload(): Promise<void> {
+    const recording = this.state.recording
+    if (recording?.status !== "failed") return
+    await this.uploadRecording(recording.recordingId)
+  }
+
+  async openRecordingFolder(): Promise<void> {
+    const recording = this.state.recording
+    if (recording?.status !== "done" || recording.result.folderLink === null) return
+    try {
+      await this.backend.openDriveLink(recording.result.folderLink)
+    } catch (error) {
+      this.hooks.onError(errorMessage(error))
+    }
+  }
+
+  /** A new recording starts: the previous recording's upload no longer describes it. */
+  clearRecordingUpload(): void {
+    this.dispatch({ type: "recordingUploadCleared" })
+  }
+
+  private async uploadRecording(recordingId: string): Promise<void> {
+    const started = this.dispatch({ type: "recordingUploadStarted", recordingId })
+    if (started.recording?.recordingId !== recordingId) return
+    try {
+      const result = await this.backend.uploadRecordingToDrive(recordingId)
+      this.dispatch({ type: "recordingUploadFinished", recordingId, result })
+    } catch (error) {
+      this.dispatch({ type: "recordingUploadFailed", recordingId, message: errorMessage(error) })
+      this.noteLostConnection(error)
+    }
+  }
+
   private async sync(jobId: string, overwrite: boolean): Promise<void> {
     this.dispatch({ type: "syncStarted", jobId })
     try {

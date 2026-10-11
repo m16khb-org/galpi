@@ -723,7 +723,8 @@ summary:focus-visible {
 #chatgpt-plan-line,
 #settings-chatgpt-effort-help,
 #chatgpt-data-notice,
-#drive-settings-help {
+#drive-settings-help,
+#drive-save-recordings-help {
   margin: var(--seed-dimension-x2) 0 0;
   color: var(--seed-color-fg-neutral-muted);
   font-size: var(--seed-font-size-t1);
@@ -733,6 +734,30 @@ summary:focus-visible {
 .settings-section p {
   overflow-wrap: break-word;
   word-break: keep-all;
+}
+
+/* The label is the 40px target; the 20px box inside it only shows the state. */
+.settings-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-dimension-x3);
+  min-height: var(--seed-dimension-x10);
+  margin-top: var(--seed-dimension-x3);
+  font-size: var(--seed-font-size-t3);
+  font-weight: var(--seed-font-weight-bold);
+  word-break: keep-all;
+}
+
+.settings-switch input {
+  flex: none;
+  width: var(--seed-dimension-x5);
+  height: var(--seed-dimension-x5);
+  margin: 0;
+  accent-color: var(--seed-color-bg-brand-solid);
+}
+
+.settings-switch input:disabled + span {
+  color: var(--seed-color-fg-neutral-muted);
 }
 
 .secret-field {
@@ -1257,6 +1282,10 @@ button:disabled:not(.seed-action-button) {
 
 .drive-sync-actions:not(:has(> :not([hidden]))) {
   display: none;
+}
+
+.recorder .drive-sync-actions {
+  margin-top: var(--seed-dimension-x2);
 }
 
 #chatgpt-welcome {
