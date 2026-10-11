@@ -8,7 +8,7 @@ import type {
   DriveStatus,
   DriveSyncResult,
 } from "../domain/drive"
-import type { TranscriptionResult } from "../domain/job"
+import type { ImportedTranscript, TranscriptionResult } from "../domain/job"
 import { AppView } from "./app-view"
 import { AppController } from "./controller"
 
@@ -151,6 +151,7 @@ function backend(overrides: Partial<BackendPort>, calls: string[] = []): Backend
     disconnectDrive: unused("disconnectDrive"),
     dismissDriveOnboarding: record("dismissDriveOnboarding", dismissed),
     importFromDrive: unused("importFromDrive"),
+    importTranscriptFromDrive: unused("importTranscriptFromDrive"),
     syncMeetingToDrive: async (jobId, overwrite) => {
       calls.push(`sync:${jobId}:${overwrite}`)
       return uploaded
@@ -800,6 +801,149 @@ describe("Drive import as a job", () => {
     ])
     // The key itself is absent, so the host sees no claim at all.
     expect(requests.slice(1).some((request) => "driveSourceId" in request)).toBe(false)
+    controller.stop()
+  })
+})
+
+describe("Drive transcript import into the augment panel", () => {
+  const transcriptImported = {
+    jobId: "import-1",
+    txt: "/out/새로운 노트/새로운 노트_화자별.txt",
+    outputDirectory: "/out/새로운 노트",
+  }
+
+  test("the picker shows only while Drive is connected", async () => {
+    // Given / When
+    const connectedApp = await mount(backend({}))
+    const disconnectedApp = await mount(backend({ loadDriveStatus: async () => dismissed }))
+
+    // Then
+    expect(visible(connectedApp.root, "#drive-transcript-button")).toBe(true)
+    expect(pick(connectedApp.root, "#drive-transcript-button").textContent).toContain(
+      "Drive에서 전사문 가져오기",
+    )
+    expect(visible(disconnectedApp.root, "#drive-transcript-button")).toBe(false)
+    connectedApp.controller.stop()
+    disconnectedApp.controller.stop()
+  })
+
+  test("a pending pick shows the augment card whose cancel targets the import job", async () => {
+    // Given: a transcript still in the Picker
+    const calls: string[] = []
+    const pending = Promise.withResolvers<ImportedTranscript>()
+    let importJob = ""
+    const { controller, root } = await mount(
+      backend(
+        {
+          importTranscriptFromDrive: (jobId) => {
+            importJob = jobId
+            return pending.promise
+          },
+        },
+        calls,
+      ),
+    )
+
+    // When
+    await click(root, "#drive-transcript-button")
+
+    // Then: the card has no percentage, a plain cancel, and the starters wait
+    expect(visible(root, "#augment-progress")).toBe(true)
+    expect(pick(root, "#augment-job-title").textContent).toBe(
+      "Drive에서 전사문을 가져오고 있습니다",
+    )
+    expect(visible(root, "#augment-job-percent")).toBe(false)
+    expect(visible(root, "#augment-job-progress")).toBe(false)
+    expect(visible(root, "#job-panel")).toBe(false)
+    expect(pick(root, "#augment-cancel-button").textContent).toBe("작업 취소")
+    expect(pick<HTMLButtonElement>(root, "#drive-transcript-button").disabled).toBe(true)
+    expect(pick<HTMLButtonElement>(root, "#transcript-selection").disabled).toBe(true)
+    expect(pick<HTMLButtonElement>(root, "#drive-import-button").disabled).toBe(true)
+    await click(root, "#augment-cancel-button")
+    expect(calls).toContain(`cancel:${importJob}`)
+    pending.reject({ code: "CANCELLED", message: "사용자가 작업을 취소했습니다." })
+    await settle()
+    expect(pick(root, "#augment-job-title").textContent).toBe("Drive 가져오기를 취소했습니다")
+    expect(pick<HTMLButtonElement>(root, "#drive-transcript-button").disabled).toBe(false)
+    controller.stop()
+  })
+
+  test("a finished pick becomes the augment target and syncs like a local transcript", async () => {
+    // Given
+    const calls: string[] = []
+    const requests: string[][] = []
+    const { controller, root } = await mount(
+      backend(
+        {
+          importTranscriptFromDrive: async (jobId, outputRoot) => {
+            requests.push([jobId, outputRoot])
+            return transcriptImported
+          },
+        },
+        calls,
+      ),
+    )
+
+    // When
+    await click(root, "#drive-transcript-button")
+
+    // Then: imported into the chosen output folder as its own job
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.[1]).toBe("/out")
+    expect(visible(root, "#augment-progress")).toBe(false)
+    expect(pick(root, "#transcript-title").textContent).toBe("대상 전사문")
+    expect(pick(root, "#transcript-path").textContent).toBe(transcriptImported.txt)
+    expect(pick(root, "#result-txt").textContent).toBe(transcriptImported.txt)
+    expect(pick(root, "#task-status").textContent).toBe("전사문 가져옴 · 회의록 작성 대기")
+    expect(pick<HTMLButtonElement>(root, "#refine-button").disabled).toBe(false)
+    expect(pick<HTMLButtonElement>(root, "#drive-transcript-button").disabled).toBe(false)
+    expect(calls).toContain("sync:import-1:false")
+    controller.stop()
+  })
+
+  test("a refused pick fails the augment card with the host's reason and frees the app", async () => {
+    // Given
+    const { controller, root } = await mount(
+      backend({
+        importTranscriptFromDrive: failWith(
+          "DRIVE_UNSUPPORTED_FILE",
+          "txt 또는 md 텍스트 파일만 가져올 수 있습니다.",
+        ),
+      }),
+    )
+
+    // When
+    await click(root, "#drive-transcript-button")
+
+    // Then
+    expect(pick(root, "#augment-job-title").textContent).toBe(
+      "Drive에서 전사문을 가져오지 못했습니다",
+    )
+    expect(pick(root, "#augment-error-message").textContent).toBe(
+      "txt 또는 md 텍스트 파일만 가져올 수 있습니다.",
+    )
+    expect(visible(root, "#augment-error-message")).toBe(true)
+    expect(visible(root, "#augment-cancel-button")).toBe(false)
+    expect(pick<HTMLButtonElement>(root, "#drive-transcript-button").disabled).toBe(false)
+    expect(pick(root, "#transcript-title").textContent).toBe("전사문 파일 가져오기")
+    controller.stop()
+  })
+
+  test("a pick declined in the browser cancels the card instead of failing it", async () => {
+    // Given
+    const { controller, root } = await mount(
+      backend({
+        importTranscriptFromDrive: failWith("CANCELLED", "사용자가 작업을 취소했습니다."),
+      }),
+    )
+
+    // When
+    await click(root, "#drive-transcript-button")
+
+    // Then
+    expect(pick(root, "#augment-job-title").textContent).toBe("Drive 가져오기를 취소했습니다")
+    expect(visible(root, "#augment-error-message")).toBe(false)
+    expect(pick<HTMLButtonElement>(root, "#drive-transcript-button").disabled).toBe(false)
     controller.stop()
   })
 })

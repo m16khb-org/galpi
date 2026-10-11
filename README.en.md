@@ -144,7 +144,7 @@ This context helps Galpi produce stable names and terminology in refined meeting
 
 ### Generate AI meeting minutes
 
-After transcription, select `AI 증강 실행` (Run AI augmentation) to create Markdown through an OpenAI-compatible API. You can also augment an existing transcript without a new recording: use `전사문 파일 가져오기` (Import transcript file) in the augmentation panel (txt/md).
+After transcription, select `AI 증강 실행` (Run AI augmentation) to create Markdown through an OpenAI-compatible API. You can also augment an existing transcript without a new recording: use `전사문 파일 가져오기` (Import transcript file) in the augmentation panel (txt/md). With Google Drive connected, `Drive에서 전사문 가져오기` (Import transcript from Drive) in the same panel picks a transcript from your Drive (typically the `_화자별.txt` Galpi uploaded).
 
 - Default model: `glm-5.3-flash`
 - Default API: `https://api.z.ai/api/coding/paas/v4`
@@ -180,8 +180,8 @@ You can import recordings stored in Drive and have the results uploaded to a `Ga
 
 1. After signing in, select `Drive 연결` (Connect Drive) on the **Google Drive 연결** (Connect Google Drive) card. If you dismissed the card, connect from **Google Drive** in `설정` (Settings).
 2. Allow Drive access in the system browser. Galpi then creates a `Galpi` folder in your Drive (or reuses the existing one) and shows the connected account in the top bar.
-3. Select `Drive에서 가져오기` (Import from Drive) to open the Google Picker in the browser. Pick one recording; Galpi downloads it to this computer, and `전사 시작` (Start transcription) transcribes it. A file picked with a different account than the connected one is not imported.
-4. While Drive is connected, every finished transcription, transcript import, and AI augmentation uploads its results (`.srt`, `_화자별.txt`, `_회의록.md`) to `Galpi/<meeting name>`. Processing the same meeting again updates the same files instead of creating new ones.
+3. Select `Drive에서 가져오기` (Import from Drive) to open the Google Picker in the browser. Pick one recording; Galpi downloads it to this computer, and `전사 시작` (Start transcription) transcribes it. A file picked with a different account than the connected one is not imported. `Drive에서 전사문 가져오기` (Import transcript from Drive) in the augmentation panel opens the Picker the same way: pick one txt/md transcript and Galpi downloads it and uses it as the augmentation target.
+4. While Drive is connected, every finished transcription, transcript import, and AI augmentation uploads its results (`.srt`, `_화자별.txt`, `_회의록.md`) to `Galpi/<meeting name>`. Processing the same meeting again updates the same files instead of creating new ones. The meeting name is the recording's file name: a speaker transcript such as `새로운 노트_화자별.txt` belongs to the meeting `새로운 노트` (the local meeting folder is named the same). When you pick a transcript that Galpi uploaded, the minutes go into the Drive folder of the meeting it came from.
 5. Turn on **녹음을 마치면 Drive에 바로 저장** (Save recordings to Drive when they finish) in `설정` (Settings) → **Google Drive**, and a microphone recording is uploaded to `Galpi/<recording name>` the moment you stop it. You can start transcribing while it uploads, and the results of transcribing that recording go to the same folder. The switch needs a Drive connection and turns off when you disconnect.
 
 - The only scope is `drive.file`: Galpi can reach files it created and files you picked in the Picker, and nothing else in your Drive.
@@ -216,7 +216,7 @@ Recording through transcription runs locally; the transcript leaves the machine 
 
 ## Outputs
 
-The default location is `~/Documents/Galpi` (changeable from the output folder picker). One folder corresponds to one meeting: a microphone recording creates `YYYY-MM-DD HHMMSS 녹음` named after its start time, while imported audio and transcripts keep their original file name. Every artifact inside a meeting folder shares the folder's name.
+The default location is `~/Documents/Galpi` (changeable from the output folder picker). One folder corresponds to one meeting: a microphone recording creates `YYYY-MM-DD HHMMSS 녹음` named after its start time, while imported audio keeps its file name and an imported speaker transcript is named after its recording (`새로운 노트_화자별.txt` goes to `새로운 노트`). Every artifact inside a meeting folder shares the folder's name.
 
 ```text
 ~/Documents/Galpi/
@@ -226,7 +226,7 @@ The default location is `~/Documents/Galpi` (changeable from the output folder p
 │   ├── 2026-08-24 143052 녹음_화자별.txt
 │   ├── 2026-08-24 143052 녹음.aligned.v2.json
 │   └── 2026-08-24 143052 녹음_회의록.md      # produced by AI augmentation
-└── 팀미팅/                      # imported audio/transcript (original name)
+└── 팀미팅/                      # imported audio/transcript (recording name)
     ├── 팀미팅.srt
     ├── 팀미팅_화자별.txt
     ├── 팀미팅.aligned.v2.json

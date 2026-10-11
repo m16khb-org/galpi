@@ -5,7 +5,7 @@
 //! hides every value and only the secret store serializes it. Everything the
 //! window sees (`DriveStatus`, `DriveImport`, `DriveSyncResult`) holds no token.
 
-use crate::domain::artifact::ArtifactKind;
+use crate::domain::artifact::{ArtifactKind, is_transcript_name, recording_name};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
 use std::path::Path;
@@ -170,6 +170,20 @@ impl MeetingKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The key a Galpi upload carries in its `galpiMeeting` property, or
+    /// `None` for anything Galpi would not have written: another prefix, a
+    /// character outside a key's alphabet, or a value Drive could not store.
+    pub fn from_property(value: &str) -> Option<Self> {
+        let (prefix, id) = value.split_once(':')?;
+        let valid = matches!(prefix, "local" | "drive")
+            && !id.is_empty()
+            && MEETING_PROPERTY.len() + value.len() <= APP_PROPERTY_BYTES
+            && id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+        valid.then(|| Self(value.to_owned()))
+    }
 }
 
 /// A meeting that can be synced: its key and the Drive folder name.
@@ -181,10 +195,23 @@ pub struct DriveMeeting {
 
 impl DriveMeeting {
     /// Keyed as described on [`MeetingKey`], named after the source's stem.
+    /// A speaker transcript is named after its recording: the folder of
+    /// `새로운 노트_화자별.txt` is `새로운 노트`.
     pub fn new(key: MeetingKey, source: &Path) -> Self {
+        let transcript = source
+            .file_name()
+            .is_some_and(|name| is_transcript_name(&name.to_string_lossy()));
         let name = source
             .file_stem()
-            .map(|stem| stem.to_string_lossy().trim().to_owned())
+            .map(|stem| {
+                let stem = stem.to_string_lossy();
+                let named = if transcript {
+                    recording_name(stem.as_ref())
+                } else {
+                    stem.as_ref()
+                };
+                named.trim().to_owned()
+            })
             .filter(|stem| !stem.is_empty())
             .unwrap_or_else(|| "meeting".to_owned());
         Self { key, name }
@@ -415,6 +442,62 @@ mod tests {
             Path::new("/tmp/주간 회의.m4a"),
         );
         assert_eq!(meeting.name, "주간 회의");
+    }
+
+    #[test]
+    fn a_speaker_transcript_names_the_meeting_after_its_recording() {
+        // Given: the transcript Galpi wrote next to a recording named 새로운 노트
+        let transcript = Path::new("/tmp/새로운 노트/새로운 노트_화자별.txt");
+
+        // When
+        let meeting = DriveMeeting::new(MeetingKey::local(transcript), transcript);
+
+        // Then: no `_화자별` in the Drive folder name
+        assert_eq!(meeting.name, "새로운 노트");
+    }
+
+    #[test]
+    fn only_transcripts_lose_the_speaker_suffix() {
+        let plain = DriveMeeting::new(
+            MeetingKey::local(Path::new("/tmp/메모.txt")),
+            Path::new("/tmp/메모.txt"),
+        );
+        let recording = DriveMeeting::new(
+            MeetingKey::local(Path::new("/tmp/회의_화자별.m4a")),
+            Path::new("/tmp/회의_화자별.m4a"),
+        );
+
+        assert_eq!(plain.name, "메모");
+        assert_eq!(recording.name, "회의_화자별");
+    }
+
+    #[test]
+    fn galpi_property_values_become_keys() -> Result<(), DriveIdError> {
+        let long = format!("drive:{}", "x".repeat(200));
+
+        assert_eq!(
+            MeetingKey::from_property("drive:1AbC-d_9"),
+            Some(MeetingKey::drive(&DriveFileId::parse("1AbC-d_9")?))
+        );
+        assert_eq!(
+            MeetingKey::from_property("local:af63dc4c8601ec8c")
+                .as_ref()
+                .map(MeetingKey::as_str),
+            Some("local:af63dc4c8601ec8c")
+        );
+        for ignored in [
+            "",
+            "local:",
+            "other:abc",
+            "abc",
+            "drive:a b",
+            "drive:a'b",
+            "drive:../x",
+            long.as_str(),
+        ] {
+            assert_eq!(MeetingKey::from_property(ignored), None, "{ignored}");
+        }
+        Ok(())
     }
 
     #[test]

@@ -16,7 +16,7 @@ Galpi는 세 개의 런타임으로 구성된다. 각각 내부적으로 같은 
 TypeScript (WebView)          Rust (Tauri 호스트)              Python (WhisperX 사이드카)
 ┌────────────────────┐        ┌──────────────────────────┐     ┌────────────────────────┐
 │ ui/        (외부)   │        │ adapters/inbound  (외부)  │     │ __main__.py  (외부)     │
-│ ├─ controller       │  IPC   │ ├─ tauri.rs (37 커맨드)   │     │ engine.py    (유스케이스)│
+│ ├─ controller       │  IPC   │ ├─ tauri.rs (38 커맨드)   │     │ engine.py    (유스케이스)│
 │ ├─ app-view         │ ─────▶ │ └─ TauriEvents            │     │ refine.py             │
 │ └─ settings/…       │        │                          │     │ protocol.py (포트: stdout)│
 ├────────────────────┤        │ application/  (유스케이스) │     ├────────────────────────┤
@@ -50,7 +50,7 @@ TypeScript (WebView)          Rust (Tauri 호스트)              Python (Whispe
 
 | 방향 | Rust | TypeScript | Python |
 |------|------|-----------|--------|
-| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 37개 `#[tauri::command]`(`save_compute_device`와 Drive 9개 포함, `composition.rs`의 `generate_handler!`와 일치) + `TauriEvents` 이벤트 브리지(`job-event`·`recording-event`·`chatgpt-event`) | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
+| **-driving (inbound)** | `adapters/inbound/tauri.rs` — 38개 `#[tauri::command]`(`save_compute_device`와 Drive 10개 포함, `composition.rs`의 `generate_handler!`와 일치) + `TauriEvents` 이벤트 브리지(`job-event`·`recording-event`·`chatgpt-event`) | `adapters/tauri-backend.ts` — `BackendPort` 구현 + Zod 스키마 검증 | `__main__.py` CLI 인자 파싱 |
 | **-driven (outbound)** | `DesktopAdapter`(엔진·전사·산출물), `NativeRecorder`(CPAL), `LocalSettingsStore`(`ChatGptStore`·`GatewaySessionStore`·`DriveSessionStore` 포함), `ChatGptOAuthAdapter`(`ChatGptAuthPort`: OAuth/PKCE·토큰 갱신·폐기·모델 목록), `GatewayOAuthAdapter`(`GatewayAuthPort`: auth-gateway Google 로그인·세션 갱신·로그아웃), `DriveOAuthAdapter`(`DriveAuthPort`: `drive.file` 동의·데스크톱 Picker, 코드 교환·갱신은 auth-gateway `/drive/native/token` 대행), `DriveRestAdapter`(`DriveFilesPort`: Drive v3 폴더·업로드·갱신·스트리밍 다운로드, 녹음 같은 큰 파일은 디스크에서 청크로 읽어 이어 올리기), 세 로그인 어댑터가 함께 쓰는 `browser_sign_in/`(시스템 브라우저·루프백·PKCE), `SystemClock`(`ClockPort`), `process.rs`(워커 감독) | (없음 — 프론트엔드는 driven 포트가 없다; 브라우저 API는 어댑터 내부 처리) | `protocol.py` `EventWriter`(stdout), `assistant_stream.py`·`responses_stream.py`(HTTP) |
 
 **포트 소유 규칙 (DIP)**: 포트 인터페이스는 사용하는 쪽(내부 계층)이 소유하고,

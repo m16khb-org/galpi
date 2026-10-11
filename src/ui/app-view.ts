@@ -21,7 +21,13 @@ import { SettingsTabsView } from "./settings-tabs"
 import { bindTokenGuide } from "./token-guide"
 import { TokenSettingsView } from "./token-settings"
 
-export type BusyKind = "setup" | "transcription" | "refinement" | "driveImport" | null
+export type BusyKind =
+  | "setup"
+  | "transcription"
+  | "refinement"
+  | "driveImport"
+  | "driveTranscript"
+  | null
 
 export class AppView {
   readonly root: HTMLElement
@@ -259,21 +265,29 @@ export class AppView {
         this.element("#job-panel").dataset["status"] = "running"
       }
       this.element("#setup-progress-panel").hidden = kind !== "setup"
-      // Each stage renders its own progress card in place: refinement inside
-      // the augment panel, transcription and Drive import inside the
-      // transcription panel.
+      // Each stage renders its own progress card in place: refinement and Drive
+      // transcript import inside the augment panel, transcription and Drive
+      // recording import inside the transcription panel.
       this.element("#job-panel").hidden = !usesJobPanel(kind) && !this.transcriptionSummary
       this.element("#job-phase-list").hidden = kind !== "transcription"
       // A Drive import reports no progress, so it shows no percentage either.
       this.element("#job-progress").hidden = kind === "driveImport"
       this.element("#job-percent").hidden = kind === "driveImport"
-      this.element("#augment-progress").hidden = kind !== "refinement"
+      this.element("#augment-progress").hidden = !usesAugmentCard(kind)
+      // The same card serves two jobs: its label and cancel follow the one running, and a
+      // Drive transcript import reports no progress, so it shows no percentage either.
+      this.element("#augment-job-eyebrow").textContent =
+        kind === "driveTranscript" ? "Drive 가져오기 진행 중" : "AI 증강 진행 중"
+      this.element("#augment-cancel-button").textContent =
+        kind === "driveTranscript" ? "작업 취소" : "증강 취소"
+      this.element("#augment-job-progress").hidden = kind === "driveTranscript"
+      this.element("#augment-job-percent").hidden = kind === "driveTranscript"
     }
     this.element<HTMLButtonElement>("#cancel-button").hidden = !busy || !usesJobPanel(this.jobKind)
     this.element<HTMLButtonElement>("#setup-cancel-button").hidden =
       !busy || this.jobKind !== "setup"
     this.element<HTMLButtonElement>("#augment-cancel-button").hidden =
-      !busy || this.jobKind !== "refinement"
+      !busy || !usesAugmentCard(this.jobKind)
     this.element("#busy-label").textContent = busyLabel(kind)
     this.applyOnboarding()
     this.refreshActions()
@@ -315,7 +329,7 @@ export class AppView {
     this.element("#job-panel").hidden =
       (state.status === "idle" || !usesJobPanel(this.jobKind)) && !this.transcriptionSummary
     this.element("#augment-progress").hidden =
-      state.status === "idle" || this.jobKind !== "refinement"
+      state.status === "idle" || !usesAugmentCard(this.jobKind)
     if (!this.transcriptionSummary && usesJobPanel(this.jobKind)) {
       this.element("#job-panel").dataset["status"] = state.status
     }
@@ -531,6 +545,8 @@ export class AppView {
       this.element("#augment-job-title").textContent = refinementTitles[status]
     } else if (this.jobKind === "driveImport") {
       this.element("#job-title").textContent = driveImportTitles[status]
+    } else if (this.jobKind === "driveTranscript") {
+      this.element("#augment-job-title").textContent = driveTranscriptTitles[status]
     }
   }
 
@@ -587,6 +603,9 @@ export class AppView {
     }
     if (this.jobBusy && this.jobKind === "refinement") return [title, "회의록 작성 중"]
     if (this.jobBusy && this.jobKind === "driveImport") return [title, "Drive에서 녹음을 가져오는 중"]
+    if (this.jobBusy && this.jobKind === "driveTranscript") {
+      return [title, "Drive에서 전사문을 가져오는 중"]
+    }
     if (this.hasResult && !this.audioSinceResult) {
       if (this.minutesReady) return [title, "회의록 완료"]
       return [title, this.importedResult ? "전사문 가져옴 · 회의록 작성 대기" : "전사 완료 · 회의록 작성 대기"]
@@ -636,6 +655,9 @@ export class AppView {
     // Same rule as the other ways to start: never over a running job or recording.
     this.element<HTMLButtonElement>("#drive-import-button").hidden = !this.driveConnected
     this.element<HTMLButtonElement>("#drive-import-button").disabled =
+      !this.driveConnected || this.jobBusy || this.recordingActive
+    this.element<HTMLButtonElement>("#drive-transcript-button").hidden = !this.driveConnected
+    this.element<HTMLButtonElement>("#drive-transcript-button").disabled =
       !this.driveConnected || this.jobBusy || this.recordingActive
     this.element<HTMLButtonElement>("#refine-button").disabled =
       !this.hasResult || !this.assistantKeyReady || this.jobBusy || this.recordingActive
@@ -690,9 +712,22 @@ const driveImportTitles: JobTitles = {
   cancelled: "Drive 가져오기를 취소했습니다",
 }
 
-/** Transcription and Drive import both run in the transcription panel's progress card. */
+const driveTranscriptTitles: JobTitles = {
+  idle: "Drive에서 전사문을 가져오고 있습니다",
+  running: "Drive에서 전사문을 가져오고 있습니다",
+  completed: "Drive에서 전사문을 가져왔습니다",
+  failed: "Drive에서 전사문을 가져오지 못했습니다",
+  cancelled: "Drive 가져오기를 취소했습니다",
+}
+
+/** Transcription and Drive recording import both run in the transcription panel's progress card. */
 function usesJobPanel(kind: BusyKind): boolean {
   return kind === "transcription" || kind === "driveImport"
+}
+
+/** Refinement and Drive transcript import both run in the augment panel's progress card. */
+function usesAugmentCard(kind: BusyKind): boolean {
+  return kind === "refinement" || kind === "driveTranscript"
 }
 
 function setPrimary(button: HTMLElement, primary: boolean): void {
@@ -711,7 +746,7 @@ function meetingName(path: string): string {
 function busyLabel(kind: BusyKind): string {
   if (kind === "setup") return "로컬 환경 준비 중"
   if (kind === "transcription") return "회의 전사 중"
-  if (kind === "driveImport") return "Drive 가져오기"
+  if (kind === "driveImport" || kind === "driveTranscript") return "Drive 가져오기"
   return kind === "refinement" ? "회의록 만드는 중" : ""
 }
 

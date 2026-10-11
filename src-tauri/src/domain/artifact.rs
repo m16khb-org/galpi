@@ -45,19 +45,39 @@ impl Artifacts {
     }
 }
 
+/// The suffix Galpi gives the speaker-labeled transcript of a recording.
+const SPEAKER_TEXT_SUFFIX: &str = "_화자별";
+
+/// The recording's name behind a speaker transcript's file stem:
+/// `새로운 노트_화자별` is `새로운 노트`. Any other stem, or one that would be
+/// left empty, is returned unchanged.
+pub fn recording_name(stem: &str) -> &str {
+    stem.strip_suffix(SPEAKER_TEXT_SUFFIX)
+        .filter(|base| !base.trim().is_empty())
+        .unwrap_or(stem)
+}
+
+/// Whether a file name is one a transcript import accepts (`.txt` or `.md`).
+/// Works on the name as text, so a remote name is read the same on every OS.
+pub fn is_transcript_name(name: &str) -> bool {
+    matches!(
+        name.rsplit_once('.'),
+        Some((stem, "txt" | "md")) if !stem.is_empty()
+    )
+}
+
 /// Sibling meeting-minutes path for a speaker-labeled transcript.
 pub fn minutes_path(transcript: &Path) -> PathBuf {
     let stem = transcript.file_stem().map_or_else(
         || "meeting".to_owned(),
         |stem| stem.to_string_lossy().into_owned(),
     );
-    let base = stem.strip_suffix("_화자별").unwrap_or(stem.as_str());
-    transcript.with_file_name(format!("{base}_회의록.md"))
+    transcript.with_file_name(format!("{}_회의록.md", recording_name(&stem)))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::minutes_path;
+    use super::{is_transcript_name, minutes_path, recording_name};
     use crate::domain::artifact::{ArtifactKind, Artifacts};
     use std::path::{Path, PathBuf};
 
@@ -71,6 +91,22 @@ mod tests {
 
         // Then
         assert_eq!(minutes, PathBuf::from("/tmp/job/meeting_회의록.md"));
+    }
+
+    #[test]
+    fn a_speaker_transcript_stem_names_its_recording() {
+        assert_eq!(recording_name("새로운 노트_화자별"), "새로운 노트");
+        assert_eq!(recording_name("새로운 노트"), "새로운 노트");
+        assert_eq!(recording_name("_화자별"), "_화자별");
+    }
+
+    #[test]
+    fn transcript_names_are_txt_or_md_with_a_stem() {
+        assert!(is_transcript_name("새로운 노트_화자별.txt"));
+        assert!(is_transcript_name("notes.md"));
+        for refused in ["녹음.m4a", ".txt", "memo", "notes.txt.bak", "notes.TXT"] {
+            assert!(!is_transcript_name(refused), "{refused}");
+        }
     }
 
     #[test]

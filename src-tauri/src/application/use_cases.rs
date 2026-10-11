@@ -8,10 +8,10 @@ use crate::application::model::{
 };
 use crate::application::model::{RecordingResult, RecordingStatus};
 use crate::application::ports::{
-    ArtifactPort, EnginePort, RecordingPort, RefinementJob, RefinementPort, SettingsPort,
-    TranscriptImportPort, TranscriptionPort,
+    ArtifactPort, DrivePickerKind, EnginePort, RecordingPort, RefinementJob, RefinementPort,
+    SettingsPort, TranscriptImportPort, TranscriptionPort,
 };
-use crate::domain::artifact::{ArtifactKind, minutes_path};
+use crate::domain::artifact::{ArtifactKind, Artifacts, minutes_path};
 use crate::domain::chatgpt::{
     AssistantAuthMode, AssistantTransport, ChatGptModel, ChatGptPreferences, ChatGptSettings,
     SignOutResult,
@@ -371,7 +371,10 @@ impl Application {
         self.access.require()?;
         let (job, mut cancel) = self.jobs.claim_with_id(job_id)?;
         let job_id = job.id();
-        let imported = self.drive.import(&self.access, &mut cancel).await?;
+        let imported = self
+            .drive
+            .import(&self.access, DrivePickerKind::Recording, &mut cancel)
+            .await?;
         self.drive_imports
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -475,16 +478,57 @@ impl Application {
                 Path::new(&request.output_root),
             )
             .await;
-        let artifacts = result?;
-        self.jobs.register(job_id, artifacts.clone())?;
-        if let Some(source) = &artifacts.source_transcript {
-            self.remember_meeting(job_id, MeetingKey::local(source), source);
-        }
-        Ok(TranscriptImportResult {
+        self.register_transcript(job_id, result?, None)
+    }
+
+    /// Pick one transcript in the desktop Picker, download it as job `job_id`,
+    /// and register it exactly like [`Self::import_transcript`], so the job's
+    /// cancel stops both the consent wait and the download.
+    ///
+    /// A file Galpi uploaded keeps its meeting, so refined minutes sync into
+    /// the Drive folder it came from; any other file is its own meeting.
+    pub async fn import_transcript_from_drive(
+        &self,
+        job_id: Uuid,
+        output_root: &str,
+    ) -> Result<TranscriptImportResult, AppError> {
+        self.access.require()?;
+        let (job, mut cancel) = self.jobs.claim_with_id(job_id)?;
+        let job_id = job.id();
+        let picked = self
+            .drive
+            .import(&self.access, DrivePickerKind::Transcript, &mut cancel)
+            .await?;
+        let artifacts = self
+            .imports
+            .import_transcript(&picked.path, Path::new(output_root))
+            .await?;
+        let key = picked
+            .meeting
+            .unwrap_or_else(|| MeetingKey::drive(&picked.id));
+        self.register_transcript(job_id, artifacts, Some(key))
+    }
+
+    /// Remember an imported transcript as a finished meeting. Without a
+    /// Drive `key` the meeting is identified by the transcript's source path.
+    fn register_transcript(
+        &self,
+        job_id: Uuid,
+        artifacts: Artifacts,
+        key: Option<MeetingKey>,
+    ) -> Result<TranscriptImportResult, AppError> {
+        let result = TranscriptImportResult {
             job_id,
             txt: artifacts.txt.to_string_lossy().into_owned(),
             output_directory: artifacts.output_directory.to_string_lossy().into_owned(),
-        })
+        };
+        let source = artifacts.source_transcript.clone();
+        self.jobs.register(job_id, artifacts)?;
+        if let Some(source) = source {
+            let key = key.unwrap_or_else(|| MeetingKey::local(&source));
+            self.remember_meeting(job_id, key, &source);
+        }
+        Ok(result)
     }
 
     async fn run_transcription(

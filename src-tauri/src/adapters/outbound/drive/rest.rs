@@ -875,10 +875,14 @@ impl DriveFilesPort for DriveRestAdapter {
             &format!("/files/{}", id.as_str()),
             &[(
                 "fields",
-                "name,mimeType,capabilities(canDownload),modifiedTime",
+                "name,mimeType,capabilities(canDownload),modifiedTime,appProperties",
             )],
         )?;
-        let body: FileBody = parse(&self.call(self.http.get(url), access_token).await?)?;
+        let mut body: FileBody = parse(&self.call(self.http.get(url), access_token).await?)?;
+        let meeting = body
+            .app_properties
+            .remove(MEETING_PROPERTY)
+            .and_then(|value| MeetingKey::from_property(&value));
         Ok(PickedFile {
             name: body.name.unwrap_or_default(),
             mime_type: body.mime_type.unwrap_or_default(),
@@ -886,6 +890,7 @@ impl DriveFilesPort for DriveRestAdapter {
                 .capabilities
                 .is_some_and(|capabilities| capabilities.can_download),
             modified_time: body.modified_time,
+            meeting,
         })
     }
 

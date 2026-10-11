@@ -1,9 +1,10 @@
 use super::gateway::tokens_expiring;
 use super::{FakePort, TranscriptionBehavior, request};
 use crate::application::error::AppError;
+use crate::application::model::TranscriptImportResult;
 use crate::application::ports::{
-    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DriveSessionStore,
-    LargeUpload, LocalFileDigest, LocalUpload, PickedFile, RemoteFolder,
+    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DrivePickerKind,
+    DriveSessionStore, LargeUpload, LocalFileDigest, LocalUpload, PickedFile, RemoteFolder,
 };
 use crate::application::use_cases::Application;
 use crate::domain::artifact::ArtifactKind;
@@ -37,7 +38,7 @@ struct Stored {
 
 #[derive(Default)]
 struct Calls {
-    consents: Vec<(bool, Option<String>)>,
+    consents: Vec<(Option<DrivePickerKind>, Option<String>)>,
     exchange_bearers: Vec<String>,
     refresh_bearers: Vec<String>,
     revoked: Vec<String>,
@@ -64,6 +65,8 @@ struct RemoteEntry {
 struct RemoteDrive {
     root: Option<String>,
     meetings: Vec<(String, String)>,
+    /// The Drive folder names, in the order the folders were created.
+    names: Vec<String>,
     files: HashMap<(String, ArtifactKind), RemoteEntry>,
     next: usize,
 }
@@ -117,6 +120,7 @@ impl Default for DriveFake {
                 mime_type: "audio/x-m4a".to_owned(),
                 can_download: true,
                 modified_time: Some("2026-10-01T09:30:00Z".to_owned()),
+                meeting: None,
             }),
             reject_files: AtomicBool::new(false),
             failing_kind: Mutex::new(None),
@@ -223,7 +227,11 @@ impl DriveAuthPort for FakePort {
             .calls()?
             .consents
             .push((request.picker, request.login_hint.clone()));
-        let default_pick = if request.picker { "file-1" } else { "" };
+        let default_pick = if request.picker.is_some() {
+            "file-1"
+        } else {
+            ""
+        };
         let consent = lock(&self.drive.consents)?.pop_front();
         match consent {
             Some(Consent::Approve(picked)) => callback(picked),
@@ -305,7 +313,7 @@ impl DriveFilesPort for FakePort {
         _access_token: &str,
         _root: &str,
         key: &MeetingKey,
-        _name: &str,
+        name: &str,
     ) -> Result<RemoteFolder, AppError> {
         self.drive.rejecting()?;
         let mut remote = self.drive.remote()?;
@@ -319,6 +327,7 @@ impl DriveFilesPort for FakePort {
         } else {
             let id = remote.new_id("meeting");
             remote.meetings.push((key.as_str().to_owned(), id.clone()));
+            remote.names.push(name.to_owned());
             id
         };
         Ok(RemoteFolder {
@@ -627,12 +636,13 @@ async fn drive_features_require_sign_in() -> Result<(), AppError> {
     let codes = [
         failure(app.connect_drive().await)?.code,
         failure(app.import_from_drive(Uuid::now_v7()).await)?.code,
+        failure(import_transcript(&app, Uuid::now_v7()).await)?.code,
         failure(app.sync_meeting_to_drive(Uuid::now_v7(), false).await)?.code,
         failure(app.upload_recording_to_drive(Uuid::now_v7()).await)?.code,
     ];
 
     // Then: only the feature commands are closed
-    assert_eq!(codes, ["AUTH_REQUIRED"; 4]);
+    assert_eq!(codes, ["AUTH_REQUIRED"; 5]);
     assert_eq!(
         app.load_drive_status().await?,
         DriveStatus::Disconnected {
@@ -677,7 +687,7 @@ async fn connecting_stores_the_account_and_the_galpi_folder() -> Result<(), AppE
         port.drive.calls()?.exchange_bearers,
         ["galpi-test-access-session"]
     );
-    assert_eq!(port.drive.calls()?.consents, [(false, None)]);
+    assert_eq!(port.drive.calls()?.consents, [(None, None)]);
     Ok(())
 }
 
@@ -759,7 +769,10 @@ async fn importing_with_another_account_is_refused_and_its_grant_revoked() -> Re
     );
     assert_eq!(
         port.drive.calls()?.consents,
-        [(true, Some("user@example.com".to_owned()))]
+        [(
+            Some(DrivePickerKind::Recording),
+            Some("user@example.com".to_owned()),
+        )]
     );
     // And the job slot is free again
     app.transcribe(request(SpeakerHint::Auto)).await?;
@@ -845,6 +858,176 @@ async fn cancelling_the_import_job_stops_the_download_and_frees_the_slot() -> Re
     let importing = {
         let app = Arc::clone(&app);
         tokio::spawn(async move { app.import_from_drive(job_id).await })
+    };
+    port.drive.download_started.notified().await;
+
+    // When
+    app.cancel(job_id)?;
+    let error = failure(joined(importing.await)?)?;
+
+    // Then
+    assert_eq!(error.code, "CANCELLED");
+    app.transcribe(request(SpeakerHint::Auto)).await?;
+    Ok(())
+}
+
+fn pick_transcript(port: &FakePort, name: &str) -> Result<(), AppError> {
+    let mut picked = lock(&port.drive.picked)?;
+    picked.name = name.to_owned();
+    picked.mime_type = "text/plain".to_owned();
+    Ok(())
+}
+
+async fn import_transcript(
+    app: &Application,
+    id: Uuid,
+) -> Result<TranscriptImportResult, AppError> {
+    app.import_transcript_from_drive(id, "/tmp/output").await
+}
+
+#[tokio::test]
+async fn a_transcript_picked_from_drive_is_a_meeting_named_after_its_recording()
+-> Result<(), AppError> {
+    // Given: a speaker transcript Galpi did not upload, so it carries no meeting key
+    let (port, app) = connected()?;
+    pick_transcript(&port, "새로운 노트_화자별.txt")?;
+    let job_id = Uuid::now_v7();
+
+    // When
+    let imported = import_transcript(&app, job_id).await?;
+    let synced = app.sync_meeting_to_drive(job_id, false).await?;
+
+    // Then: it opened the transcript Picker and is keyed by the Drive file
+    assert_eq!(imported.job_id, job_id);
+    assert_eq!(
+        imported.txt,
+        "/tmp/drive-imports/file-1/새로운 노트_화자별.txt"
+    );
+    assert_eq!(
+        port.drive.calls()?.consents,
+        [(
+            Some(DrivePickerKind::Transcript),
+            Some("user@example.com".to_owned()),
+        )]
+    );
+    assert_eq!(
+        states(&synced),
+        [(ArtifactKind::SpeakerText, DriveSyncState::Uploaded)]
+    );
+    let remote = port.drive.remote()?;
+    assert_eq!(
+        remote
+            .meetings
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        ["drive:file-1"]
+    );
+    // And the Drive folder is named after the recording, not the transcript
+    assert_eq!(remote.names, ["새로운 노트"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_transcript_galpi_uploaded_syncs_into_the_meeting_folder_it_came_from()
+-> Result<(), AppError> {
+    // Given: Drive says the picked file was uploaded for meeting `drive:rec-1`
+    let (port, app) = connected()?;
+    pick_transcript(&port, "새로운 노트_화자별.txt")?;
+    lock(&port.drive.picked)?.meeting = MeetingKey::from_property("drive:rec-1");
+    let job_id = Uuid::now_v7();
+
+    // When
+    import_transcript(&app, job_id).await?;
+    app.sync_meeting_to_drive(job_id, false).await?;
+
+    // Then: that key, not the file's own id, picks the folder
+    let remote = port.drive.remote()?;
+    assert_eq!(
+        remote
+            .meetings
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        ["drive:rec-1"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn picking_the_wrong_kind_of_file_imports_nothing() -> Result<(), AppError> {
+    // Given
+    let (port, app) = connected()?;
+    let mut codes = Vec::new();
+
+    // When: files that are not a .txt/.md transcript are picked as a transcript
+    for (name, mime) in [
+        ("회의.m4a", "audio/x-m4a"),
+        ("회의.m4a", "text/plain"),
+        ("memo", "text/plain"),
+        ("회의.txt", "application/vnd.google-apps.document"),
+    ] {
+        {
+            let mut picked = lock(&port.drive.picked)?;
+            picked.name = name.to_owned();
+            picked.mime_type = mime.to_owned();
+        }
+        let error = failure(import_transcript(&app, Uuid::now_v7()).await)?;
+        codes.push(error.code);
+    }
+    // And: a transcript is picked where a recording is expected
+    pick_transcript(&port, "회의_화자별.txt")?;
+    let transcript = failure(app.import_from_drive(Uuid::now_v7()).await)?;
+    port.drive.push_consent(Consent::Approve(""))?;
+    let nothing = failure(import_transcript(&app, Uuid::now_v7()).await)?;
+    port.drive.push_consent(Consent::Approve("a,b"))?;
+    let two = failure(import_transcript(&app, Uuid::now_v7()).await)?;
+
+    // Then
+    assert_eq!(codes, ["DRIVE_UNSUPPORTED_FILE"; 4]);
+    assert_eq!(transcript.code, "DRIVE_UNSUPPORTED_FILE");
+    assert_eq!(nothing.code, "CANCELLED");
+    assert_eq!(two.code, "DRIVE_PICK_INVALID");
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_the_transcript_import_job_stops_the_picker_wait_and_frees_the_slot()
+-> Result<(), AppError> {
+    // Given: a transcript import waiting for the Picker
+    let (port, app) = connected()?;
+    pick_transcript(&port, "회의_화자별.txt")?;
+    port.drive.push_consent(Consent::Wait)?;
+    let app = Arc::new(app);
+    let job_id = Uuid::now_v7();
+    let importing = {
+        let app = Arc::clone(&app);
+        tokio::spawn(async move { import_transcript(&app, job_id).await })
+    };
+    port.drive.consent_started.notified().await;
+
+    // When
+    app.cancel(job_id)?;
+    let error = failure(joined(importing.await)?)?;
+
+    // Then
+    assert_eq!(error.code, "CANCELLED");
+    app.transcribe(request(SpeakerHint::Auto)).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_the_transcript_import_job_stops_the_download_and_frees_the_slot()
+-> Result<(), AppError> {
+    // Given: a transcript import that is downloading
+    let (port, app) = connected()?;
+    pick_transcript(&port, "회의_화자별.txt")?;
+    port.drive.block_download.store(true, Ordering::Relaxed);
+    let app = Arc::new(app);
+    let job_id = Uuid::now_v7();
+    let importing = {
+        let app = Arc::clone(&app);
+        tokio::spawn(async move { import_transcript(&app, job_id).await })
     };
     port.drive.download_started.notified().await;
 

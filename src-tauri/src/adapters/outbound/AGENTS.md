@@ -41,7 +41,7 @@ outbound/
 | Change error mapping | `recording/cleanup.rs`, `recording/failure.rs` |
 | Change worker variables | `platform::worker_environment` in `platform.rs` (used by `environment.rs`) |
 | Change refinement transport variables | `assistant_environment` in `environment.rs`; `GALPI_ASSISTANT_TRANSPORT=responses` is set only for the ChatGPT Responses transport |
-| Change meeting folder or artifact naming | `paths.rs` (`meeting_stem`, `create_meeting_directory`, `recording_folder_name`, `sanitize_name`); default root in `environment.rs` (`~/Documents/Galpi`) |
+| Change meeting folder or artifact naming | `paths.rs` (`meeting_stem`, `transcript_meeting_stem` for imported transcripts, `create_meeting_directory`, `recording_folder_name`, `sanitize_name`); default root in `environment.rs` (`~/Documents/Galpi`) |
 | Change debug/release paths | `uv_binary`, `worker_root` in `paths.rs` |
 
 ## CONVENTIONS

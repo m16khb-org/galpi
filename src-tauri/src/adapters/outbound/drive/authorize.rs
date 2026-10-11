@@ -4,13 +4,23 @@ use super::super::browser_sign_in::loopback::Callback;
 use super::super::browser_sign_in::pkce::code_challenge;
 use super::{CLIENT_ID, SCOPE, connect_failed};
 use crate::application::error::AppError;
-use crate::application::ports::DriveAuthorize;
+use crate::application::ports::{DriveAuthorize, DrivePickerKind};
 use crate::domain::drive::{DriveFileId, parse_picked_ids};
 use reqwest::Url;
 
-/// What the desktop Picker offers: recordings people actually make.
-const PICKER_MIME_TYPES: &str = "audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,\
+/// What the desktop Picker offers for a recording: what people actually make.
+const RECORDING_MIME_TYPES: &str = "audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,\
 audio/x-wav,audio/flac,audio/ogg,video/mp4,video/quicktime";
+
+/// What the desktop Picker offers for a transcript: what a transcript import accepts.
+const TRANSCRIPT_MIME_TYPES: &str = "text/plain,text/markdown";
+
+fn picker_mime_types(kind: DrivePickerKind) -> &'static str {
+    match kind {
+        DrivePickerKind::Recording => RECORDING_MIME_TYPES,
+        DrivePickerKind::Transcript => TRANSCRIPT_MIME_TYPES,
+    }
+}
 
 /// The URL for the system browser. It carries `state`, so never log it.
 pub(super) fn consent_url(
@@ -36,10 +46,10 @@ pub(super) fn consent_url(
             // The desktop Picker requires it; with offline access it also makes
             // Google return a refresh token.
             .append_pair("prompt", "consent");
-        if request.picker {
+        if let Some(kind) = request.picker {
             query
                 .append_pair("trigger_onepick", "true")
-                .append_pair("mimetypes", PICKER_MIME_TYPES);
+                .append_pair("mimetypes", picker_mime_types(kind));
         }
         if let Some(hint) = &request.login_hint {
             query.append_pair("login_hint", hint);

@@ -77,6 +77,11 @@ export interface BackendPort {
   dismissDriveOnboarding(): Promise<DriveStatus>
   /** Opens the desktop Picker and downloads the pick as job `jobId`; `cancel(jobId)` stops it. */
   importFromDrive(jobId: string): Promise<DriveImport>
+  /**
+   * Opens the desktop Picker for a transcript (`.txt`, `.md`), downloads the pick as job
+   * `jobId`, and imports it into `outputRoot` like `importTranscript`; `cancel(jobId)` stops it.
+   */
+  importTranscriptFromDrive(jobId: string, outputRoot: string): Promise<ImportedTranscript>
   /** `jobId` is the transcription or transcript-import job the results belong to. */
   syncMeetingToDrive(jobId: string, overwrite: boolean): Promise<DriveSyncResult>
   /** Turns the upload of each finished recording on or off; only a connected account can. */

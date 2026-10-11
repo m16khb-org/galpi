@@ -232,8 +232,13 @@ export const appTemplate = `
             <span class="picker-cta">다른 파일 가져오기</span>
             <i class="ph ph-caret-right" aria-hidden="true"></i>
           </button>
+          <button id="drive-transcript-button" class="file-picker drive-import" type="button" data-action="import-transcript-from-drive" hidden>
+            <span class="file-icon"><i class="ph ph-cloud-arrow-down" aria-hidden="true"></i></span>
+            <span><strong>Drive에서 전사문 가져오기</strong><small class="file-picker-note">Google Drive에서 txt, md 전사문을 고릅니다</small></span>
+            <i class="ph ph-caret-right" aria-hidden="true"></i>
+          </button>
           <div id="augment-progress" class="setup-progress-card" hidden>
-            <div class="job-header"><div><span class="section-index">AI 증강 진행 중</span><h3 id="augment-job-title">회의록을 작성하고 있습니다</h3></div><strong id="augment-job-percent">0%</strong></div>
+            <div class="job-header"><div><span id="augment-job-eyebrow" class="section-index">AI 증강 진행 중</span><h3 id="augment-job-title">회의록을 작성하고 있습니다</h3></div><strong id="augment-job-percent">0%</strong></div>
             <div id="augment-job-progress" class="wave-progress" role="progressbar" aria-label="AI 증강 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
             <p id="augment-job-message" class="job-message" aria-live="polite"></p>
             <p id="augment-error-message" class="error-message" role="alert" hidden></p>

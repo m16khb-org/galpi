@@ -102,6 +102,53 @@ describe("TauriBackend compute device", () => {
   })
 })
 
+describe("TauriBackend Drive transcript import", () => {
+  test("invokes import_transcript_from_drive and parses the import result", async () => {
+    // Given: a host that imports the picked transcript into the output folder
+    const calls: Array<[string, unknown]> = []
+    mock.module("@tauri-apps/api/core", () => ({
+      invoke: async (command: string, args?: unknown) => {
+        calls.push([command, args])
+        return {
+          jobId: "job-1",
+          txt: "/out/새로운 노트/새로운 노트_화자별.txt",
+          outputDirectory: "/out/새로운 노트",
+        }
+      },
+    }))
+    // Dynamic: mock.module has to be in place before the adapter loads `invoke`.
+    const { TauriBackend } = await import("./tauri-backend")
+    const backend = new TauriBackend()
+
+    // When
+    const imported = await backend.importTranscriptFromDrive("job-1", "/out")
+
+    // Then
+    expect(calls).toContainEqual([
+      "import_transcript_from_drive",
+      { jobId: "job-1", outputRoot: "/out" },
+    ])
+    expect(imported).toEqual({
+      jobId: "job-1",
+      txt: "/out/새로운 노트/새로운 노트_화자별.txt",
+      outputDirectory: "/out/새로운 노트",
+    })
+  })
+
+  test("refuses a reply that lacks the transcript path", async () => {
+    // Given
+    mock.module("@tauri-apps/api/core", () => ({
+      invoke: async () => ({ jobId: "job-1", outputDirectory: "/out/회의" }),
+    }))
+    // Dynamic: mock.module has to be in place before the adapter loads `invoke`.
+    const { TauriBackend } = await import("./tauri-backend")
+    const backend = new TauriBackend()
+
+    // When / Then
+    await expect(backend.importTranscriptFromDrive("job-1", "/out")).rejects.toThrow()
+  })
+})
+
 const signedInSettings = {
   authMode: "chatGpt",
   model: "gpt-5.5",

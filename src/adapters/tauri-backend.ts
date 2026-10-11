@@ -456,6 +456,12 @@ export class TauriBackend implements BackendPort {
     return driveImportSchema.parse(await invoke<unknown>("import_from_drive", { jobId }))
   }
 
+  async importTranscriptFromDrive(jobId: string, outputRoot: string): Promise<ImportedTranscript> {
+    return transcriptImportSchema.parse(
+      await invoke<unknown>("import_transcript_from_drive", { jobId, outputRoot }),
+    )
+  }
+
   async syncMeetingToDrive(jobId: string, overwrite: boolean): Promise<DriveSyncResult> {
     return driveSyncResultSchema.parse(
       await invoke<unknown>("sync_meeting_to_drive", { jobId, overwrite }),

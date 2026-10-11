@@ -223,9 +223,19 @@ pub trait ClockPort: Send + Sync {
     fn now_unix(&self) -> u64;
 }
 
+/// What the desktop Picker offers to choose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrivePickerKind {
+    /// Audio and video files.
+    Recording,
+    /// Text transcripts (`.txt`, `.md`).
+    Transcript,
+}
+
 /// One browser consent: the plain `drive.file` grant, or the desktop Picker.
 pub struct DriveAuthorize {
-    pub picker: bool,
+    /// `None` asks only for the plain grant.
+    pub picker: Option<DrivePickerKind>,
     /// The connected account's email, so the Picker opens on that account.
     pub login_hint: Option<String>,
 }
@@ -282,6 +292,8 @@ pub struct PickedFile {
     pub can_download: bool,
     /// RFC 3339, kept for the downloaded file's modification time.
     pub modified_time: Option<String>,
+    /// The meeting Galpi uploaded this file for (`galpiMeeting`), when it did.
+    pub meeting: Option<MeetingKey>,
 }
 
 /// A local result file read for upload.

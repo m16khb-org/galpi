@@ -1,4 +1,6 @@
-use super::paths::{canonical, create_meeting_directory, meeting_stem, prepare_output_root};
+use super::paths::{
+    canonical, create_meeting_directory, prepare_output_root, transcript_meeting_stem,
+};
 use crate::application::error::AppError;
 use crate::domain::artifact::Artifacts;
 use std::path::Path;
@@ -8,7 +10,9 @@ use std::path::Path;
 const MAX_TRANSCRIPT_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Copy an existing transcript into a per-meeting folder so refinement,
-/// reveal, and minutes naming work exactly like a transcribed meeting.
+/// reveal, and minutes naming work exactly like a transcribed meeting. The
+/// folder is named after the meeting's recording: a speaker transcript
+/// `새로운 노트_화자별.txt` goes to `새로운 노트`, the folder Galpi wrote it in.
 pub async fn import_transcript(input: &Path, output_root: &Path) -> Result<Artifacts, AppError> {
     let input = canonical(input)
         .await
@@ -39,7 +43,7 @@ pub async fn import_transcript(input: &Path, output_root: &Path) -> Result<Artif
     }
 
     let output_root = prepare_output_root(output_root).await?;
-    let stem = meeting_stem(&input);
+    let stem = transcript_meeting_stem(&input);
     let directory = create_meeting_directory(input.parent(), &output_root, &stem).await?;
     let destination = directory.join(input.file_name().ok_or_else(|| {
         AppError::new("INVALID_TRANSCRIPT", "전사문 이름을 확인하지 못했습니다.")
@@ -111,6 +115,55 @@ mod tests {
             std::fs::read_to_string(artifacts.txt.clone())?,
             "스피커1: 안녕하세요"
         );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_speaker_transcript_goes_to_a_folder_named_after_its_recording()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: Galpi's transcript of a recording named 새로운 노트, outside the output folder
+        let root = std::env::temp_dir().join(format!("galpi-import-{}", uuid::Uuid::now_v7()));
+        let source_dir = root.join("source");
+        std::fs::create_dir_all(&source_dir)?;
+        let source = source_dir.join("새로운 노트_화자별.txt");
+        std::fs::write(&source, "스피커1: 안녕하세요")?;
+        let output = root.join("galpi");
+
+        // When
+        let artifacts = import_transcript(&source, &output).await?;
+
+        // Then: no `_화자별` in the meeting folder, and the file keeps its name
+        assert_eq!(
+            artifacts.output_directory,
+            canonical(&output.join("새로운 노트")).await?
+        );
+        assert_eq!(
+            artifacts.txt,
+            canonical(&output.join("새로운 노트/새로운 노트_화자별.txt")).await?
+        );
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_speaker_transcript_already_in_its_meeting_folder_stays_there()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Given: the transcript Galpi wrote into `새로운 노트/` itself
+        let root = std::env::temp_dir().join(format!("galpi-import-{}", uuid::Uuid::now_v7()));
+        let output = root.join("galpi");
+        let meeting = output.join("새로운 노트");
+        std::fs::create_dir_all(&meeting)?;
+        let source = meeting.join("새로운 노트_화자별.txt");
+        std::fs::write(&source, "스피커1: 안녕하세요")?;
+
+        // When
+        let artifacts = import_transcript(&source, &output).await?;
+
+        // Then: no second folder such as `새로운 노트 2`
+        assert_eq!(artifacts.output_directory, canonical(&meeting).await?);
+        assert_eq!(artifacts.txt, canonical(&source).await?);
+        assert!(!output.join("새로운 노트 2").exists());
         std::fs::remove_dir_all(root)?;
         Ok(())
     }

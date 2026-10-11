@@ -119,6 +119,7 @@ pub fn run() {
             crate::adapters::inbound::tauri::disconnect_drive,
             crate::adapters::inbound::tauri::dismiss_drive_onboarding,
             crate::adapters::inbound::tauri::import_from_drive,
+            crate::adapters::inbound::tauri::import_transcript_from_drive,
             crate::adapters::inbound::tauri::sync_meeting_to_drive,
             crate::adapters::inbound::tauri::set_drive_save_recordings,
             crate::adapters::inbound::tauri::upload_recording_to_drive,

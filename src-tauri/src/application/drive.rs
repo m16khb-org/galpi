@@ -15,10 +15,10 @@
 use crate::application::error::AppError;
 use crate::application::gateway::{AppAccessGate, auth_required};
 use crate::application::ports::{
-    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DriveSessionStore,
-    LargeUpload,
+    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DrivePickerKind,
+    DriveSessionStore, LargeUpload, PickedFile,
 };
-use crate::domain::artifact::{ArtifactKind, Artifacts};
+use crate::domain::artifact::{ArtifactKind, Artifacts, is_transcript_name};
 use crate::domain::drive::{
     DRIVE_ACCESS_REFRESH_MARGIN_SECONDS, DriveConnection, DriveFileId, DriveMeeting,
     DriveRecordingState, DriveRecordingUpload, DriveStatus, DriveSyncFile, DriveSyncResult,
@@ -84,11 +84,43 @@ async fn token_failure(
     }
 }
 
-/// A recording the Picker chose and the download finished.
-pub struct ImportedRecording {
+/// A file the Picker chose and the download finished.
+pub struct ImportedFile {
     pub path: PathBuf,
     pub id: DriveFileId,
     pub name: String,
+    /// The meeting Galpi uploaded this file for, when it did.
+    pub meeting: Option<MeetingKey>,
+}
+
+/// Whether the picked file is of the kind the user was asked to pick. A
+/// transcript is checked by its Drive type and its name, as an import would.
+fn supported(kind: DrivePickerKind, file: &PickedFile) -> bool {
+    match kind {
+        DrivePickerKind::Recording => {
+            file.mime_type.starts_with("audio/") || file.mime_type.starts_with("video/")
+        }
+        DrivePickerKind::Transcript => {
+            matches!(file.mime_type.as_str(), "text/plain" | "text/markdown")
+                && is_transcript_name(&file.name)
+        }
+    }
+}
+
+fn unsupported_file(kind: DrivePickerKind) -> AppError {
+    let message = match kind {
+        DrivePickerKind::Recording => "오디오나 영상 파일만 가져올 수 있습니다.",
+        DrivePickerKind::Transcript => "txt 또는 md 텍스트 파일만 가져올 수 있습니다.",
+    };
+    AppError::new("DRIVE_UNSUPPORTED_FILE", message)
+}
+
+fn pick_one_only(kind: DrivePickerKind) -> AppError {
+    let message = match kind {
+        DrivePickerKind::Recording => "녹음 파일은 한 번에 하나만 가져올 수 있습니다.",
+        DrivePickerKind::Transcript => "전사문 파일은 한 번에 하나만 가져올 수 있습니다.",
+    };
+    AppError::new("DRIVE_PICK_INVALID", message)
 }
 
 /// Releases the connect slot however the attempt ends, including a dropped call.
@@ -172,7 +204,7 @@ impl DriveAccounts {
             .consent(
                 access,
                 &DriveAuthorize {
-                    picker: false,
+                    picker: None,
                     login_hint: None,
                 },
                 &mut cancel,
@@ -323,25 +355,23 @@ impl DriveAccounts {
         }
     }
 
-    /// Let the user pick one recording in the desktop Picker and download it.
+    /// Let the user pick one file of `kind` in the desktop Picker and
+    /// download it.
     ///
     /// `cancel` is the caller's job slot, so the job's cancel stops both the
     /// consent wait and the download.
     pub async fn import(
         &self,
         access: &AppAccessGate,
+        kind: DrivePickerKind,
         cancel: &mut oneshot::Receiver<()>,
-    ) -> Result<ImportedRecording, AppError> {
-        let (id, access_token) = self.pick(access, cancel).await?;
+    ) -> Result<ImportedFile, AppError> {
+        let (id, access_token) = self.pick(access, kind, cancel).await?;
         let file = self
             .recovered(access, self.files.file_metadata(&access_token, &id).await)
             .await?;
-        let playable = file.mime_type.starts_with("audio/") || file.mime_type.starts_with("video/");
-        if !playable {
-            return Err(AppError::new(
-                "DRIVE_UNSUPPORTED_FILE",
-                "오디오나 영상 파일만 가져올 수 있습니다.",
-            ));
+        if !supported(kind, &file) {
+            return Err(unsupported_file(kind));
         }
         if !file.can_download {
             return Err(AppError::new(
@@ -355,10 +385,11 @@ impl DriveAccounts {
                 self.files.download(&access_token, &id, &file, cancel).await,
             )
             .await?;
-        Ok(ImportedRecording {
+        Ok(ImportedFile {
             path,
             id,
             name: file.name,
+            meeting: file.meeting,
         })
     }
 
@@ -366,6 +397,7 @@ impl DriveAccounts {
     async fn pick(
         &self,
         access: &AppAccessGate,
+        kind: DrivePickerKind,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<(DriveFileId, String), AppError> {
         let connection = self.connection().await?;
@@ -373,7 +405,7 @@ impl DriveAccounts {
             .consent(
                 access,
                 &DriveAuthorize {
-                    picker: true,
+                    picker: Some(kind),
                     login_hint: Some(connection.email.clone()),
                 },
                 cancel,
@@ -412,10 +444,7 @@ impl DriveAccounts {
         match (picked.next(), picked.next()) {
             (Some(id), None) => Ok((id, tokens.access_token)),
             (None, _) => Err(cancelled()),
-            (Some(_), Some(_)) => Err(AppError::new(
-                "DRIVE_PICK_INVALID",
-                "녹음 파일은 한 번에 하나만 가져올 수 있습니다.",
-            )),
+            (Some(_), Some(_)) => Err(pick_one_only(kind)),
         }
     }
 

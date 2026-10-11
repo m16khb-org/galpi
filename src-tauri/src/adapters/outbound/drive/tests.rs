@@ -6,8 +6,8 @@ use crate::adapters::outbound::browser_sign_in::pkce::code_challenge;
 use crate::adapters::outbound::browser_sign_in::{BrowserOpener, SignInCodes};
 use crate::application::error::AppError;
 use crate::application::ports::{
-    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, LargeUpload,
-    LocalFileDigest, LocalUpload, PickedFile,
+    ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DrivePickerKind,
+    LargeUpload, LocalFileDigest, LocalUpload, PickedFile,
 };
 use crate::domain::artifact::ArtifactKind;
 use crate::domain::drive::{DriveFileId, DriveTokenFailure, DriveTokens, MeetingKey};
@@ -142,7 +142,7 @@ fn no_server() -> Handler {
 }
 
 const CONNECT: DriveAuthorize = DriveAuthorize {
-    picker: false,
+    picker: None,
     login_hint: None,
 };
 
@@ -217,7 +217,7 @@ async fn the_picker_adds_onepick_audio_types_and_the_account_hint() -> Result<()
     // When
     let callback = harness
         .authorize(&DriveAuthorize {
-            picker: true,
+            picker: Some(DrivePickerKind::Recording),
             login_hint: Some("user@example.com".to_owned()),
         })
         .await?;
@@ -239,6 +239,33 @@ async fn the_picker_adds_onepick_audio_types_and_the_account_hint() -> Result<()
             .map(DriveFileId::as_str)
             .collect::<Vec<_>>(),
         ["file-1"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_transcript_picker_offers_text_types_only() -> Result<(), AppError> {
+    // Given
+    let harness = AuthHarness::start(
+        answer("&code=galpi-test-code&picked_file_ids=file-1"),
+        no_server(),
+    )
+    .await?;
+
+    // When
+    harness
+        .authorize(&DriveAuthorize {
+            picker: Some(DrivePickerKind::Transcript),
+            login_hint: Some("user@example.com".to_owned()),
+        })
+        .await?;
+
+    // Then
+    let url = harness.opened_url()?;
+    assert_eq!(query(&url, "trigger_onepick").as_deref(), Some("true"));
+    assert_eq!(
+        query(&url, "mimetypes").as_deref(),
+        Some("text/plain,text/markdown")
     );
     Ok(())
 }
@@ -821,7 +848,57 @@ fn picked(modified: &str) -> PickedFile {
         mime_type: "audio/x-m4a".to_owned(),
         can_download: true,
         modified_time: Some(modified.to_owned()),
+        meeting: None,
     }
+}
+
+#[tokio::test]
+async fn picked_file_metadata_carries_its_galpi_meeting() -> Result<(), AppError> {
+    // Given: Drive describes a transcript Galpi uploaded, and one it did not
+    let id = DriveFileId::parse("file-1").map_err(|_| AppError::new("TEST", "id"))?;
+    let galpi = RestHarness::start(fixed(
+        200,
+        json!({
+            "name": "새로운 노트_화자별.txt",
+            "mimeType": "text/plain",
+            "capabilities": {"canDownload": true},
+            "modifiedTime": "2026-10-01T09:30:00.000Z",
+            "appProperties": {"galpiMeeting": "drive:rec-1", "galpiKind": "speaker_text"},
+        })
+        .to_string(),
+    ))
+    .await?;
+    let foreign = RestHarness::start(fixed(
+        200,
+        json!({
+            "name": "메모.txt",
+            "mimeType": "text/plain",
+            "capabilities": {"canDownload": true},
+            "appProperties": {"galpiMeeting": "https://evil.example/x"},
+        })
+        .to_string(),
+    ))
+    .await?;
+
+    // When
+    let uploaded = galpi.adapter.file_metadata(TOKEN, &id).await?;
+    let other = foreign.adapter.file_metadata(TOKEN, &id).await?;
+
+    // Then: a valid key is kept, an invalid one is ignored
+    assert_eq!(
+        uploaded.meeting.as_ref().map(MeetingKey::as_str),
+        Some("drive:rec-1")
+    );
+    assert_eq!(uploaded.name, "새로운 노트_화자별.txt");
+    assert_eq!(other.meeting, None);
+    let requests = galpi.requests_to("GET", "/drive/v3/files/file-1");
+    assert!(
+        requests
+            .first()
+            .and_then(|request| request.query("fields"))
+            .is_some_and(|fields| fields.contains("appProperties"))
+    );
+    Ok(())
 }
 
 #[tokio::test]

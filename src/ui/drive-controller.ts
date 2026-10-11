@@ -6,15 +6,20 @@ import {
 } from "../application/drive-machine"
 import { type BackendPort, errorCode, errorMessage } from "../domain/backend"
 import type { DriveImport } from "../domain/drive"
+import type { ImportedTranscript } from "../domain/job"
 import type { AppView } from "./app-view"
+
+/** What the Picker was asked for: a recording to transcribe or a transcript to augment. */
+export type DriveImportKind = "recording" | "transcript"
 
 /**
  * What the app does around a Drive import, which runs as a job: the job
- * panel, busy state, and audio selection belong to `AppController`.
+ * panel, busy state, and audio or transcript selection belong to `AppController`.
  */
 export interface DriveHooks {
-  readonly onImportStarted: (jobId: string) => void
+  readonly onImportStarted: (jobId: string, kind: DriveImportKind) => void
   readonly onImported: (imported: DriveImport) => void
+  readonly onTranscriptImported: (imported: ImportedTranscript) => void
   readonly onImportFailed: (error: unknown) => void
   readonly onImportFinished: () => void
   /** A Drive command answered `AUTH_REQUIRED`: the host closed the session. */
@@ -96,11 +101,32 @@ export class DriveController {
   async importFromDrive(): Promise<void> {
     if (this.dispatch({ type: "importStarted" }).activity !== "importing") return
     const jobId = crypto.randomUUID()
-    this.hooks.onImportStarted(jobId)
+    this.hooks.onImportStarted(jobId, "recording")
     try {
       const imported = await this.backend.importFromDrive(jobId)
       this.dispatch({ type: "imported" })
       this.hooks.onImported(imported)
+    } catch (error) {
+      this.dispatch({ type: "importFailed" })
+      this.hooks.onImportFailed(error)
+      this.noteLostConnection(error)
+    } finally {
+      this.hooks.onImportFinished()
+    }
+  }
+
+  /**
+   * Pick a transcript in Drive, download it as a job, and import it into
+   * `outputRoot` as an augment target. Same job slot and cancel as `importFromDrive`.
+   */
+  async importTranscriptFromDrive(outputRoot: string): Promise<void> {
+    if (this.dispatch({ type: "importStarted" }).activity !== "importing") return
+    const jobId = crypto.randomUUID()
+    this.hooks.onImportStarted(jobId, "transcript")
+    try {
+      const imported = await this.backend.importTranscriptFromDrive(jobId, outputRoot)
+      this.dispatch({ type: "imported" })
+      this.hooks.onTranscriptImported(imported)
     } catch (error) {
       this.dispatch({ type: "importFailed" })
       this.hooks.onImportFailed(error)

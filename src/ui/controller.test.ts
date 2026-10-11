@@ -63,6 +63,7 @@ function unavailableBackend(): BackendPort {
     disconnectDrive: unavailable,
     dismissDriveOnboarding: unavailable,
     importFromDrive: unavailable,
+    importTranscriptFromDrive: unavailable,
     syncMeetingToDrive: unavailable,
     setDriveSaveRecordings: unavailable,
     uploadRecordingToDrive: unavailable,

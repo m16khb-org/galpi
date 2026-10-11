@@ -282,6 +282,17 @@ pub async fn import_from_drive(
 }
 
 #[tauri::command]
+pub async fn import_transcript_from_drive(
+    application: State<'_, Application>,
+    job_id: Uuid,
+    output_root: String,
+) -> Result<TranscriptImportResult, AppError> {
+    application
+        .import_transcript_from_drive(job_id, &output_root)
+        .await
+}
+
+#[tauri::command]
 pub async fn sync_meeting_to_drive(
     application: State<'_, Application>,
     job_id: Uuid,

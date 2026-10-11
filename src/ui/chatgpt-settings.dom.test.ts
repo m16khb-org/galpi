@@ -121,6 +121,7 @@ function backendWith(overrides: Partial<BackendPort>): BackendPort {
     disconnectDrive: unused,
     dismissDriveOnboarding: unused,
     importFromDrive: unused,
+    importTranscriptFromDrive: unused,
     syncMeetingToDrive: unused,
     setDriveSaveRecordings: unused,
     uploadRecordingToDrive: unused,

@@ -138,6 +138,9 @@ function createBackend(
     importFromDrive: async () => {
       throw new Error("unused Drive import")
     },
+    importTranscriptFromDrive: async () => {
+      throw new Error("unused Drive transcript import")
+    },
     syncMeetingToDrive: async () => {
       throw new Error("unused Drive sync")
     },

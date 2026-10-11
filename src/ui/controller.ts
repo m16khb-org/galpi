@@ -70,14 +70,26 @@ export class AppController {
       },
     )
     this.drive = new DriveController(backend, view, {
-      onImportStarted: (jobId) =>
-        this.begin("driveImport", "Drive에서 녹음을 고르고 내려받는 중입니다.", jobId),
+      onImportStarted: (jobId, kind) =>
+        kind === "recording"
+          ? this.begin("driveImport", "Drive에서 녹음을 고르고 내려받는 중입니다.", jobId)
+          : this.begin("driveTranscript", "Drive에서 전사문을 고르고 내려받는 중입니다.", jobId),
       onImported: (imported) => {
         this.audio = { path: imported.inputPath, driveSourceId: imported.driveFileId }
         // Not a transcription result: the job simply ends and the audio is chosen.
         this.job = initialJobState
         this.view.setAudio(imported.inputPath)
         this.view.renderDriveImported(imported.name)
+      },
+      onTranscriptImported: (imported) => {
+        // Not a transcription result either: the job ends, and the file is the augment target.
+        this.job = initialJobState
+        this.view.renderJob(this.job)
+        this.lastResult = imported
+        this.view.setTranscript(imported.txt)
+        this.view.renderImportedTranscript(imported)
+        this.drive.clearSync()
+        this.drive.syncAfter(imported.jobId)
       },
       onImportFailed: (error) => {
         // Declining consent or closing the Picker is a user decision, not a failure.
@@ -200,6 +212,7 @@ export class AppController {
     this.view.on("disconnect-drive", () => void this.drive.disconnect())
     this.view.on("dismiss-drive-onboarding", () => void this.drive.dismiss())
     this.view.on("import-from-drive", () => void this.drive.importFromDrive())
+    this.view.on("import-transcript-from-drive", () => void this.importTranscriptFromDrive())
     this.view.on("overwrite-drive", () => void this.drive.overwrite())
     this.view.on("open-drive-folder", () => void this.drive.openFolder())
     this.view.on("open-recording-drive-folder", () => void this.drive.openRecordingFolder())
@@ -417,6 +430,15 @@ export class AppController {
     } catch (error) {
       this.view.showError(errorMessage(error))
     }
+  }
+
+  /** The augment target from Drive: the same flow as a local file, after the Picker job. */
+  private async importTranscriptFromDrive(): Promise<void> {
+    if (this.outputRoot === null) {
+      this.view.showError("결과를 저장할 폴더를 선택해 주세요.")
+      return
+    }
+    await this.drive.importTranscriptFromDrive(this.outputRoot)
   }
 
   private async chooseOutput(): Promise<void> {

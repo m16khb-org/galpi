@@ -1,5 +1,6 @@
 use super::platform::{Os, home_directory};
 use crate::application::error::AppError;
+use crate::domain::artifact::recording_name;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -188,6 +189,18 @@ pub fn meeting_stem(input: &Path) -> String {
             .and_then(|name| name.to_str())
             .unwrap_or_default(),
     )
+}
+
+/// Meeting name of an imported transcript: the recording's name when it is a
+/// speaker transcript (`새로운 노트_화자별.txt` is `새로운 노트`), otherwise
+/// the transcript's own sanitized stem.
+pub fn transcript_meeting_stem(input: &Path) -> String {
+    sanitized_stem(recording_name(
+        input
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default(),
+    ))
 }
 
 /// `stem` made safe for a file name, or `meeting` when nothing usable remains.
