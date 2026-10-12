@@ -328,7 +328,7 @@ export class AppView {
     this.element("#recording-status").textContent = state.message
     this.element("#recording-label").textContent =
       state.status === "starting"
-        ? "마이크 연결 중"
+        ? "녹음 장치 연결 중"
         : state.status === "stopping"
           ? "저장 중"
           : "녹음 중"

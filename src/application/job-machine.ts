@@ -57,7 +57,7 @@ export function reduceJobEvent(state: JobViewState, event: JobEvent): JobViewSta
         jobId: event.jobId,
         phase: "ready",
         percent: 100,
-        message: `WhisperX ${event.engineVersion} 준비가 완료되었습니다.`,
+        message: `로컬 엔진 준비가 완료되었습니다. (${event.engineVersion})`,
       }
     case "refined":
       return {

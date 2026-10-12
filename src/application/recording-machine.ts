@@ -14,7 +14,7 @@ export const initialRecordingState: RecordingViewState = {
   path: null,
   startedAtMs: null,
   elapsedSeconds: 0,
-  message: "마이크로 바로 녹음할 수 있습니다.",
+  message: "선택한 소스로 바로 녹음할 수 있습니다.",
   warning: false,
 }
 
@@ -22,7 +22,7 @@ export function beginRecordingState(): RecordingViewState {
   return {
     ...initialRecordingState,
     status: "starting",
-    message: "마이크 권한과 입력 장치를 확인합니다.",
+    message: "녹음 권한과 장치를 확인합니다.",
   }
 }
 

@@ -97,7 +97,7 @@ export const appTemplate = `
               <div id="recorder" class="recorder" data-state="idle">
                 <button id="record-button" class="record-button" type="button" data-action="record">
                   <span><i class="ph ph-microphone" aria-hidden="true"></i></span>
-                  <div><strong>마이크로 바로 녹음</strong><small id="record-button-detail">시스템 마이크 · 16-bit PCM WAV</small></div>
+                  <div><strong>바로 녹음</strong><small id="record-button-detail">시스템 마이크 · 16-bit PCM WAV</small></div>
                 </button>
                 <div id="recording-active" class="recording-active" hidden>
                   <span class="recording-dot" aria-hidden="true"></span>
@@ -110,8 +110,8 @@ export const appTemplate = `
                   <label><input type="radio" name="recording-source" value="microphone" checked /><span>마이크만</span></label>
                   <label><input type="radio" name="recording-source" value="microphoneAndSystem" /><span>마이크 + 회의 소리</span></label>
                 </div>
-                <p id="recording-source-help" class="recording-source-help" hidden>스피커 대신 헤드폰을 쓰면 상대 목소리가 두 번 녹음되지 않습니다. 회의 앱의 알림음 등 컴퓨터 소리도 함께 녹음됩니다.</p>
-                <p id="recording-status" class="recording-status" aria-live="polite">마이크로 바로 녹음할 수 있습니다.</p>
+                <p id="recording-source-help" class="recording-source-help" hidden>마이크가 없는 헤드폰을 쓰면 상대 목소리가 두 번 녹음되지 않습니다. macOS에서는 마이크가 달린 헤드셋이나 에어팟이 기본 출력이면 회의 소리를 받지 못하니, 입력이 없는 스피커나 헤드폰으로 바꿔 주세요. 회의 앱의 알림음 등 컴퓨터 소리도 함께 녹음됩니다.</p>
+                <p id="recording-status" class="recording-status" aria-live="polite">선택한 소스로 바로 녹음할 수 있습니다.</p>
                 <p id="recording-drive-status" class="drive-status" role="status" aria-live="polite" data-state="pending"></p>
                 <div class="drive-sync-actions">
                   <button id="recording-drive-folder-button" class="text-button ${ghost}" type="button" data-action="open-recording-drive-folder" hidden><i class="ph ph-arrow-up-right" aria-hidden="true"></i> Drive 폴더 열기</button>
@@ -121,7 +121,7 @@ export const appTemplate = `
               <div class="choice-divider"><span>또는 기존 파일</span></div>
               <button id="audio-selection" class="file-picker" type="button" data-action="choose-audio" data-selected="false">
                 <span class="file-icon"><i class="ph ph-music-notes" aria-hidden="true"></i></span>
-                <span><strong>오디오 파일 선택</strong><small id="audio-path">m4a, mp3, wav, mp4, mov, flac</small></span>
+                <span><strong>오디오 파일 선택</strong><small id="audio-path">m4a, mp3, wav, mp4, mov, aac, flac, ogg</small></span>
                 <i class="ph ph-caret-right" aria-hidden="true"></i>
               </button>
               <button id="drive-import-button" class="file-picker drive-import" type="button" data-action="import-from-drive" hidden>
@@ -201,7 +201,7 @@ export const appTemplate = `
         <section id="augment-panel" class="panel augment-panel" aria-labelledby="augment-title">
           <div class="section-heading">
             <div><span class="section-index">03 / AI 증강</span><h2 id="augment-title">회의록 작성</h2></div>
-            <p>등록한 OpenAI 호환 API 토큰으로 전사 결과를 회의록으로 정리합니다. 결정사항과 실행·추적 항목을 놓치지 않습니다.</p>
+            <p>API 키나 ChatGPT 로그인으로 전사 결과를 회의록으로 정리합니다. 결정사항과 실행·추적 항목을 놓치지 않습니다.</p>
           </div>
           <div id="augment-key-hint" class="augment-hint" hidden>
             <i class="ph ph-key" aria-hidden="true"></i>
@@ -265,7 +265,7 @@ export const appTemplate = `
         <section class="settings-section" aria-labelledby="engine-settings-title">
           <div class="settings-section-heading">
             <div><strong id="engine-settings-title">전사 엔진</strong><span id="engine-settings-state">Qwen3</span></div>
-            <p>다음 전사부터 적용됩니다. 준비되지 않은 엔진을 고르면 닫힌 준비 패널에서 로컬 엔진 준비를 먼저 실행해야 합니다.</p>
+            <p>다음 전사부터 적용됩니다. 준비되지 않은 엔진을 고르면 화면에 준비 패널이 나타나며, 거기서 로컬 엔진 준비를 먼저 실행해야 합니다.</p>
           </div>
           <div class="segmented-control engine-segmented" role="radiogroup" aria-label="전사 엔진 선택">
             <label data-engine-option="qwen3"><input type="radio" name="engine-preset" value="qwen3" checked /><span>Qwen3<em id="engine-qwen3-state">기본 · 확인 중</em></span></label>

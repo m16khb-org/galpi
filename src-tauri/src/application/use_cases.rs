@@ -243,7 +243,7 @@ impl Application {
                     .ok_or_else(|| {
                         AppError::new(
                             "ASSISTANT_KEY_MISSING",
-                            "설정에서 z.ai 코딩 플랜 토큰을 먼저 저장해 주세요.",
+                            "설정의 AI 증강에서 API 키를 먼저 저장해 주세요.",
                         )
                     })?;
                 Ok(RefinementCredential {
