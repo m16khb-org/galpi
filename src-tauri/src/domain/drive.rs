@@ -53,7 +53,10 @@ impl Debug for DriveTokens {
 pub enum DriveTokenFailure {
     /// Google refused the code or refresh token (`invalid_grant`).
     Rejected,
-    /// Anything else: network, Google, a refused client, or an unexpected answer.
+    /// Google refused the stored client itself (`invalid_client`,
+    /// `unauthorized_client`): a wrong ID or secret, or a deleted client.
+    ClientRejected,
+    /// Anything else: network, Google, or an unexpected answer.
     Unavailable,
 }
 

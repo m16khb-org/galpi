@@ -385,8 +385,14 @@ async fn token_failures_map_to_what_the_caller_can_do() -> Result<(), AppError> 
         (
             401,
             json!({"error": "invalid_client"}).to_string(),
-            DriveTokenFailure::Unavailable,
+            DriveTokenFailure::ClientRejected,
         ),
+        (
+            400,
+            json!({"error": "unauthorized_client"}).to_string(),
+            DriveTokenFailure::ClientRejected,
+        ),
+        (401, "not json".to_owned(), DriveTokenFailure::Unavailable),
         (
             503,
             json!({"error": "drive_unavailable"}).to_string(),

@@ -39,13 +39,15 @@ async fn post(
     if status.is_success() {
         return serde_json::from_slice(&bytes).map_err(|_| DriveTokenFailure::Unavailable);
     }
-    if status == StatusCode::BAD_REQUEST
-        && serde_json::from_slice::<ErrorBody>(&bytes)
-            .is_ok_and(|body| body.error == "invalid_grant")
-    {
-        return Err(DriveTokenFailure::Rejected);
+    let error = serde_json::from_slice::<ErrorBody>(&bytes).map(|body| body.error);
+    match (status, error.as_deref()) {
+        (StatusCode::BAD_REQUEST, Ok("invalid_grant")) => Err(DriveTokenFailure::Rejected),
+        // A wrong client ID or secret, or a deleted client: waiting will not help.
+        (status, Ok("invalid_client" | "unauthorized_client")) if status.is_client_error() => {
+            Err(DriveTokenFailure::ClientRejected)
+        }
+        _ => Err(DriveTokenFailure::Unavailable),
     }
-    Err(DriveTokenFailure::Unavailable)
 }
 
 fn tokens_from(body: TokenBody, refresh_token: String, now: u64) -> DriveTokens {

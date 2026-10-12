@@ -434,7 +434,7 @@ export const appTemplate = `
             </div>
             <p id="drive-client-status" class="drive-status" role="status" aria-live="polite" data-state="default"></p>
             <p id="drive-client-error" class="drive-status" role="status" aria-live="polite" data-state="error"></p>
-            <p id="drive-client-lock" hidden>Drive 연결을 해제한 뒤에 바꿀 수 있습니다.</p>
+            <p id="drive-client-lock" hidden>Drive를 연결하는 중이거나 연결된 동안에는 바꿀 수 없습니다. 연결을 취소하거나 해제한 뒤에 바꿔 주세요.</p>
             <div class="chatgpt-actions">
               <button id="drive-client-remove-button" class="secondary-button danger ${secondary}" type="button" data-action="remove-drive-client" hidden>클라이언트 삭제</button>
             </div>

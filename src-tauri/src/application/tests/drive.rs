@@ -1421,7 +1421,7 @@ async fn reconnecting_another_account_during_a_picker_consent_keeps_its_tokens()
 #[tokio::test]
 async fn a_renewal_google_cannot_answer_keeps_drive_connected() -> Result<(), AppError> {
     // Given: expired Drive tokens, and the token endpoint fails for a reason
-    // other than a refused grant (network, 5xx, a refused client)
+    // other than a refused grant or client (network, 5xx)
     let (port, app) = connected()?;
     port.drive.stored()?.tokens = Some(drive_tokens(&port, "stored", 0));
     port.drive
@@ -1438,6 +1438,25 @@ async fn a_renewal_google_cannot_answer_keeps_drive_connected() -> Result<(), Ap
         stored_tokens(&port)?.map(|tokens| tokens.refresh_token),
         Some("galpi-test-drive-refresh-stored".to_owned())
     );
+    assert_eq!(port.drive.calls()?.created, Vec::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_renewal_with_a_refused_client_asks_to_check_the_client() -> Result<(), AppError> {
+    // Given: expired Drive tokens, and Google refuses the stored client itself
+    let (port, app) = connected()?;
+    port.drive.stored()?.tokens = Some(drive_tokens(&port, "stored", 0));
+    port.drive
+        .script_refresh(Err(DriveTokenFailure::ClientRejected))?;
+    let transcribed = app.transcribe(request(SpeakerHint::Auto)).await?;
+
+    // When
+    let error = failure(app.sync_meeting_to_drive(transcribed.job_id, false).await)?;
+
+    // Then: a fixable client problem, not a wait-and-retry; the connection stays
+    assert_eq!(error.code, "DRIVE_CLIENT_REJECTED");
+    assert!(port.drive.stored()?.connection.is_some());
     assert_eq!(port.drive.calls()?.created, Vec::new());
     Ok(())
 }

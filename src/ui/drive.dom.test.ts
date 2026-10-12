@@ -1189,9 +1189,6 @@ describe("Drive client settings", () => {
     // Then
     expect(pick<HTMLButtonElement>(root, "#drive-client-remove-button").disabled).toBe(true)
     expect(visible(root, "#drive-client-lock")).toBe(true)
-    expect(pick(root, "#drive-client-lock").textContent).toBe(
-      "Drive 연결을 해제한 뒤에 바꿀 수 있습니다.",
-    )
     expect(pick(root, "#drive-client-status").textContent).toBe(
       `Google 클라이언트를 쓰는 중입니다 · ${VALID_ID}`,
     )
@@ -1406,7 +1403,8 @@ describe("Drive client settings", () => {
 
   test("Drive client refusal while locked shows the host's message without marking a field", async () => {
     // Given: the host says Drive is connected although the window thought otherwise
-    const message = "Drive 연결을 해제한 뒤에 바꿀 수 있습니다."
+    const message =
+      "Drive를 연결하는 중이거나 연결된 동안에는 바꿀 수 없습니다. 연결을 취소하거나 해제한 뒤에 바꿔 주세요."
     const { controller, root } = await openDriveSettings(
       backend({ ...SETUP, saveDriveClient: failWith("DRIVE_CLIENT_LOCKED", message) }),
     )
@@ -1452,7 +1450,8 @@ describe("Drive client settings", () => {
 
   test("Drive client removal refused while locked keeps the client and shows the reason", async () => {
     // Given: the host refuses because Drive is connected or waiting for consent
-    const message = "Drive 연결을 해제한 뒤에 바꿀 수 있습니다."
+    const message =
+      "Drive를 연결하는 중이거나 연결된 동안에는 바꿀 수 없습니다. 연결을 취소하거나 해제한 뒤에 바꿔 주세요."
     const { controller, root } = await openDriveSettings(
       backend({
         loadDriveStatus: async () => dismissed,

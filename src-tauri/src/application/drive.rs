@@ -52,10 +52,25 @@ fn unavailable() -> AppError {
     )
 }
 
+/// The connection on file was made with a client that is no longer stored.
+fn reconnect_with_client() -> AppError {
+    AppError::new(
+        "DRIVE_RECONNECT_REQUIRED",
+        "Drive 연결에 쓸 Google 클라이언트가 없습니다. 설정의 Google Drive에서 클라이언트를 저장한 뒤 다시 연결해 주세요.",
+    )
+}
+
+fn client_rejected() -> AppError {
+    AppError::new(
+        "DRIVE_CLIENT_REJECTED",
+        "Google이 저장된 클라이언트 ID나 보안 비밀번호를 받아들이지 않았습니다. 설정의 Google Drive에서 클라이언트를 확인해 주세요. Drive가 연결돼 있으면 먼저 연결을 해제해야 바꿀 수 있습니다.",
+    )
+}
+
 fn client_locked() -> AppError {
     AppError::new(
         "DRIVE_CLIENT_LOCKED",
-        "Drive 연결을 해제한 뒤에 바꿀 수 있습니다.",
+        "Drive를 연결하는 중이거나 연결된 동안에는 바꿀 수 없습니다. 연결을 취소하거나 해제한 뒤에 바꿔 주세요.",
     )
 }
 
@@ -95,6 +110,7 @@ fn token_rejected(error: &AppError) -> bool {
 fn token_failure(failure: DriveTokenFailure, rejected: AppError) -> AppError {
     match failure {
         DriveTokenFailure::Rejected => rejected,
+        DriveTokenFailure::ClientRejected => client_rejected(),
         DriveTokenFailure::Unavailable => unavailable(),
     }
 }
@@ -406,7 +422,7 @@ impl DriveAccounts {
         // A connection made under the removed built-in client has nothing to renew with.
         let Some(client) = self.store.load_client().await? else {
             self.store.clear().await?;
-            return Err(reconnect_required());
+            return Err(reconnect_with_client());
         };
         match self.auth.refresh(&client, &tokens.refresh_token).await {
             Ok(renewed) => {
