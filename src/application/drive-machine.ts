@@ -1,4 +1,9 @@
-import type { DriveRecordingUpload, DriveStatus, DriveSyncResult } from "../domain/drive"
+import type {
+  DriveClientStatus,
+  DriveRecordingUpload,
+  DriveStatus,
+  DriveSyncResult,
+} from "../domain/drive"
 
 export type DriveConnection =
   | { readonly status: "unknown" }
@@ -27,6 +32,21 @@ export type DriveRecording =
   | { readonly status: "done"; readonly recordingId: string; readonly result: DriveRecordingUpload }
   | { readonly status: "failed"; readonly recordingId: string; readonly message: string }
 
+/** The Google OAuth client Drive needs; the secret never reaches the window. */
+export type DriveClient =
+  | { readonly status: "unknown" }
+  | { readonly status: "none" }
+  | { readonly status: "saved"; readonly clientId: string }
+
+/** The field a refused client points at; `null` when the refusal is about neither. */
+export type DriveClientField = "clientId" | "clientSecret"
+
+/** The latest client write: in flight, stored, or refused. Starting another write clears it. */
+export type DriveClientNotice =
+  | { readonly kind: "saving" }
+  | { readonly kind: "saved" }
+  | { readonly kind: "failed"; readonly field: DriveClientField | null; readonly message: string }
+
 export interface DriveState {
   readonly connection: DriveConnection
   readonly activity: DriveActivity
@@ -36,6 +56,8 @@ export interface DriveState {
   /** The preference write in flight; the settings switch waits for it. */
   readonly savingRecordings: boolean
   readonly recording: DriveRecording | null
+  readonly client: DriveClient
+  readonly clientNotice: DriveClientNotice | null
 }
 
 export type DriveEvent =
@@ -55,6 +77,14 @@ export type DriveEvent =
   | { readonly type: "syncFailed"; readonly jobId: string; readonly message: string }
   | { readonly type: "syncCleared" }
   | { readonly type: "reconnectRequired"; readonly message: string }
+  | { readonly type: "clientLoaded"; readonly status: DriveClientStatus }
+  | { readonly type: "clientSaveStarted" }
+  | { readonly type: "clientSaved"; readonly status: DriveClientStatus }
+  | {
+      readonly type: "clientFailed"
+      readonly field: DriveClientField | null
+      readonly message: string
+    }
   | { readonly type: "saveRecordingsStarted" }
   | { readonly type: "saveRecordingsSaved"; readonly status: DriveStatus }
   | { readonly type: "saveRecordingsFailed" }
@@ -70,7 +100,6 @@ export type DriveEvent =
       readonly message: string
     }
   | { readonly type: "recordingUploadCleared" }
-  | { readonly type: "signedOut" }
 
 export const initialDrive: DriveState = {
   connection: { status: "unknown" },
@@ -79,6 +108,8 @@ export const initialDrive: DriveState = {
   sync: null,
   savingRecordings: false,
   recording: null,
+  client: { status: "unknown" },
+  clientNotice: null,
 }
 
 function connectionOf(status: DriveStatus): DriveConnection {
@@ -87,10 +118,44 @@ function connectionOf(status: DriveStatus): DriveConnection {
     : { status: "disconnected", onboardingDismissed: status.onboardingDismissed }
 }
 
+function clientOf(status: DriveClientStatus): DriveClient {
+  return status.configured && status.clientId !== null
+    ? { status: "saved", clientId: status.clientId }
+    : { status: "none" }
+}
+
+/**
+ * The client cannot change while a connection exists or is being made: a
+ * refresh token only renews with the client that issued it.
+ */
+export function clientLocked({ connection, activity }: DriveState): boolean {
+  return connection.status === "connected" || activity === "connecting"
+}
+
 export function reduceDrive(state: DriveState, event: DriveEvent): DriveState {
   switch (event.type) {
     case "statusLoaded":
       return { ...state, connection: connectionOf(event.status) }
+    case "clientLoaded":
+      return { ...state, client: clientOf(event.status), clientNotice: null }
+    case "clientSaveStarted":
+      return state.client.status !== "unknown" &&
+        !clientLocked(state) &&
+        state.clientNotice?.kind !== "saving"
+        ? { ...state, clientNotice: { kind: "saving" } }
+        : state
+    case "clientSaved":
+      return state.clientNotice?.kind === "saving"
+        ? {
+            ...state,
+            client: clientOf(event.status),
+            clientNotice: event.status.configured ? { kind: "saved" } : null,
+          }
+        : state
+    case "clientFailed":
+      return state.clientNotice?.kind === "saving"
+        ? { ...state, clientNotice: { kind: "failed", field: event.field, message: event.message } }
+        : state
     case "connectStarted":
       return state.activity === "idle" && state.connection.status === "disconnected"
         ? { ...state, activity: "connecting", message: null }
@@ -189,8 +254,8 @@ export function reduceDrive(state: DriveState, event: DriveEvent): DriveState {
                 recordingId: state.recording.recordingId,
                 message: event.message,
               },
+        client: state.client,
+        clientNotice: state.clientNotice,
       }
-    case "signedOut":
-      return initialDrive
   }
 }

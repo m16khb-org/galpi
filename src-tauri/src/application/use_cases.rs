@@ -1,7 +1,6 @@
 use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::drive::DriveAccounts;
 use crate::application::error::AppError;
-use crate::application::gateway::AppAccessGate;
 use crate::application::jobs::JobRegistry;
 use crate::application::model::{
     EnvironmentStatus, RefinementResult, SetupResult, TranscriptImportResult, TranscriptionResult,
@@ -17,11 +16,10 @@ use crate::domain::chatgpt::{
     SignOutResult,
 };
 use crate::domain::drive::{
-    DriveFileId, DriveImport, DriveMeeting, DriveRecordingUpload, DriveStatus, DriveSyncResult,
-    MeetingKey,
+    DriveClientStatus, DriveFileId, DriveImport, DriveMeeting, DriveRecordingUpload, DriveStatus,
+    DriveSyncResult, MeetingKey,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
-use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
     SetupRequest, TranscriptImportRequest, TranscriptionRequest, validate_speaker_hint,
 };
@@ -51,7 +49,6 @@ pub struct Application {
     settings: Arc<dyn SettingsPort>,
     refinement: Arc<dyn RefinementPort>,
     chatgpt: ChatGptAccounts,
-    access: AppAccessGate,
     drive: DriveAccounts,
     jobs: JobRegistry,
     active_recording: tokio::sync::Mutex<Option<Uuid>>,
@@ -79,7 +76,6 @@ impl Application {
         settings: Arc<dyn SettingsPort>,
         refinement: Arc<dyn RefinementPort>,
         chatgpt: ChatGptAccounts,
-        access: AppAccessGate,
         drive: DriveAccounts,
     ) -> Self {
         Self {
@@ -91,7 +87,6 @@ impl Application {
             settings,
             refinement,
             chatgpt,
-            access,
             drive,
             jobs: JobRegistry::default(),
             active_recording: tokio::sync::Mutex::new(None),
@@ -99,24 +94,6 @@ impl Application {
             drive_imports: Mutex::new(HashMap::new()),
             finished_recordings: Mutex::new(HashMap::new()),
         }
-    }
-
-    /// Whether the stored gateway session opens the app; renews it once.
-    pub async fn load_app_access(&self) -> Result<AppAccess, AppError> {
-        self.access.restore().await
-    }
-
-    /// Resolves when the browser sign-in finishes, is cancelled, or times out.
-    pub async fn sign_in_to_gateway(&self) -> Result<AppAccess, AppError> {
-        self.access.sign_in().await
-    }
-
-    pub fn cancel_gateway_sign_in(&self) -> Result<(), AppError> {
-        self.access.cancel_sign_in()
-    }
-
-    pub async fn sign_out_of_gateway(&self) -> Result<(), AppError> {
-        self.access.sign_out().await
     }
 
     pub async fn diagnose(&self) -> Result<EnvironmentStatus, AppError> {
@@ -132,7 +109,6 @@ impl Application {
     }
 
     pub async fn prepare(&self, request: SetupRequest) -> Result<SetupResult, AppError> {
-        self.access.require()?;
         let request = if request.hugging_face_token.is_some() {
             request
         } else {
@@ -207,7 +183,6 @@ impl Application {
         target: Uuid,
         attendees: &[String],
     ) -> Result<RefinementResult, AppError> {
-        self.access.require()?;
         let artifacts = self.jobs.artifacts(target)?;
         let assistant = self.settings.load_assistant().await?.trimmed();
         let participants: Vec<Participant> = assistant
@@ -333,13 +308,31 @@ impl Application {
         self.drive.set_save_recordings(enabled).await
     }
 
+    /// Which Google client Drive uses, if one is saved.
+    pub async fn load_drive_client(&self) -> Result<DriveClientStatus, AppError> {
+        self.drive.client_status().await
+    }
+
+    /// Save the person's Google client. Refused while Drive is connected.
+    pub async fn save_drive_client(
+        &self,
+        client_id: &str,
+        client_secret: &str,
+    ) -> Result<DriveClientStatus, AppError> {
+        self.drive.save_client(client_id, client_secret).await
+    }
+
+    /// Remove the saved Google client. Refused while Drive is connected.
+    pub async fn clear_drive_client(&self) -> Result<DriveClientStatus, AppError> {
+        self.drive.clear_client().await
+    }
+
     /// Upload a recording this run finished, named by its recording id. The
     /// window never supplies a path: only a file the recorder reported can go.
     pub async fn upload_recording_to_drive(
         &self,
         recording_id: Uuid,
     ) -> Result<DriveRecordingUpload, AppError> {
-        self.access.require()?;
         let path = self
             .finished_recordings
             .lock()
@@ -355,15 +348,12 @@ impl Application {
         // The same key a later transcription of this file registers, so its
         // results land in the folder that holds the recording.
         let meeting = DriveMeeting::new(MeetingKey::local(&path), &path);
-        self.drive
-            .upload_recording(&self.access, &meeting, &path)
-            .await
+        self.drive.upload_recording(&meeting, &path).await
     }
 
     /// Resolves when the browser consent finishes, is cancelled, or times out.
     pub async fn connect_drive(&self) -> Result<DriveStatus, AppError> {
-        self.access.require()?;
-        self.drive.connect(&self.access).await
+        self.drive.connect().await
     }
 
     pub fn cancel_drive_operation(&self) -> Result<(), AppError> {
@@ -377,12 +367,11 @@ impl Application {
     /// Pick one recording in the desktop Picker and download it as job `job_id`,
     /// so the job's cancel stops both the consent wait and the download.
     pub async fn import_from_drive(&self, job_id: Uuid) -> Result<DriveImport, AppError> {
-        self.access.require()?;
         let (job, mut cancel) = self.jobs.claim_with_id(job_id)?;
         let job_id = job.id();
         let imported = self
             .drive
-            .import(&self.access, DrivePickerKind::Recording, &mut cancel)
+            .import(DrivePickerKind::Recording, &mut cancel)
             .await?;
         self.drive_imports
             .lock()
@@ -403,7 +392,6 @@ impl Application {
         job_id: Uuid,
         overwrite: bool,
     ) -> Result<DriveSyncResult, AppError> {
-        self.access.require()?;
         let artifacts = self.jobs.artifacts(job_id)?;
         let meeting = self
             .drive_meetings
@@ -412,9 +400,7 @@ impl Application {
             .get(&job_id)
             .cloned()
             .ok_or_else(|| AppError::new("ARTIFACT_NOT_FOUND", "완료된 결과를 찾지 못했습니다."))?;
-        self.drive
-            .sync(&self.access, &artifacts, &meeting, overwrite)
-            .await
+        self.drive.sync(&artifacts, &meeting, overwrite).await
     }
 
     fn remember_meeting(&self, job_id: Uuid, key: MeetingKey, source: &Path) {
@@ -449,7 +435,6 @@ impl Application {
         &self,
         request: TranscriptionRequest,
     ) -> Result<TranscriptionResult, AppError> {
-        self.access.require()?;
         validate_speaker_hint(&request.speaker_hint)
             .map_err(|error| AppError::new("INVALID_SPEAKER_HINT", error.to_string()))?;
         let drive_source = request
@@ -477,7 +462,6 @@ impl Application {
         &self,
         request: TranscriptImportRequest,
     ) -> Result<TranscriptImportResult, AppError> {
-        self.access.require()?;
         let (job, _unused_cancel) = self.jobs.claim_with_id(request.job_id)?;
         let job_id = job.id();
         let result = self
@@ -501,12 +485,11 @@ impl Application {
         job_id: Uuid,
         output_root: &str,
     ) -> Result<TranscriptImportResult, AppError> {
-        self.access.require()?;
         let (job, mut cancel) = self.jobs.claim_with_id(job_id)?;
         let job_id = job.id();
         let picked = self
             .drive
-            .import(&self.access, DrivePickerKind::Transcript, &mut cancel)
+            .import(DrivePickerKind::Transcript, &mut cancel)
             .await?;
         let artifacts = self
             .imports
@@ -632,7 +615,6 @@ impl Application {
         output_root: String,
         source: RecordingSource,
     ) -> Result<RecordingStatus, AppError> {
-        self.access.require()?;
         let mut active = self.active_recording.lock().await;
         if active.is_some() {
             return Err(AppError::new(

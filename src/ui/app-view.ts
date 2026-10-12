@@ -9,7 +9,6 @@ import type {
 } from "../domain/job"
 import { defaultRecordingSource, type RecordingSource } from "../domain/recording"
 import type { SpeakerForm, SpeakerMode } from "../domain/speaker"
-import { AccessScreenView } from "./access-screen"
 import { appTemplate } from "./app-template"
 import { AssistantSettingsView } from "./assistant-settings"
 import { ChatGptSettingsView } from "./chatgpt-settings"
@@ -32,7 +31,6 @@ export type BusyKind =
 
 export class AppView {
   readonly root: HTMLElement
-  readonly access: AccessScreenView
   readonly tokenSettings: TokenSettingsView
   readonly assistantSettings: AssistantSettingsView
   readonly chatGptSettings: ChatGptSettingsView
@@ -70,7 +68,6 @@ export class AppView {
   constructor(root: HTMLElement) {
     this.root = root
     this.root.innerHTML = appTemplate
-    this.access = new AccessScreenView(root)
     this.tokenSettings = new TokenSettingsView(root)
     this.assistantSettings = new AssistantSettingsView(root)
     this.chatGptSettings = new ChatGptSettingsView(root)
@@ -696,7 +693,6 @@ export class AppView {
       !this.driveConnected || this.jobBusy || this.recordingActive
     this.element<HTMLButtonElement>("#refine-button").disabled =
       !this.hasResult || !this.assistantKeyReady || this.jobBusy || this.recordingActive
-    this.access.setSignOutBlocked(this.jobBusy || this.recordingActive)
   }
 }
 

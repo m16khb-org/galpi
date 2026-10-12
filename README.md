@@ -71,25 +71,11 @@ bun run dev
 
 1. [Microsoft Visual C++ 2015–2022 x64 재배포 패키지](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)가 필요합니다. 앱에 포함되어 있지 않으며, INSTALL.md 절차가 함께 설치합니다.
 2. 빌드한 NSIS 설치 프로그램(`Galpi_<버전>_x64-setup.exe`)은 현재 사용자용으로 설치되므로 관리자 권한이 필요 없습니다.
-3. 아래 'Google 계정으로 로그인'과 '최초 엔진 준비'를 진행합니다.
+3. 아래 '최초 엔진 준비'를 진행합니다.
 
 Windows에서는 전사 엔진으로 `WhisperX`만 선택할 수 있습니다(Qwen3/MLX는 Apple Silicon 전용). 기본은 CPU이며, 설정에서 CUDA를 고를 수 있습니다. CUDA는 PyTorch cu128 빌드를 추가로 약 3.5 GB 내려받고 NVIDIA 드라이버가 필요합니다. CUDA를 고르면 음성 인식(CTranslate2 float16)과 정렬·화자분리가 모두 GPU에서 돌고, GPU 음성 인식이 실패하면 CPU int8로 한 번 다시 시도합니다.
 
-### 2. Google 계정으로 로그인
-
-Galpi를 사용하려면 auth-gateway를 거쳐 Google 계정으로 로그인해야 합니다. 로그인하기 전에는 로그인 화면만 보이고, 녹음·전사·전사문 가져오기·AI 증강·엔진 준비를 실행할 수 없습니다.
-
-1. 앱을 실행하면 나타나는 로그인 화면에서 **Google로 로그인**을 누릅니다.
-2. 시스템 기본 브라우저에서 Google 로그인을 마칩니다. 브라우저가 `127.0.0.1`의 로그인 응답 주소로 돌아오면 앱이 열립니다. Galpi는 Google 비밀번호를 보지 않습니다.
-3. 로그인 화면이 계속 보이면 **취소**를 누르고 다시 시도합니다.
-
-- 로그인한 Google 계정이라면 모두 사용할 수 있습니다.
-- 다음 실행 때는 저장된 로그인으로 바로 열립니다. 이때 앱은 auth-gateway에 로그인 갱신을 한 번 요청합니다.
-- auth-gateway에 연결할 수 없으면 저장된 로그인으로 계속 사용하며, 우측 상단 계정 표시에 `오프라인 · 저장된 로그인 사용`이 나타납니다. 저장된 로그인이 없는 첫 실행에서는 인터넷에 연결해야 로그인할 수 있습니다.
-- auth-gateway가 로그인을 거부하면(웹 서비스에서 로그아웃했거나 세션이 더 이상 유효하지 않은 경우) 저장된 로그인을 지우고 다시 로그인 화면을 보여 줍니다.
-- 우측 상단 **로그아웃**은 auth-gateway에 이 기기의 세션 종료를 요청한 뒤, 응답과 관계없이 이 컴퓨터에 저장된 로그인을 지웁니다. 녹음·전사·AI 증강·엔진 준비가 진행 중일 때는 로그아웃할 수 없습니다.
-
-### 3. 최초 엔진 준비
+### 2. 최초 엔진 준비
 
 1. 앱 우측 상단의 **설정**을 엽니다.
 2. 새 컴퓨터에서 화자분리 모델을 처음 받는다면 Hugging Face 토큰을 저장합니다.
@@ -98,7 +84,7 @@ Galpi를 사용하려면 auth-gateway를 거쳐 Google 계정으로 로그인해
 
 최초 준비에서는 앱 전용 Python 3.12 환경과 수 GB의 모델을 내려받을 수 있습니다. 이후에는 같은 앱 데이터 폴더와 모델 캐시를 재사용합니다. 두 프리셋은 서로 다른 가상환경(`engine/`, `engine/qwen3/`)에 설치되므로 한쪽을 준비해도 다른쪽에 영향을 주지 않습니다.
 
-### 4. Hugging Face 토큰
+### 3. Hugging Face 토큰
 
 화자분리 모델을 처음 내려받을 때만 필요합니다.
 
@@ -177,11 +163,13 @@ API Key 대신 ChatGPT 계정으로 로그인해 회의록 정제 모델을 사�
 > [!WARNING]
 > 음성 녹음과 전사(Qwen3·WhisperX 모두)는 로컬에서 처리됩니다. `AI 증강 실행`을 누르면 전사문, 이번 회의에서 선택한 참석자, 단어집, 사전 정보가 설정한 외부 API(ChatGPT 로그인 사용 시 OpenAI API)로 전송됩니다. 민감한 회의에서는 사용 중인 API 제공자의 보안·보존 정책을 먼저 확인하세요.
 
-### Google Drive 연결 (선택)
+### Google Drive 연결
 
-Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Galpi` 폴더에 자동으로 올릴 수 있습니다. 연결하지 않아도 다른 기능은 그대로 쓸 수 있습니다.
+Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Galpi` 폴더에 자동으로 올릴 수 있습니다. Drive를 연결하지 않아도 다른 기능은 그대로 쓸 수 있습니다.
 
-1. 로그인하면 나타나는 **Google Drive 연결** 카드에서 `Drive 연결`을 누릅니다. 카드를 닫았다면 `설정`의 **Google Drive**에서 연결합니다.
+Galpi에는 Google OAuth 클라이언트가 들어 있지 않습니다. Drive는 내 Google Cloud 프로젝트에서 만든 클라이언트를 한 번 저장한 뒤에만 연결됩니다. 준비 절차는 이 절 끝의 `Google Drive 사용 준비`에 있으니 먼저 읽어 주세요.
+
+1. 앱을 열면 나타나는 **Google Drive 연결** 카드에서 `Drive 연결`을 누릅니다. 클라이언트를 저장하기 전에는 이 자리에 `Google 클라이언트 설정` 버튼이 보이며, 저장하면 `Drive 연결`로 바뀝니다. 카드를 닫았다면 `설정`의 **Google Drive**에서 연결합니다.
 2. 시스템 브라우저에서 Drive 권한을 허용합니다. 연결이 끝나면 내 Drive에 `Galpi` 폴더가 생기고(이미 있으면 그 폴더를 씁니다), 상단에 연결한 계정이 표시됩니다.
 3. `Drive에서 가져오기`를 누르면 브라우저에서 Google Picker가 열립니다. 녹음 파일을 하나 고르면 이 컴퓨터로 내려받고, `전사 시작`으로 전사할 수 있습니다. Drive에 연결한 계정과 다른 계정에서 고른 파일은 가져오지 않습니다. AI 증강 패널의 `Drive에서 전사문 가져오기`도 같은 방식으로 Picker를 열며, txt·md 전사문 하나를 골라 이 컴퓨터로 내려받아 증강 대상으로 씁니다.
 4. Drive가 연결되어 있으면 전사, 전사문 가져오기, AI 증강이 끝날 때마다 결과(`.srt`, `_화자별.txt`, `_회의록.md`)가 `Galpi/<회의 이름>` 폴더에 올라갑니다. 같은 회의를 다시 처리하면 새 파일을 만들지 않고 같은 파일을 갱신합니다. 회의 이름은 녹음 파일 이름이며, `새로운 노트_화자별.txt` 같은 화자별 전사문은 `_화자별`을 뗀 `새로운 노트`가 회의 이름입니다(이 컴퓨터의 회의 폴더도 같습니다). Galpi가 올린 전사문을 Drive에서 골라 증강하면 회의록은 원래 그 회의의 Drive 폴더에 올라갑니다.
@@ -193,8 +181,27 @@ Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Ga
 - 녹음 업로드가 실패하면 녹음 영역에 이유와 `다시 올리기` 버튼이 나타나며, 로컬 녹음 파일은 그대로 남습니다. 이미 올린 녹음은 다시 올리지 않고, 그 사이 Drive의 사본이 바뀌었으면 덮어쓰지 않습니다. 긴 녹음도 디스크에서 4MB씩 읽어 이어 올리므로 파일 전체를 메모리에 올리지 않습니다.
 - Drive에서 고른 원본은 읽기만 하고 옮기거나 지우지 않습니다. 내려받은 사본은 앱 캐시의 `drive-imports` 폴더에 두며, 앱을 다시 실행하면 지웁니다.
 - `설정` → **Google Drive** → `연결 해제`를 누르면 Google에 토큰 폐기를 요청하고 로컬 연결 정보를 지웁니다. Drive에 올린 파일은 지우지 않습니다.
-- 코드 교환과 토큰 갱신은 Galpi 로그인 서버(auth-gateway)가 대신 처리합니다. 앱 소스에는 OAuth 클라이언트 보안 비밀번호가 없습니다.
+- 코드 교환과 토큰 갱신은 앱이 Google 토큰 엔드포인트(`oauth2.googleapis.com`)에 직접 보냅니다. 앱 소스에는 OAuth 클라이언트 ID도 보안 비밀번호도 들어 있지 않으며, 내가 저장한 클라이언트만 쓰고 인가 코드는 PKCE가 지킵니다.
 - 개인정보처리방침: <https://m16khb.dev/galpi/privacy/>
+
+#### Google Drive 사용 준비
+
+Drive를 연결하려면 내 Google Cloud 프로젝트의 OAuth 클라이언트(클라이언트 ID와 보안 비밀번호)가 필요합니다. 아래 순서로 한 번만 만들어 저장하면 됩니다.
+
+1. Google Cloud 콘솔에서 프로젝트를 만듭니다.
+2. `API 및 서비스`에서 Google Drive API와 Google Picker API를 사용 설정합니다.
+3. `Google 인증 플랫폼`에서 앱 정보와 대상(외부)을 설정합니다. 게시 상태가 `테스트`이면 Drive 연결이 7일 뒤 끊기므로, 앱을 `프로덕션`으로 게시합니다. `drive.file`은 민감하지 않은 범위입니다.
+4. `클라이언트`에서 애플리케이션 유형 `데스크톱 앱`으로 클라이언트를 만들고, 보안 비밀번호를 바로 복사합니다. 콘솔은 만든 직후에만 보여 줍니다.
+5. 만든 클라이언트 ID와 보안 비밀번호를 `설정` → `Google Drive` → `Google 클라이언트`에 붙여 넣고 `저장`합니다. Drive가 연결돼 있으면 먼저 `연결 해제`합니다.
+6. `Drive 연결`을 눌러 동의합니다. 범위는 `drive.file` 하나입니다. 방금 만든 클라이언트는 Google에 반영되기까지 몇 분 걸릴 수 있고, 그 사이 동의 화면에서 400 오류가 나면 잠시 뒤 다시 시도합니다.
+7. 저장한 클라이언트를 없애려면 `클라이언트 삭제`를 누릅니다(연결 해제 필요). 삭제하면 클라이언트를 다시 저장하기 전까지 Drive에 연결할 수 없습니다.
+
+클라이언트를 바꾸면 Drive에 새 Galpi 폴더가 생깁니다. `drive.file`은 그 클라이언트(프로젝트)가 만들거나 연 파일에만 접근하므로, 이전 클라이언트로 올린 파일은 이어지지 않습니다. 회의 폴더와 녹음은 새 폴더에 다시 올라가고, 충돌과 최신 여부 판정도 새로 시작합니다. 이전 클라이언트로 올린 파일은 보이지 않을 뿐 Drive에서 지워지지는 않습니다.
+
+- 클라이언트를 저장하거나 삭제하는 일은 Drive 연결을 해제한 상태에서만 할 수 있습니다. refresh token은 발급한 클라이언트에서만 갱신되기 때문입니다. 연결 해제는 저장한 클라이언트를 지우지 않습니다.
+- 보안 비밀번호는 저장한 뒤 화면에 다시 보여 주지 않습니다. 저장된 동안에는 입력칸 대신 사용 중인 클라이언트 ID와 `클라이언트 삭제`만 보입니다.
+- 클라이언트를 저장한 채 클라이언트 설정이 없는 이전 버전으로 되돌리면, 이전 버전은 저장한 클라이언트를 모르므로 토큰을 갱신하지 못하고 `DRIVE_UNAVAILABLE`로 실패합니다. 이때는 `연결 해제`한 뒤 다시 연결하세요.
+- 이전 빌드는 앱에 들어 있던 클라이언트로 Drive에 연결했습니다. 그 클라이언트는 더 이상 없으므로, 이전 빌드에서 만든 Drive 연결은 갱신할 수 없습니다. 앱을 처음 실행하면 그 연결이 해제되며, 위 순서대로 내 클라이언트를 저장하고 `Drive 연결`을 다시 눌러야 합니다.
 
 ## 처리 단계와 사용 모델
 
@@ -251,8 +258,10 @@ Drive에 올려 둔 녹음을 가져와 전사하고, 결과를 내 Drive의 `Ga
 
 - 음성과 전사 산출물은 사용자가 선택한 로컬 폴더에 저장됩니다.
 - 전사·정렬·화자분리 모델(Qwen3, WhisperX, pyannote)은 Galpi의 앱 전용 Hugging Face 캐시에 저장됩니다.
-- Hugging Face 토큰, AI 증강 API 키, ChatGPT 로그인 토큰, Google 로그인 세션(auth-gateway)은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens`, `com.m16khb.galpi:gateway-session` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)과 Google 로그인 세션도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이나 Galpi 로그인이 노출될 수 있습니다. 로그인한 Google 계정의 이메일은 두 플랫폼 모두 `settings.json`에 저장됩니다.
+- Hugging Face 토큰, AI 증강 API 키, ChatGPT 로그인 토큰은 플랫폼에 따라 다르게 저장됩니다. Windows에서는 Windows Credential Manager의 `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens` 항목에 저장되며, 긴 값은 여러 항목에 나누어 저장됩니다. macOS에서는 Application Support 아래 설정 파일(`settings.json`)에 `0600` 권한으로 저장됩니다. ChatGPT 토큰(access·refresh)도 이 파일에 평문으로 들어가므로, 파일이 유출되면 계정의 API 접근이 노출될 수 있습니다.
+- 이전 버전이 남긴 Credential Manager의 로그인 세션 항목 `com.m16khb.galpi:gateway-session`과 설정 파일의 `gateway*` 키는 더 쓰지 않으며 지워도 됩니다.
 - Google Drive 토큰도 같은 경로로 저장됩니다. Windows에서는 `com.m16khb.galpi:drive-session` 항목에, macOS에서는 `settings.json`에 평문으로 저장됩니다. 연결한 Drive 계정의 이메일과 `Galpi` 폴더 ID는 두 플랫폼 모두 `settings.json`에 저장됩니다. 녹음을 마치면 Drive에 바로 저장하는 선택(`driveSaveRecordings`)도 `settings.json`에 있으며, 연결을 해제하면 꺼집니다.
+- 내 Google 클라이언트의 보안 비밀번호는 Windows에서 `com.m16khb.galpi:drive-client-secret` 항목에, macOS에서는 `settings.json`에 평문으로 저장됩니다. 클라이언트 ID(`driveClientId`)는 두 플랫폼 모두 `settings.json`에 있으며, Drive 연결을 해제해도 남습니다. `클라이언트 삭제`를 누르면 둘 다 지웁니다.
 - macOS에서는 자격 증명을 아직 Keychain으로 암호화하지 않습니다. Keychain은 항목 접근 권한을 앱의 코드 서명에 묶는데, 현재 빌드는 ad-hoc 서명이라 빌드마다 서명이 달라져 사용자가 업데이트할 때마다 접근 허용 창을 다시 보게 됩니다. macOS의 Keychain 전환은 Developer ID 서명과 함께 적용할 예정입니다.
 - AI 회의록을 실행하지 않으면 전사문은 외부 LLM API로 전송되지 않습니다.
 - worker는 고정된 프로그램과 argv로 실행되며 셸 문자열을 실행하지 않습니다.

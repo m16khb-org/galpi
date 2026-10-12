@@ -8,7 +8,7 @@ use super::super::secrets::Secret;
 use super::LocalSettingsStore;
 use crate::application::error::AppError;
 use crate::application::ports::DriveSessionStore;
-use crate::domain::drive::{DriveConnection, DriveStatus, DriveTokens};
+use crate::domain::drive::{DriveClient, DriveConnection, DriveStatus, DriveTokens};
 use async_trait::async_trait;
 
 impl LocalSettingsStore {
@@ -108,14 +108,51 @@ impl DriveSessionStore for LocalSettingsStore {
         })
         .await
     }
+
+    /// Both halves must be present and well formed; anything less (an
+    /// interrupted save, a hand-edited file) reads as "no client saved".
+    async fn load_client(&self) -> Result<Option<DriveClient>, AppError> {
+        let id = {
+            let state = self.load().await?;
+            state
+                .as_ref()
+                .and_then(|settings| settings.drive_client_id.clone())
+        };
+        let Some(id) = id else {
+            return Ok(None);
+        };
+        let Some(secret) = self.secret(Secret::DriveClientSecret).await? else {
+            return Ok(None);
+        };
+        Ok(DriveClient::parse(&id, &secret).ok())
+    }
+
+    /// The id goes first (cleared), then the secret, then the id again, so an
+    /// interruption at any point reads as "no custom client" instead of a mix of
+    /// an old id and a new secret.
+    async fn save_client(&self, client: DriveClient) -> Result<(), AppError> {
+        self.update(|settings| settings.drive_client_id = None)
+            .await?;
+        self.store_secret(Secret::DriveClientSecret, Some(client.secret()))
+            .await?;
+        self.update(|settings| settings.drive_client_id = Some(client.id().to_owned()))
+            .await
+    }
+
+    /// Id first, so an interruption leaves no client saved.
+    async fn clear_client(&self) -> Result<(), AppError> {
+        self.update(|settings| settings.drive_client_id = None)
+            .await?;
+        self.store_secret(Secret::DriveClientSecret, None).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::LocalSettingsStore;
-    use crate::adapters::outbound::secrets::{InMemorySecrets, SecretStore, SettingsFile};
+    use crate::adapters::outbound::secrets::{InMemorySecrets, Secret, SecretStore, SettingsFile};
     use crate::application::ports::DriveSessionStore;
-    use crate::domain::drive::{DriveConnection, DriveStatus, DriveTokens};
+    use crate::domain::drive::{DriveClient, DriveConnection, DriveStatus, DriveTokens};
     use std::path::PathBuf;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -300,8 +337,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_settings_file_from_before_drive_still_parses() -> TestResult {
-        // Given: a document written by a build without any Drive field
+    async fn a_settings_file_with_keys_this_build_no_longer_knows_still_parses() -> TestResult {
+        // Given: a document from an older build, with sign-in keys this build
+        // dropped and no Drive field at all
         let directory = directory();
         let path = directory.join("settings.json");
         tokio::fs::create_dir_all(&directory).await?;
@@ -322,6 +360,124 @@ mod tests {
             }
         );
         assert_eq!(store.load_tokens().await?, None);
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    fn own_client(secret: &str) -> Result<DriveClient, Box<dyn std::error::Error>> {
+        DriveClient::parse("123-abc.apps.googleusercontent.com", secret)
+            .map_err(|error| format!("{error:?}").into())
+    }
+
+    #[tokio::test]
+    async fn drive_client_stored_survives_a_restart_with_the_secret_outside_the_file() -> TestResult
+    {
+        // Given: an OS secret store, so the secret is kept out of the settings file
+        let directory = directory();
+        let path = directory.join("settings.json");
+        let secrets = Arc::new(InMemorySecrets::default());
+        store(path.clone(), secrets.clone())
+            .save_client(own_client("test-client-secret")?)
+            .await?;
+
+        // When: the next launch reads it back
+        let restarted = store(path.clone(), secrets);
+
+        // Then: the client is there, and the file holds the id but never the secret
+        assert_eq!(
+            restarted.load_client().await?,
+            Some(own_client("test-client-secret")?)
+        );
+        let document = tokio::fs::read_to_string(&path).await?;
+        assert!(
+            document.contains("\"driveClientId\":\"123-abc"),
+            "{document}"
+        );
+        assert!(!document.contains("test-client-secret"), "{document}");
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn drive_client_stored_is_kept_when_drive_is_disconnected() -> TestResult {
+        // Given: a connection and the person's own client
+        let directory = directory();
+        let path = directory.join("settings.json");
+        let store = store(path.clone(), Arc::new(SettingsFile));
+        store.save_client(own_client("test-client-secret")?).await?;
+        store
+            .save_connection(connection(), tokens("galpi-test-refresh-1"))
+            .await?;
+
+        // When
+        store.clear().await?;
+
+        // Then: only the connection went; the client stays for the next connect
+        assert_eq!(store.load_connection().await?, None);
+        assert_eq!(
+            store.load_client().await?,
+            Some(own_client("test-client-secret")?)
+        );
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn drive_client_stored_alone_keeps_the_settings_file() -> TestResult {
+        // Given: the client is the only thing on file
+        let directory = directory();
+        let path = directory.join("settings.json");
+        let store = store(path.clone(), Arc::new(SettingsFile));
+
+        // When
+        store.save_client(own_client("test-client-secret")?).await?;
+
+        // Then: the document is not treated as empty and removed
+        assert!(tokio::fs::try_exists(&path).await?);
+        tokio::fs::remove_dir_all(directory).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn drive_client_stored_is_gone_after_removal() -> TestResult {
+        // Given
+        let directory = directory();
+        let path = directory.join("settings.json");
+        let secrets = Arc::new(InMemorySecrets::default());
+        let store = store(path.clone(), secrets.clone());
+        store.save_client(own_client("test-client-secret")?).await?;
+
+        // When
+        store.clear_client().await?;
+
+        // Then: both halves are gone, and nothing stays on file
+        assert_eq!(store.load_client().await?, None);
+        assert_eq!(secrets.read(Secret::DriveClientSecret)?, None);
+        assert!(!tokio::fs::try_exists(&path).await?);
+        tokio::fs::remove_dir_all(directory).await.ok();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn drive_client_stored_overwrite_interrupted_reads_as_none() -> TestResult {
+        // Given: a saved client, and an overwrite that stopped after it wrote the
+        // new secret but before it wrote the new id (id cleared, secret replaced)
+        let directory = directory();
+        let path = directory.join("settings.json");
+        let store = store(path.clone(), Arc::new(SettingsFile));
+        store.save_client(own_client("test-client-secret")?).await?;
+        store
+            .update(|settings| settings.drive_client_id = None)
+            .await?;
+        store
+            .store_secret(Secret::DriveClientSecret, Some("newer-test-secret"))
+            .await?;
+
+        // When
+        let loaded = store.load_client().await?;
+
+        // Then: never an old id with a new secret; no client counts as saved
+        assert_eq!(loaded, None);
         tokio::fs::remove_dir_all(directory).await?;
         Ok(())
     }

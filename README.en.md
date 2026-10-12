@@ -71,25 +71,11 @@ bun run dev
 
 1. The [Microsoft Visual C++ 2015–2022 x64 redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) is required. The app does not bundle it; the INSTALL.md steps install it.
 2. The NSIS installer you build (`Galpi_<version>_x64-setup.exe`) installs for the current user, so it needs no administrator rights.
-3. Follow "2. Sign in with Google" and "3. Prepare the local engine" below.
+3. Follow "2. Prepare the local engine" below.
 
 On Windows the only transcription engine is `WhisperX` (Qwen3/MLX requires Apple Silicon). It runs on CPU by default; CUDA is optional in settings. CUDA downloads an additional PyTorch cu128 build of about 3.5 GB and requires an NVIDIA driver. With CUDA, speech recognition (CTranslate2 float16), alignment, and diarization all run on the GPU; a failed GPU recognition retries once on CPU int8.
 
-### 2. Sign in with Google
-
-Galpi requires a Google sign-in through auth-gateway. Until you sign in, only the login screen is shown, and recording, transcription, transcript import, AI augmentation, and engine preparation cannot run.
-
-1. On the login screen that opens with the app, select `Google로 로그인` (Sign in with Google).
-2. Finish the Google sign-in in your default browser. The app opens once the browser returns to the sign-in callback on `127.0.0.1`. Galpi never sees your Google password.
-3. If the login screen stays up, select `취소` (Cancel) and try again.
-
-- Any signed-in Google account may use the app.
-- Later launches open with the stored sign-in. The app asks auth-gateway to renew it once at startup.
-- If auth-gateway cannot be reached, the stored sign-in keeps the app usable and the account chip in the top-right corner reads `오프라인 · 저장된 로그인 사용` (Offline · using the stored sign-in). A first launch without a stored sign-in needs an internet connection to sign in.
-- If auth-gateway refuses the sign-in (you signed out of the web service, or the session is no longer valid), the stored sign-in is deleted and the login screen returns.
-- `로그아웃` (Sign out) in the top-right corner asks auth-gateway to end this device's session, then deletes the sign-in stored on this computer whatever the answer. Signing out is unavailable while recording, transcription, AI augmentation, or engine preparation is running.
-
-### 3. Prepare the local engine
+### 2. Prepare the local engine
 
 1. Open `설정` (Settings) from the top-right corner.
 2. On a new computer, save a Hugging Face token if the diarization model requires access.
@@ -98,7 +84,7 @@ Galpi requires a Google sign-in through auth-gateway. Until you sign in, only th
 
 The first setup installs an app-specific Python 3.12 environment and may download several gigabytes of models. Later runs reuse the same app data directory and model cache. The two presets install into separate virtual environments (`engine/`, `engine/qwen3/`), so preparing one does not affect the other.
 
-### 4. Hugging Face token
+### 3. Hugging Face token
 
 The token is only required when the diarization model is downloaded for the first time.
 
@@ -177,11 +163,13 @@ You can sign in with a ChatGPT account instead of an API key to use it as the mi
 > [!WARNING]
 > Audio recording and transcription (both the Qwen3 and WhisperX presets) stay on your computer. When you select `AI 증강 실행`, the transcript, participants selected for this meeting, glossary, and background context are sent to the configured external API (the OpenAI API when ChatGPT sign-in is used). Review the provider's security and retention policy before using this feature with sensitive meetings.
 
-### Connect Google Drive (optional)
+### Connect Google Drive
 
-You can import recordings stored in Drive and have the results uploaded to a `Galpi` folder in your Drive automatically. Everything else works without connecting.
+You can import recordings stored in Drive and have the results uploaded to a `Galpi` folder in your Drive automatically. Everything else works without connecting Drive.
 
-1. After signing in, select `Drive 연결` (Connect Drive) on the **Google Drive 연결** (Connect Google Drive) card. If you dismissed the card, connect from **Google Drive** in `설정` (Settings).
+Galpi ships with no Google OAuth client. Drive connects only after you save a client from your own Google Cloud project, once. The setup steps are in "Set up Google Drive" at the end of this section; read them first.
+
+1. Select `Drive 연결` (Connect Drive) on the **Google Drive 연결** (Connect Google Drive) card that appears when the app opens. Until you save a client, the card shows a `Google 클라이언트 설정` (Set up Google client) button in its place, and it changes to `Drive 연결` once a client is saved. If you dismissed the card, connect from **Google Drive** in `설정` (Settings).
 2. Allow Drive access in the system browser. Galpi then creates a `Galpi` folder in your Drive (or reuses the existing one) and shows the connected account in the top bar.
 3. Select `Drive에서 가져오기` (Import from Drive) to open the Google Picker in the browser. Pick one recording; Galpi downloads it to this computer, and `전사 시작` (Start transcription) transcribes it. A file picked with a different account than the connected one is not imported. `Drive에서 전사문 가져오기` (Import transcript from Drive) in the augmentation panel opens the Picker the same way: pick one txt/md transcript and Galpi downloads it and uses it as the augmentation target.
 4. While Drive is connected, every finished transcription, transcript import, and AI augmentation uploads its results (`.srt`, `_화자별.txt`, `_회의록.md`) to `Galpi/<meeting name>`. Processing the same meeting again updates the same files instead of creating new ones. The meeting name is the recording's file name: a speaker transcript such as `새로운 노트_화자별.txt` belongs to the meeting `새로운 노트` (the local meeting folder is named the same). When you pick a transcript that Galpi uploaded, the minutes go into the Drive folder of the meeting it came from.
@@ -193,8 +181,27 @@ You can import recordings stored in Drive and have the results uploaded to a `Ga
 - If a recording upload fails, the recording area shows the reason and a `다시 올리기` (Upload again) button, and the local recording stays untouched. A recording already in Drive is not uploaded again, and a Drive copy that changed in the meantime is not overwritten. Long recordings are read from disk in 4 MB chunks and sent as a resumable upload, so the whole file is never held in memory.
 - The original file you picked is only read; it is never moved or deleted. The downloaded copy lives in the app cache's `drive-imports` folder and is removed on the next launch.
 - `설정` (Settings) → **Google Drive** → `연결 해제` (Disconnect) asks Google to revoke the token and removes the local connection. Files uploaded to Drive stay there.
-- The Galpi sign-in server (auth-gateway) performs the code exchange and token refresh. The app source contains no OAuth client secret.
+- The app sends the code exchange and token refresh straight to Google's token endpoint (`oauth2.googleapis.com`). The app source contains no OAuth client ID or client secret; Galpi uses only the client you saved, and PKCE protects the authorization code.
 - Privacy policy: <https://m16khb.dev/galpi/privacy/>
+
+#### Set up Google Drive
+
+To connect Drive you need an OAuth client (client ID and client secret) from your own Google Cloud project. Create and save it once, as follows.
+
+1. Create a project in the Google Cloud console.
+2. Under `APIs & Services`, enable the Google Drive API and the Google Picker API.
+3. In `Google Auth Platform`, set up the app information and the audience (External). While the publishing status is `Testing`, the Drive connection breaks after 7 days, so publish the app to `In production`. `drive.file` is a non-sensitive scope.
+4. Under `Clients`, create a client with the application type `Desktop app` and copy the client secret right away. The console shows it only immediately after creation.
+5. Paste the client ID and client secret into `설정` (Settings) → `Google Drive` → `Google 클라이언트` (Google client) and select `저장` (Save). If Drive is connected, select `연결 해제` (Disconnect) first.
+6. Select `Drive 연결` (Connect Drive) and grant consent. The only scope is `drive.file`. A client you just created can take a few minutes to take effect at Google; if the consent screen shows a 400 error in the meantime, try again shortly.
+7. To remove the saved client, select `클라이언트 삭제` (Delete client); Drive must be disconnected first. After that, Drive cannot connect until you save a client again.
+
+Changing the client creates a new Galpi folder in Drive. `drive.file` reaches only files that the client (project) created or opened, so files uploaded with the previous client do not carry over: meeting folders and recordings upload again into the new folder, and conflict and latest-version checks start over. Files uploaded with the previous client become invisible to Galpi but are not deleted from Drive.
+
+- You can save or delete the client only while Drive is disconnected, because a refresh token can be renewed only by the client that issued it. Disconnecting does not erase the saved client.
+- Galpi never shows the client secret again after you save it. While a client is saved, the settings sheet shows the client ID in use and `클라이언트 삭제` instead of the input fields.
+- If you roll back to an earlier version that has no client setting while a client is saved, that version does not know your client, cannot refresh the token, and fails with `DRIVE_UNAVAILABLE`. Disconnect and connect again.
+- Earlier builds connected Drive with a client built into the app. That client no longer exists, so a Drive connection made by an earlier build cannot be renewed. Galpi disconnects it at the first launch; save your own client as above and select `Drive 연결` again.
 
 ## Processing stages and models
 
@@ -251,8 +258,10 @@ The completion screen can open each artifact or reveal its output folder in Find
 
 - Audio and transcription artifacts are stored in the local folder you choose.
 - Transcription, alignment, and diarization models (Qwen3, WhisperX, pyannote) are stored in Galpi's app-specific Hugging Face cache.
-- The Hugging Face token, the AI augmentation API key, the ChatGPT sign-in tokens, and the Google sign-in session (auth-gateway) are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, `com.m16khb.galpi:chatgpt-tokens`, and `com.m16khb.galpi:gateway-session`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens and the Google sign-in session are kept in that file in plain text, so a leaked file can expose API access for the account or the Galpi sign-in. The signed-in Google account's email is kept in `settings.json` on both platforms.
+- The Hugging Face token, the AI augmentation API key, and the ChatGPT sign-in tokens are stored differently per platform. On Windows they live in Windows Credential Manager under `com.m16khb.galpi:hugging-face-token`, `com.m16khb.galpi:assistant-api-key`, and `com.m16khb.galpi:chatgpt-tokens`; long values are split across several entries. On macOS they are stored in the Application Support settings file (`settings.json`) with `0600` permissions. The ChatGPT access and refresh tokens are kept in that file in plain text, so a leaked file can expose API access for the account.
+- The sign-in session entry `com.m16khb.galpi:gateway-session` that an earlier version left in Credential Manager, and the `gateway*` keys in the settings file, are no longer used and can be deleted.
 - The Google Drive tokens follow the same path: the `com.m16khb.galpi:drive-session` entry on Windows, and plain text in `settings.json` on macOS. The connected Drive account's email and the `Galpi` folder id are kept in `settings.json` on both platforms. So is the choice to save recordings to Drive right after recording (`driveSaveRecordings`); disconnecting clears it.
+- The client secret of your own Google client is stored in the `com.m16khb.galpi:drive-client-secret` entry on Windows, and as plain text in `settings.json` on macOS. The client ID (`driveClientId`) is in `settings.json` on both platforms and survives disconnecting Drive. `클라이언트 삭제` removes both.
 - On macOS credentials are not encrypted with the Keychain yet. The Keychain ties access to an item to the app's code signature, and ad-hoc signing changes that signature on every build, so each update would ask users to re-authorize a token they never touched. The macOS move to the Keychain lands together with Developer ID signing.
 - Transcripts are not sent to an external LLM API unless AI minutes are run.
 - The worker launches fixed programs with explicit argv and does not execute shell strings.

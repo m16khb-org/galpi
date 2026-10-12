@@ -1,18 +1,16 @@
 use super::chatgpt::ChatGptAccounts;
 use super::drive::DriveAccounts;
 use super::error::AppError;
-use super::gateway::AppAccessGate;
 use super::model::{CompletedTranscription, EnvironmentStatus};
 use super::ports::{
     ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, DriveAuthPort, DriveFilesPort,
-    DriveSessionStore, EnginePort, GatewayAuthPort, GatewaySessionStore, RecordingPort,
-    RefinementJob, RefinementPort, SettingsPort, TranscriptImportPort, TranscriptionPort,
+    DriveSessionStore, EnginePort, RecordingPort, RefinementJob, RefinementPort, SettingsPort,
+    TranscriptImportPort, TranscriptionPort,
 };
 use super::use_cases::Application;
 use crate::domain::artifact::{ArtifactKind, Artifacts};
 use crate::domain::chatgpt::AssistantTransport;
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
-use crate::domain::gateway::AppAccess;
 use crate::domain::job::{
     SetupRequest, SpeakerHint, TranscriptImportRequest, TranscriptionRequest,
 };
@@ -81,7 +79,6 @@ struct FakePort {
     ready_presets: Mutex<Vec<EnginePreset>>,
     behavior: TranscriptionBehavior,
     chatgpt: chatgpt::ChatGptFake,
-    gateway: gateway::GatewayFake,
     drive: drive::DriveFake,
 }
 
@@ -105,26 +102,12 @@ impl FakePort {
             seen_prepare_engines: Mutex::new(Vec::new()),
             ready_presets: Mutex::new(vec![EnginePreset::Qwen3, EnginePreset::WhisperX]),
             chatgpt: chatgpt::ChatGptFake::new(),
-            gateway: gateway::GatewayFake::default(),
             drive: drive::DriveFake::default(),
             behavior,
         }
     }
 
-    /// An application someone has already signed in to.
     fn application(self: &Arc<Self>) -> Application {
-        self.application_with(AppAccess::SignedIn {
-            email: None,
-            offline: false,
-        })
-    }
-
-    /// An application as it starts: signed out until `load_app_access`.
-    fn signed_out_application(self: &Arc<Self>) -> Application {
-        self.application_with(AppAccess::SignedOut)
-    }
-
-    fn application_with(self: &Arc<Self>, access: AppAccess) -> Application {
         let engine: Arc<dyn EnginePort> = self.clone();
         let transcription: Arc<dyn TranscriptionPort> = self.clone();
         let imports: Arc<dyn TranscriptImportPort> = self.clone();
@@ -138,7 +121,6 @@ impl FakePort {
         let drive_auth: Arc<dyn DriveAuthPort> = self.clone();
         let drive_files: Arc<dyn DriveFilesPort> = self.clone();
         let drive_store: Arc<dyn DriveSessionStore> = self.clone();
-        let gate = self.gate(access);
         Application::new(
             engine,
             transcription,
@@ -148,21 +130,8 @@ impl FakePort {
             settings,
             refinement,
             ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock.clone()),
-            gate,
             DriveAccounts::new(drive_auth, drive_files, drive_store, clock),
         )
-    }
-
-    /// The sign-in gate over this port's gateway fakes and clock, opened as given.
-    fn gate(self: &Arc<Self>, access: AppAccess) -> AppAccessGate {
-        let gateway_auth: Arc<dyn GatewayAuthPort> = self.clone();
-        let gateway_store: Arc<dyn GatewaySessionStore> = self.clone();
-        let clock: Arc<dyn ClockPort> = self.clone();
-        let gate = AppAccessGate::new(gateway_auth, gateway_store, clock);
-        if let Ok(mut opened) = gate.access.lock() {
-            *opened = access;
-        }
-        gate
     }
 }
 
@@ -921,5 +890,4 @@ async fn save_compute_device_is_delegated_to_the_settings_port() -> Result<(), A
 
 mod chatgpt;
 mod drive;
-mod gateway;
 mod recording;

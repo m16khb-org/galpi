@@ -2,7 +2,7 @@
 
 use super::super::browser_sign_in::loopback::Callback;
 use super::super::browser_sign_in::pkce::code_challenge;
-use super::{CLIENT_ID, SCOPE, connect_failed};
+use super::{SCOPE, connect_failed};
 use crate::application::error::AppError;
 use crate::application::ports::{DriveAuthorize, DrivePickerKind};
 use crate::domain::drive::{DriveFileId, parse_picked_ids};
@@ -35,7 +35,7 @@ pub(super) fn consent_url(
     {
         let mut query = url.query_pairs_mut();
         query
-            .append_pair("client_id", CLIENT_ID)
+            .append_pair("client_id", request.client.id())
             .append_pair("redirect_uri", redirect_uri)
             .append_pair("response_type", "code")
             .append_pair("scope", SCOPE)

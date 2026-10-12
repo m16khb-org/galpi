@@ -9,9 +9,10 @@ use crate::domain::artifact::ArtifactKind;
 use crate::domain::chatgpt::{
     ChatGptModel, ChatGptPreferences, ChatGptSettings, ChatGptSignInEvent, SignOutResult,
 };
-use crate::domain::drive::{DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult};
+use crate::domain::drive::{
+    DriveClientStatus, DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult,
+};
 use crate::domain::engine::{ComputeDevice, EnginePreset};
-use crate::domain::gateway::AppAccess;
 use crate::domain::job::{SetupRequest, TranscriptImportRequest, TranscriptionRequest};
 use crate::domain::recording::RecordingSource;
 use crate::domain::roster::AssistantSettings;
@@ -229,29 +230,30 @@ pub async fn sign_out_of_chatgpt(
     application.sign_out_of_chatgpt().await
 }
 
-/// Whether the stored sign-in opens the app. Renews it once with the gateway.
+/// Which Google client Drive uses. The secret never leaves the host.
 #[tauri::command]
-pub async fn load_app_access(application: State<'_, Application>) -> Result<AppAccess, AppError> {
-    application.load_app_access().await
-}
-
-/// Opens the system browser and resolves once the sign-in completes, fails,
-/// is cancelled, or times out.
-#[tauri::command]
-pub async fn sign_in_to_gateway(
+pub async fn load_drive_client(
     application: State<'_, Application>,
-) -> Result<AppAccess, AppError> {
-    application.sign_in_to_gateway().await
+) -> Result<DriveClientStatus, AppError> {
+    application.load_drive_client().await
 }
 
 #[tauri::command]
-pub async fn cancel_gateway_sign_in(application: State<'_, Application>) -> Result<(), AppError> {
-    application.cancel_gateway_sign_in()
+pub async fn save_drive_client(
+    application: State<'_, Application>,
+    client_id: String,
+    client_secret: String,
+) -> Result<DriveClientStatus, AppError> {
+    application
+        .save_drive_client(&client_id, &client_secret)
+        .await
 }
 
 #[tauri::command]
-pub async fn sign_out_of_gateway(application: State<'_, Application>) -> Result<(), AppError> {
-    application.sign_out_of_gateway().await
+pub async fn clear_drive_client(
+    application: State<'_, Application>,
+) -> Result<DriveClientStatus, AppError> {
+    application.clear_drive_client().await
 }
 
 /// Whether Drive is connected and, if not, whether the onboarding card was dismissed.

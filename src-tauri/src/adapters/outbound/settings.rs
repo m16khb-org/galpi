@@ -16,7 +16,6 @@ use tauri::AppHandle;
 
 mod chatgpt;
 mod drive;
-mod gateway;
 
 #[derive(Debug)]
 pub struct LocalSettingsStore {
@@ -108,8 +107,8 @@ impl LocalSettingsStore {
                 Secret::HuggingFaceToken => settings.hugging_face_token.clone(),
                 Secret::AssistantApiKey => settings.assistant_api_key.clone(),
                 Secret::ChatGptTokens => settings.chatgpt_tokens.clone(),
-                Secret::GatewaySession => settings.gateway_session.clone(),
                 Secret::DriveSession => settings.drive_session.clone(),
+                Secret::DriveClientSecret => settings.drive_client_secret.clone(),
             })
         };
         let Some(value) = legacy else {
@@ -170,14 +169,6 @@ impl LocalSettingsStore {
                 }
                 settings.chatgpt_tokens_stored = present;
             }
-            Secret::GatewaySession => {
-                if let Some(value) = retained {
-                    settings.gateway_session = value;
-                } else {
-                    settings.gateway_session = None;
-                }
-                settings.gateway_session_stored = present;
-            }
             Secret::DriveSession => {
                 if let Some(value) = retained {
                     settings.drive_session = value;
@@ -185,6 +176,14 @@ impl LocalSettingsStore {
                     settings.drive_session = None;
                 }
                 settings.drive_session_stored = present;
+            }
+            Secret::DriveClientSecret => {
+                if let Some(value) = retained {
+                    settings.drive_client_secret = value;
+                } else {
+                    settings.drive_client_secret = None;
+                }
+                settings.drive_client_secret_stored = present;
             }
         })
         .await
@@ -198,8 +197,8 @@ impl LocalSettingsStore {
                 Secret::HuggingFaceToken => settings.hugging_face_token_stored == present,
                 Secret::AssistantApiKey => settings.assistant_api_key_stored == present,
                 Secret::ChatGptTokens => settings.chatgpt_tokens_stored == present,
-                Secret::GatewaySession => settings.gateway_session_stored == present,
                 Secret::DriveSession => settings.drive_session_stored == present,
+                Secret::DriveClientSecret => settings.drive_client_secret_stored == present,
             })
         };
         if already {
@@ -209,8 +208,8 @@ impl LocalSettingsStore {
             Secret::HuggingFaceToken => settings.hugging_face_token_stored = present,
             Secret::AssistantApiKey => settings.assistant_api_key_stored = present,
             Secret::ChatGptTokens => settings.chatgpt_tokens_stored = present,
-            Secret::GatewaySession => settings.gateway_session_stored = present,
             Secret::DriveSession => settings.drive_session_stored = present,
+            Secret::DriveClientSecret => settings.drive_client_secret_stored = present,
         })
         .await
     }
@@ -240,13 +239,13 @@ impl LocalSettingsStore {
                     settings.chatgpt_tokens_stored,
                     settings.chatgpt_tokens.is_some(),
                 ),
-                Secret::GatewaySession => (
-                    settings.gateway_session_stored,
-                    settings.gateway_session.is_some(),
-                ),
                 Secret::DriveSession => (
                     settings.drive_session_stored,
                     settings.drive_session.is_some(),
+                ),
+                Secret::DriveClientSecret => (
+                    settings.drive_client_secret_stored,
+                    settings.drive_client_secret.is_some(),
                 ),
             })
         };
@@ -315,9 +314,6 @@ struct LocalSettings {
     chatgpt_model: Option<String>,
     chatgpt_reasoning_effort: Option<String>,
     chatgpt_welcome_acknowledged: bool,
-    gateway_email: Option<String>,
-    gateway_session: Option<String>,
-    gateway_session_stored: bool,
     drive_email: Option<String>,
     drive_permission_id: Option<String>,
     drive_folder_id: Option<String>,
@@ -325,6 +321,9 @@ struct LocalSettings {
     drive_save_recordings: bool,
     drive_session: Option<String>,
     drive_session_stored: bool,
+    drive_client_id: Option<String>,
+    drive_client_secret: Option<String>,
+    drive_client_secret_stored: bool,
 }
 
 impl LocalSettings {
@@ -353,9 +352,6 @@ impl LocalSettings {
             && self.chatgpt_model.is_none()
             && self.chatgpt_reasoning_effort.is_none()
             && !self.chatgpt_welcome_acknowledged
-            && self.gateway_email.is_none()
-            && self.gateway_session.is_none()
-            && !self.gateway_session_stored
             && self.drive_email.is_none()
             && self.drive_permission_id.is_none()
             && self.drive_folder_id.is_none()
@@ -363,6 +359,9 @@ impl LocalSettings {
             && !self.drive_save_recordings
             && self.drive_session.is_none()
             && !self.drive_session_stored
+            && self.drive_client_id.is_none()
+            && self.drive_client_secret.is_none()
+            && !self.drive_client_secret_stored
     }
 }
 

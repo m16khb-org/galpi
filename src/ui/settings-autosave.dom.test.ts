@@ -124,12 +124,6 @@ function createBackend(
     },
     openChatGptUsagePage: async () => undefined,
     listenToChatGptEvents: async () => () => undefined,
-    loadAppAccess: async () => ({ state: "signedIn", email: null, offline: false }),
-    signInToGateway: async () => {
-      throw new Error("unused gateway sign-in")
-    },
-    cancelGatewaySignIn: async () => undefined,
-    signOutOfGateway: async () => undefined,
     loadDriveStatus: async () => ({ state: "disconnected", onboardingDismissed: true }),
     connectDrive: async () => {
       throw new Error("unused Drive connect")
@@ -137,6 +131,13 @@ function createBackend(
     cancelDriveOperation: async () => undefined,
     disconnectDrive: async () => ({ state: "disconnected", onboardingDismissed: true }),
     dismissDriveOnboarding: async () => ({ state: "disconnected", onboardingDismissed: true }),
+    loadDriveClient: async () => ({ configured: false, clientId: null }),
+    saveDriveClient: async () => {
+      throw new Error("unused Drive client save")
+    },
+    clearDriveClient: async () => {
+      throw new Error("unused Drive client clear")
+    },
     importFromDrive: async () => {
       throw new Error("unused Drive import")
     },

@@ -9,11 +9,10 @@ use crate::domain::chatgpt::{
     SignInGrant, SignInRequest,
 };
 use crate::domain::drive::{
-    DriveAccount, DriveConnection, DriveFileId, DriveStatus, DriveTokenFailure, DriveTokens,
-    MeetingKey, RemoteFile,
+    DriveAccount, DriveClient, DriveConnection, DriveFileId, DriveStatus, DriveTokenFailure,
+    DriveTokens, MeetingKey, RemoteFile,
 };
 use crate::domain::engine::{ComputeDevice, EnginePreset, EngineSelection};
-use crate::domain::gateway::{GatewayGrant, GatewayRefreshFailure, GatewayTokens};
 use crate::domain::job::{SetupRequest, SpeakerHint};
 use crate::domain::recording::RecordingSource;
 use crate::domain::roster::{AssistantSettings, GlossaryEntry, Participant};
@@ -196,33 +195,6 @@ pub trait ChatGptEvents: Send + Sync {
     fn emit(&self, event: ChatGptSignInEvent) -> Result<(), AppError>;
 }
 
-/// The auth-gateway's desktop sign-in: browser sign-in, renewal, revocation.
-#[async_trait]
-pub trait GatewayAuthPort: Send + Sync {
-    /// Run the browser sign-in until the callback is exchanged, the user
-    /// cancels, or it times out.
-    async fn sign_in(&self, cancel: &mut oneshot::Receiver<()>) -> Result<GatewayGrant, AppError>;
-    /// Exchange the refresh token; the result carries the rotated refresh token.
-    async fn refresh(&self, refresh_token: &str) -> Result<GatewayTokens, GatewayRefreshFailure>;
-    /// Best-effort server-side sign-out; never fails the caller.
-    async fn revoke(&self, refresh_token: &str);
-}
-
-/// The stored gateway session. Only the token methods touch the secret store.
-#[async_trait]
-pub trait GatewaySessionStore: Send + Sync {
-    async fn load_email(&self) -> Result<Option<String>, AppError>;
-    async fn load_tokens(&self) -> Result<Option<GatewayTokens>, AppError>;
-    async fn save_session(
-        &self,
-        tokens: GatewayTokens,
-        email: Option<String>,
-    ) -> Result<(), AppError>;
-    async fn replace_tokens(&self, tokens: GatewayTokens) -> Result<(), AppError>;
-    /// Forget the tokens and the email.
-    async fn clear(&self) -> Result<(), AppError>;
-}
-
 pub trait ClockPort: Send + Sync {
     fn now_unix(&self) -> u64;
 }
@@ -242,6 +214,8 @@ pub struct DriveAuthorize {
     pub picker: Option<DrivePickerKind>,
     /// The connected account's email, so the Picker opens on that account.
     pub login_hint: Option<String>,
+    /// The person's own client; Drive has none built in.
+    pub client: DriveClient,
 }
 
 /// A completed consent, ready to exchange. Holds the one-time code, so it has
@@ -252,10 +226,12 @@ pub struct DriveCallback {
     pub redirect_uri: String,
     /// The files chosen in the Picker; empty for the plain grant.
     pub picked: Vec<DriveFileId>,
+    /// The client the consent was asked with; the exchange must use the same one.
+    pub client: DriveClient,
 }
 
-/// Google consent through the system browser, and the token exchange the
-/// auth-gateway performs for Galpi, which holds no client secret.
+/// Google consent through the system browser and the token exchange at
+/// Google's token endpoint.
 #[async_trait]
 pub trait DriveAuthPort: Send + Sync {
     /// Open the consent page and wait for the callback, the cancellation, or
@@ -265,16 +241,12 @@ pub trait DriveAuthPort: Send + Sync {
         request: &DriveAuthorize,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<DriveCallback, AppError>;
-    /// `bearer` is the gateway access token that vouches for the request.
-    async fn exchange(
-        &self,
-        bearer: &str,
-        callback: &DriveCallback,
-    ) -> Result<DriveTokens, DriveTokenFailure>;
-    /// The result keeps `refresh_token` when Google does not rotate it.
+    async fn exchange(&self, callback: &DriveCallback) -> Result<DriveTokens, DriveTokenFailure>;
+    /// The result keeps `refresh_token` when Google does not rotate it. `client`
+    /// must be the one that issued it.
     async fn refresh(
         &self,
-        bearer: &str,
+        client: &DriveClient,
         refresh_token: &str,
     ) -> Result<DriveTokens, DriveTokenFailure>;
     /// Best-effort revocation at Google; never fails the caller.
@@ -413,4 +385,12 @@ pub trait DriveSessionStore: Send + Sync {
     /// Forget the tokens, the connection, and the recordings choice; the
     /// onboarding choice stays.
     async fn clear(&self) -> Result<(), AppError>;
+    /// The person's saved client, or `None` while none is saved. A
+    /// half-written client counts as none.
+    async fn load_client(&self) -> Result<Option<DriveClient>, AppError>;
+    /// Replace the saved client. An interruption leaves no client saved,
+    /// never a mix of an old id and a new secret.
+    async fn save_client(&self, client: DriveClient) -> Result<(), AppError>;
+    /// Remove the saved client. `clear` does not do this.
+    async fn clear_client(&self) -> Result<(), AppError>;
 }

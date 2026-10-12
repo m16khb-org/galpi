@@ -75,11 +75,6 @@ impl ChatGptFake {
         }
     }
 
-    /// Move the shared fake clock forward.
-    pub(super) fn advance(&self, seconds: u64) {
-        self.now.fetch_add(seconds, Ordering::Relaxed);
-    }
-
     /// Mirrors a worker that fails the run after being asked once.
     pub(super) fn refine_outcome(&self) -> Result<(), AppError> {
         match lock(&self.refine_failure)?.as_ref() {

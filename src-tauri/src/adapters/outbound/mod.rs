@@ -3,7 +3,6 @@ pub mod chatgpt;
 pub mod desktop;
 pub mod drive;
 mod environment;
-pub mod gateway;
 pub mod import;
 mod model_cache;
 mod paths;

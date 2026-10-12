@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Window } from "happy-dom"
 
-import type { AppAccess, BackendPort } from "../domain/backend"
+import type { BackendPort } from "../domain/backend"
 import type { ChatGptModel, ChatGptSettings } from "../domain/chatgpt"
 import { AppView } from "./app-view"
 import { AppController } from "./controller"
@@ -15,8 +15,6 @@ const signedOutChatGpt: ChatGptSettings = {
   welcomeAcknowledged: false,
   account: { state: "signedOut", email: null },
 }
-
-const openAccess: AppAccess = { state: "signedIn", email: "dev@example.com", offline: false }
 
 function unavailableBackend(): BackendPort {
   const unavailable = () => Promise.reject(new Error("no native runtime"))
@@ -55,15 +53,14 @@ function unavailableBackend(): BackendPort {
     signOutOfChatGpt: unavailable,
     openChatGptUsagePage: unavailable,
     listenToChatGptEvents: unavailable,
-    loadAppAccess: unavailable,
-    signInToGateway: unavailable,
-    cancelGatewaySignIn: unavailable,
-    signOutOfGateway: unavailable,
     loadDriveStatus: unavailable,
     connectDrive: unavailable,
     cancelDriveOperation: unavailable,
     disconnectDrive: unavailable,
     dismissDriveOnboarding: unavailable,
+    loadDriveClient: unavailable,
+    saveDriveClient: unavailable,
+    clearDriveClient: unavailable,
     importFromDrive: unavailable,
     importTranscriptFromDrive: unavailable,
     syncMeetingToDrive: unavailable,
@@ -83,32 +80,49 @@ function createHarness(backend: BackendPort): { controller: AppController; root:
   return { controller: new AppController(backend, new AppView(root)), root }
 }
 
-describe("AppController startup without a native runtime", () => {
-  test("the login screen asks for a restart and never starts a sign-in", async () => {
-    // Given: every backend call, starting with the event subscription, rejects
-    let signIns = 0
+describe("AppController startup", () => {
+  test("the work screen loads without any sign-in", async () => {
+    // Given: a runtime that answers the event subscriptions and diagnose
+    const calls: string[] = []
     const { controller, root } = createHarness({
       ...unavailableBackend(),
-      signInToGateway: () => {
-        signIns += 1
+      listenToJobs: async () => () => undefined,
+      listenToRecordingFailures: async () => () => undefined,
+      listenToChatGptEvents: async () => () => undefined,
+      diagnose: () => {
+        calls.push("diagnose")
+        return Promise.reject(new Error("no environment"))
+      },
+    })
+
+    // When: the window starts
+    await controller.start()
+
+    // Then: the work screen is loaded straight away
+    expect(calls).toEqual(["diagnose"])
+    expect((root.querySelector(".app-shell") as HTMLElement).hasAttribute("inert")).toBe(false)
+    controller.stop()
+  })
+
+  test("without a native runtime the error banner asks for a restart", async () => {
+    // Given: every backend call, starting with the event subscription, rejects
+    let diagnoses = 0
+    const { controller, root } = createHarness({
+      ...unavailableBackend(),
+      diagnose: () => {
+        diagnoses += 1
         return Promise.reject(new Error("no native runtime"))
       },
     })
 
-    // When: the window starts and the login action fires anyway
+    // When: the window starts
     await controller.start()
-    ;(root.querySelector('[data-action="sign-in-gateway"]') as HTMLElement).click()
-    for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
 
-    // Then: the failure is on the login screen, which offers nothing but a restart
-    expect((root.querySelector("#access-screen") as HTMLElement).hidden).toBe(false)
-    const status = root.querySelector("#access-status") as HTMLElement
-    expect(status.textContent).toContain("네이티브 런타임")
-    expect(status.dataset["state"]).toBe("error")
-    expect((root.querySelector("#access-sign-in-button") as HTMLElement).hidden).toBe(true)
-    expect((root.querySelector("#access-retry-button") as HTMLElement).hidden).toBe(true)
-    expect((root.querySelector(".app-shell") as HTMLElement).hasAttribute("inert")).toBe(true)
-    expect(signIns).toBe(0)
+    // Then: the banner says so and nothing else is attempted
+    const banner = root.querySelector("#app-error") as HTMLElement
+    expect(banner.hidden).toBe(false)
+    expect(banner.textContent).toContain("네이티브 런타임")
+    expect(diagnoses).toBe(0)
     controller.stop()
   })
 })
@@ -189,7 +203,6 @@ describe("AppController engine preset", () => {
       signOutOfChatGpt: unavailable,
       openChatGptUsagePage: unavailable,
       listenToChatGptEvents: async () => () => undefined,
-      loadAppAccess: async () => openAccess,
     }
     const controller = new AppController(backend as unknown as BackendPort, new AppView(root))
     await controller.start()
@@ -299,7 +312,6 @@ describe("AppController transcript import", () => {
       signOutOfChatGpt: unavailable,
       openChatGptUsagePage: unavailable,
       listenToChatGptEvents: async () => () => undefined,
-      loadAppAccess: async () => openAccess,
     }
     const controller = new AppController(backend as unknown as BackendPort, new AppView(root))
     await controller.start()
@@ -389,7 +401,6 @@ describe("AppController ChatGPT sign-in", () => {
           defaultReasoningEffort: null,
         },
       ]),
-      loadAppAccess: async () => openAccess,
       ...overrides,
     }
   }
@@ -676,7 +687,6 @@ describe("AppController compute device", () => {
       listenToJobs: async () => () => undefined,
       listenToRecordingFailures: async () => () => undefined,
       listenToChatGptEvents: async () => () => undefined,
-      loadAppAccess: async () => openAccess,
     }
     const controller = new AppController(backend, new AppView(root))
     await controller.start()

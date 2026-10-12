@@ -34,15 +34,19 @@ const SERVICE: &str = "com.m16khb.galpi";
 
 /// One stored credential.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "`DriveClientSecret` names the OAuth client's secret, not the enum"
+)]
 pub enum Secret {
     HuggingFaceToken,
     AssistantApiKey,
     /// The serialized ChatGPT OAuth tokens.
     ChatGptTokens,
-    /// The serialized auth-gateway session.
-    GatewaySession,
     /// The serialized Google Drive OAuth tokens.
     DriveSession,
+    /// The secret of the Google OAuth client the person saved for Drive.
+    DriveClientSecret,
 }
 
 impl Secret {
@@ -55,8 +59,8 @@ impl Secret {
             Self::HuggingFaceToken => "hugging-face-token",
             Self::AssistantApiKey => "assistant-api-key",
             Self::ChatGptTokens => "chatgpt-tokens",
-            Self::GatewaySession => "gateway-session",
             Self::DriveSession => "drive-session",
+            Self::DriveClientSecret => "drive-client-secret",
         }
     }
 }

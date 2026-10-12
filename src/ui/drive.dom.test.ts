@@ -3,6 +3,7 @@ import { Window } from "happy-dom"
 
 import type { BackendPort, TranscriptionRequest } from "../domain/backend"
 import type {
+  DriveClientStatus,
   DriveImport,
   DriveRecordingUpload,
   DriveStatus,
@@ -39,6 +40,11 @@ const connected: DriveStatus = {
 }
 const fresh: DriveStatus = { state: "disconnected", onboardingDismissed: false }
 const dismissed: DriveStatus = { state: "disconnected", onboardingDismissed: true }
+const noClient: DriveClientStatus = { configured: false, clientId: null }
+const savedClient: DriveClientStatus = {
+  configured: true,
+  clientId: "123-abc.apps.googleusercontent.com",
+}
 
 const transcribed: TranscriptionResult = {
   jobId: "transcription-1",
@@ -143,15 +149,14 @@ function backend(overrides: Partial<BackendPort>, calls: string[] = []): Backend
     signOutOfChatGpt: unused("signOutOfChatGpt"),
     openChatGptUsagePage: unused("openChatGptUsagePage"),
     listenToChatGptEvents: async () => () => undefined,
-    loadAppAccess: async () => ({ state: "signedIn", email: "dev@example.com", offline: false }),
-    signInToGateway: unused("signInToGateway"),
-    cancelGatewaySignIn: unused("cancelGatewaySignIn"),
-    signOutOfGateway: unused("signOutOfGateway"),
     loadDriveStatus: async () => connected,
     connectDrive: unused("connectDrive"),
     cancelDriveOperation: record("cancelDriveOperation", undefined),
     disconnectDrive: unused("disconnectDrive"),
     dismissDriveOnboarding: record("dismissDriveOnboarding", dismissed),
+    loadDriveClient: async () => savedClient,
+    saveDriveClient: unused("saveDriveClient"),
+    clearDriveClient: unused("clearDriveClient"),
     importFromDrive: unused("importFromDrive"),
     importTranscriptFromDrive: unused("importTranscriptFromDrive"),
     syncMeetingToDrive: async (jobId, overwrite) => {
@@ -252,25 +257,11 @@ describe("Drive onboarding and settings", () => {
     // Then
     expect(visible(root, "#drive-onboarding")).toBe(false)
     expect(visible(root, "#drive-chip")).toBe(true)
-    // The signed-in account already shows the address; the chip only says it is connected
-    expect(pick(root, "#drive-account").textContent).toBe("연결됨")
+    // The chip names the connected Drive account
+    expect(pick(root, "#drive-account").textContent).toBe("dev@example.com")
     expect(pick(root, "#drive-chip").title).toBe("dev@example.com")
     expect(visible(root, "#drive-import-button")).toBe(true)
     expect(root.ownerDocument.activeElement?.id).toBe("drive-import-button")
-    controller.stop()
-  })
-
-  test("names the Drive account in the chip when it is not the signed-in one", async () => {
-    // Given: Drive connected with another Google account than the Galpi sign-in
-    const { controller, root } = await mount(
-      backend({
-        loadDriveStatus: async () => ({ ...connected, email: "team@example.com" }),
-      }),
-    )
-
-    // Then
-    expect(pick(root, "#drive-account").textContent).toBe("team@example.com")
-    expect(pick(root, "#drive-chip").title).toBe("team@example.com")
     controller.stop()
   })
 
@@ -317,24 +308,6 @@ describe("Drive onboarding and settings", () => {
     expect(calls.filter((call) => call === "cancelDriveOperation")).toHaveLength(1)
     expect(visible(root, "#drive-settings-cancel-button")).toBe(false)
     expect(visible(root, "#drive-settings-connect-button")).toBe(true)
-    controller.stop()
-  })
-
-  test("a Drive command refused for sign-in returns to the login screen", async () => {
-    // Given
-    const { controller, root } = await mount(
-      backend({
-        loadDriveStatus: async () => fresh,
-        connectDrive: failWith("AUTH_REQUIRED", "Galpi를 사용하려면 Google로 로그인해 주세요."),
-      }),
-    )
-
-    // When
-    await click(root, "#drive-connect-button")
-
-    // Then
-    expect(visible(root, "#access-sign-in-button")).toBe(true)
-    expect(pick(root, ".app-shell").hasAttribute("inert")).toBe(true)
     controller.stop()
   })
 
@@ -1186,6 +1159,493 @@ describe("Drive settings: save recordings", () => {
     // Then
     expect(toggle(root).disabled).toBe(true)
     expect(toggle(root).checked).toBe(false)
+    controller.stop()
+  })
+})
+
+const VALID_ID = "123-abc.apps.googleusercontent.com"
+const VALID_SECRET = "test-client-secret"
+
+async function openDriveSettings(port: BackendPort) {
+  const app = await mount(port)
+  await click(app.root, '[data-action="open-settings"]')
+  await click(app.root, "#settings-tab-drive")
+  return app
+}
+
+function typeClient(root: HTMLElement, id: string, secret: string): void {
+  pick<HTMLInputElement>(root, "#drive-client-id").value = id
+  pick<HTMLInputElement>(root, "#drive-client-secret").value = secret
+}
+
+/** Disconnected Drive with no client saved: the state the client setup starts from. */
+const SETUP = { loadDriveStatus: async () => dismissed, loadDriveClient: async () => noClient }
+
+describe("Drive client settings", () => {
+  test("Drive client fields are disabled with a lock note while Drive is connected", async () => {
+    // Given: Drive is connected, so the client cannot change
+    const { controller, root } = await openDriveSettings(backend({}))
+
+    // Then
+    expect(pick<HTMLButtonElement>(root, "#drive-client-remove-button").disabled).toBe(true)
+    expect(visible(root, "#drive-client-lock")).toBe(true)
+    expect(pick(root, "#drive-client-lock").textContent).toBe(
+      "Drive 연결을 해제한 뒤에 바꿀 수 있습니다.",
+    )
+    expect(pick(root, "#drive-client-status").textContent).toBe(
+      `Google 클라이언트를 쓰는 중입니다 · ${VALID_ID}`,
+    )
+    controller.stop()
+  })
+
+  test("Drive client controls are disabled while the connection consent waits", async () => {
+    // Given: Drive is disconnected and a client is saved, so the remove button is open
+    const consent = Promise.withResolvers<DriveStatus>()
+    const { controller, root } = await openDriveSettings(
+      backend({ loadDriveStatus: async () => dismissed, connectDrive: () => consent.promise }),
+    )
+    expect(pick<HTMLButtonElement>(root, "#drive-client-remove-button").disabled).toBe(false)
+    expect(visible(root, "#drive-client-lock")).toBe(false)
+
+    // When
+    await click(root, "#drive-settings-connect-button")
+
+    // Then
+    for (const selector of [
+      "#drive-client-id",
+      "#drive-client-secret",
+      "#drive-client-save-button",
+      "#drive-client-remove-button",
+    ]) {
+      expect(pick<HTMLInputElement>(root, selector).disabled).toBe(true)
+    }
+    expect(visible(root, "#drive-client-lock")).toBe(true)
+    consent.reject({ code: "CANCELLED", message: "사용자가 작업을 취소했습니다." })
+    await settle()
+    controller.stop()
+  })
+
+  test("Drive client without a saved one asks for the setup, in words and without an error tone", async () => {
+    // Given / When
+    const { controller, root } = await openDriveSettings(backend(SETUP))
+
+    // Then: the section is titled as the required step and carries no 선택 label
+    expect(pick(root, "#drive-client-title").textContent).toBe("Google 클라이언트")
+    expect(pick(root, "#drive-client").textContent).not.toContain("선택")
+    expect(pick(root, "#drive-client-help").textContent).toContain("만드는 방법")
+    expect(pick(root, "#drive-client-help").textContent).toContain("다시 보여 주지 않습니다")
+    expect(pick(root, "#drive-client-status").textContent).toBe("Google 클라이언트가 아직 없습니다.")
+    expect(pick(root, "#drive-client-status").dataset["state"]).toBe("default")
+    expect(visible(root, "#drive-client-id")).toBe(true)
+    expect(visible(root, "#drive-client-save-button")).toBe(true)
+    expect(visible(root, "#drive-client-remove-button")).toBe(false)
+    expect(visibleText(root)).not.toContain("기본 클라이언트")
+    expect(visibleText(root)).not.toContain("기본값으로")
+    controller.stop()
+  })
+
+  test("Drive client save empties both fields, says 저장됨, and moves focus to the remove button", async () => {
+    // Given
+    const saved: string[][] = []
+    const { controller, root } = await openDriveSettings(
+      backend({
+        ...SETUP,
+        saveDriveClient: async (clientId, clientSecret) => {
+          saved.push([clientId, clientSecret])
+          return savedClient
+        },
+      }),
+    )
+    typeClient(root, VALID_ID, VALID_SECRET)
+    pick(root, "#drive-client-save-button").focus()
+
+    // When
+    await click(root, "#drive-client-save-button")
+
+    // Then: the host got both values; the window keeps neither
+    expect(saved).toEqual([[VALID_ID, VALID_SECRET]])
+    expect(pick<HTMLInputElement>(root, "#drive-client-id").value).toBe("")
+    expect(pick<HTMLInputElement>(root, "#drive-client-secret").value).toBe("")
+    expect(pick(root, "#drive-client-status").textContent).toBe("저장됨")
+    expect(visible(root, "#drive-client-form")).toBe(false)
+    expect(visible(root, "#drive-client-remove-button")).toBe(true)
+    expect(root.ownerDocument.activeElement?.id).toBe("drive-client-remove-button")
+    controller.stop()
+  })
+
+  test("Drive client saving turns the setup entry into the connect button", async () => {
+    // Given: the card is up and asks for a client first
+    const { controller, root } = await mount(
+      backend({
+        loadDriveStatus: async () => fresh,
+        loadDriveClient: async () => noClient,
+        saveDriveClient: async () => savedClient,
+      }),
+    )
+    expect(pick(root, "#drive-connect-button").textContent).toContain("Google 클라이언트 설정")
+
+    // When
+    await click(root, '[data-action="open-settings"]')
+    await click(root, "#settings-tab-drive")
+    typeClient(root, VALID_ID, VALID_SECRET)
+    await click(root, "#drive-client-save-button")
+
+    // Then
+    expect(pick(root, "#drive-connect-button").textContent).toContain("Drive 연결")
+    expect(pick(root, "#drive-connect-button").textContent).not.toContain("클라이언트")
+    expect(visible(root, "#drive-settings-connect-button")).toBe(true)
+    controller.stop()
+  })
+
+  test("Drive client saved hides the fields and save, and keeps only the remove button", async () => {
+    // Given / When: a client was saved earlier
+    const { controller, root } = await openDriveSettings(
+      backend({ loadDriveStatus: async () => dismissed }),
+    )
+
+    // Then
+    expect(visible(root, "#drive-client-id")).toBe(false)
+    expect(visible(root, "#drive-client-secret")).toBe(false)
+    expect(visible(root, "#drive-client-save-button")).toBe(false)
+    expect(visible(root, "#drive-client-remove-button")).toBe(true)
+    expect(pick(root, "#drive-client-remove-button").textContent).toBe("클라이언트 삭제")
+    expect(pick(root, "#drive-client-status").textContent).toBe(
+      `Google 클라이언트를 쓰는 중입니다 · ${VALID_ID}`,
+    )
+    controller.stop()
+  })
+
+  test("Drive client remove button is hidden while no client is saved", async () => {
+    // Given / When
+    const { controller, root } = await openDriveSettings(backend(SETUP))
+
+    // Then
+    expect(visible(root, "#drive-client-remove-button")).toBe(false)
+    expect(visible(root, "#drive-client-id")).toBe(true)
+    expect(visible(root, "#drive-client-save-button")).toBe(true)
+    controller.stop()
+  })
+
+  test("Drive client secret field is a labelled password input that browsers leave alone", async () => {
+    // Given / When
+    const { controller, root } = await openDriveSettings(backend(SETUP))
+
+    // Then
+    const secret = pick<HTMLInputElement>(root, "#drive-client-secret")
+    expect(secret.getAttribute("type")).toBe("password")
+    expect(secret.getAttribute("autocomplete")).toBe("off")
+    expect(secret.getAttribute("spellcheck")).toBe("false")
+    const id = pick<HTMLInputElement>(root, "#drive-client-id")
+    expect(id.getAttribute("autocomplete")).toBe("off")
+    expect(id.getAttribute("spellcheck")).toBe("false")
+    expect(pick(root, 'label[for="drive-client-id"]').textContent).toBe("클라이언트 ID")
+    expect(pick(root, 'label[for="drive-client-secret"]').textContent).toBe("보안 비밀번호")
+    controller.stop()
+  })
+
+  test("Drive client format error marks the wrong field and keeps what was typed", async () => {
+    // Given: the host refuses the client ID
+    const message = "클라이언트 ID는 숫자-문자.apps.googleusercontent.com 형태여야 합니다."
+    const { controller, root } = await openDriveSettings(
+      backend({ ...SETUP, saveDriveClient: failWith("DRIVE_CLIENT_INVALID", message) }),
+    )
+    typeClient(root, "not-an-id", VALID_SECRET)
+
+    // When
+    await click(root, "#drive-client-save-button")
+
+    // Then: the message names the field, only that field is invalid, and nothing was cleared
+    const id = pick<HTMLInputElement>(root, "#drive-client-id")
+    const secret = pick<HTMLInputElement>(root, "#drive-client-secret")
+    expect(pick(root, "#drive-client-error").textContent).toBe(message)
+    expect(id.getAttribute("aria-invalid")).toBe("true")
+    expect(id.getAttribute("aria-describedby")).toContain("drive-client-error")
+    expect(id.getAttribute("aria-describedby")).toContain("drive-client-help")
+    expect(secret.hasAttribute("aria-invalid")).toBe(false)
+    expect(secret.getAttribute("aria-describedby")).toBe("drive-client-help")
+    expect(id.value).toBe("not-an-id")
+    expect(secret.value).toBe(VALID_SECRET)
+    expect(visible(root, "#drive-client-form")).toBe(true)
+    controller.stop()
+  })
+
+  test("Drive client secret error marks the secret field, and a good retry clears the mark", async () => {
+    // Given: the first attempt is refused, the second accepted
+    const message = "보안 비밀번호에 공백이 있으면 안 됩니다."
+    let attempts = 0
+    const { controller, root } = await openDriveSettings(
+      backend({
+        ...SETUP,
+        saveDriveClient: async () => {
+          attempts += 1
+          if (attempts === 1) throw { code: "DRIVE_CLIENT_INVALID", message }
+          return savedClient
+        },
+      }),
+    )
+    typeClient(root, VALID_ID, "fake secret value")
+
+    // When
+    await click(root, "#drive-client-save-button")
+
+    // Then
+    expect(pick(root, "#drive-client-secret").getAttribute("aria-invalid")).toBe("true")
+    expect(pick(root, "#drive-client-id").hasAttribute("aria-invalid")).toBe(false)
+    expect(pick(root, "#drive-client-error").textContent).toBe(message)
+
+    // When
+    typeClient(root, VALID_ID, VALID_SECRET)
+    await click(root, "#drive-client-save-button")
+
+    // Then
+    expect(pick(root, "#drive-client-secret").hasAttribute("aria-invalid")).toBe(false)
+    expect(pick(root, "#drive-client-error").textContent).toBe("")
+    expect(pick(root, "#drive-client-status").textContent).toBe("저장됨")
+    controller.stop()
+  })
+
+  test("Drive client refusal while locked shows the host's message without marking a field", async () => {
+    // Given: the host says Drive is connected although the window thought otherwise
+    const message = "Drive 연결을 해제한 뒤에 바꿀 수 있습니다."
+    const { controller, root } = await openDriveSettings(
+      backend({ ...SETUP, saveDriveClient: failWith("DRIVE_CLIENT_LOCKED", message) }),
+    )
+    typeClient(root, VALID_ID, VALID_SECRET)
+
+    // When
+    await click(root, "#drive-client-save-button")
+
+    // Then
+    expect(pick(root, "#drive-client-error").textContent).toBe(message)
+    expect(pick(root, "#drive-client-id").hasAttribute("aria-invalid")).toBe(false)
+    expect(pick(root, "#drive-client-secret").hasAttribute("aria-invalid")).toBe(false)
+    expect(pick<HTMLInputElement>(root, "#drive-client-id").value).toBe(VALID_ID)
+    controller.stop()
+  })
+
+  test("Drive client removal returns focus to the emptied client ID field", async () => {
+    // Given: a client is saved
+    const calls: string[] = []
+    const { controller, root } = await openDriveSettings(
+      backend({
+        loadDriveStatus: async () => dismissed,
+        clearDriveClient: async () => {
+          calls.push("clearDriveClient")
+          return noClient
+        },
+      }),
+    )
+    pick(root, "#drive-client-remove-button").focus()
+
+    // When
+    await click(root, "#drive-client-remove-button")
+
+    // Then: no client is left, the button is gone, and focus did not fall to the page
+    expect(calls).toEqual(["clearDriveClient"])
+    expect(visible(root, "#drive-client-remove-button")).toBe(false)
+    expect(visible(root, "#drive-client-id")).toBe(true)
+    expect(pick<HTMLInputElement>(root, "#drive-client-id").value).toBe("")
+    expect(root.ownerDocument.activeElement?.id).toBe("drive-client-id")
+    expect(pick(root, "#drive-client-status").textContent).toBe("Google 클라이언트가 아직 없습니다.")
+    controller.stop()
+  })
+
+  test("Drive client removal refused while locked keeps the client and shows the reason", async () => {
+    // Given: the host refuses because Drive is connected or waiting for consent
+    const message = "Drive 연결을 해제한 뒤에 바꿀 수 있습니다."
+    const { controller, root } = await openDriveSettings(
+      backend({
+        loadDriveStatus: async () => dismissed,
+        clearDriveClient: failWith("DRIVE_CLIENT_LOCKED", message),
+      }),
+    )
+
+    // When
+    await click(root, "#drive-client-remove-button")
+
+    // Then
+    expect(pick(root, "#drive-client-error").textContent).toBe(message)
+    expect(visible(root, "#drive-client-remove-button")).toBe(true)
+    expect(pick(root, "#drive-client-status").textContent).toContain(VALID_ID)
+    controller.stop()
+  })
+
+  test("Drive client section stays hidden when its status cannot be read", async () => {
+    // Given / When
+    const { controller, root } = await openDriveSettings(
+      backend({ loadDriveClient: () => Promise.reject(new Error("unreadable")) }),
+    )
+
+    // Then
+    expect(visible(root, "#drive-client")).toBe(false)
+    controller.stop()
+  })
+})
+
+describe("Drive without a saved client", () => {
+  test("the card asks for the client setup instead of connecting, and the setup opens", async () => {
+    // Given: Drive is disconnected, nothing is saved, and the card was not dismissed
+    const calls: string[] = []
+    const { controller, root } = await mount(
+      backend(
+        {
+          loadDriveStatus: async () => fresh,
+          loadDriveClient: async () => noClient,
+          connectDrive: async () => {
+            calls.push("connectDrive")
+            return connected
+          },
+        },
+        calls,
+      ),
+    )
+
+    // Then: the card says why, in words, and offers the setup
+    expect(visible(root, "#drive-onboarding")).toBe(true)
+    expect(pick(root, "#drive-connect-button").textContent).toContain("Google 클라이언트 설정")
+    expect(pick(root, "#drive-connect-button").textContent).not.toContain("Drive 연결")
+    expect(pick(root, "#drive-onboarding-status").textContent).toBe(
+      "Drive를 연결하려면 먼저 Google 클라이언트를 저장해야 합니다.",
+    )
+
+    // When
+    await click(root, "#drive-connect-button")
+
+    // Then: the host is not asked to connect; the sheet opens on the Drive tab
+    expect(calls).not.toContain("connectDrive")
+    expect(visible(root, "#settings-dialog")).toBe(true)
+    expect(pick(root, "#settings-tab-drive").getAttribute("aria-selected")).toBe("true")
+    expect(visible(root, "#drive-client")).toBe(true)
+    expect(visible(root, "#drive-client-form")).toBe(true)
+    controller.stop()
+  })
+
+  test("a connection the host dropped at startup leaves only the client setup", async () => {
+    // Given: the legacy connection is gone, so Drive is disconnected and no client exists
+    const calls: string[] = []
+    const { controller, root } = await openDriveSettings(
+      backend(
+        {
+          loadDriveStatus: async () => dismissed,
+          loadDriveClient: async () => noClient,
+          connectDrive: async () => {
+            calls.push("connectDrive")
+            return connected
+          },
+        },
+        calls,
+      ),
+    )
+
+    // Then: no connect action, no import, no chip; the account line points at the client
+    expect(pick(root, "#drive-settings-state").textContent).toBe("연결 안 됨")
+    expect(pick(root, "#drive-settings-account").textContent).toBe(
+      "Drive를 연결하려면 먼저 Google 클라이언트를 저장해야 합니다.",
+    )
+    for (const selector of [
+      "#drive-settings-connect-button",
+      "#drive-disconnect-button",
+      "#drive-chip",
+      "#drive-import-button",
+      "#drive-transcript-button",
+    ]) {
+      expect(visible(root, selector)).toBe(false)
+    }
+    expect(visible(root, "#drive-client-form")).toBe(true)
+    expect(calls).not.toContain("connectDrive")
+    controller.stop()
+  })
+
+  test("no import is offered or started without a client", async () => {
+    // Given: a connection without a client, which the host no longer produces
+    const calls: string[] = []
+    const { controller, root } = await mount(
+      backend(
+        {
+          loadDriveClient: async () => noClient,
+          importFromDrive: async () => {
+            calls.push("importFromDrive")
+            return imported("x")
+          },
+          importTranscriptFromDrive: async () => {
+            calls.push("importTranscriptFromDrive")
+            throw new Error("unexpected")
+          },
+        },
+        calls,
+      ),
+    )
+
+    // When
+    pick(root, "#drive-import-button").click()
+    pick(root, "#drive-transcript-button").click()
+    await settle()
+
+    // Then
+    expect(visible(root, "#drive-import-button")).toBe(false)
+    expect(visible(root, "#drive-transcript-button")).toBe(false)
+    expect(calls).not.toContain("importFromDrive")
+    expect(calls).not.toContain("importTranscriptFromDrive")
+    controller.stop()
+  })
+
+  test("nothing is offered until the saved client is known", async () => {
+    // Given / When: the status is known but the client could not be read
+    const { controller, root } = await mount(
+      backend({
+        loadDriveStatus: async () => fresh,
+        loadDriveClient: () => Promise.reject(new Error("unreadable")),
+      }),
+    )
+    await click(root, '[data-action="open-settings"]')
+
+    // Then
+    for (const selector of [
+      "#drive-onboarding",
+      "#drive-settings-connect-button",
+      "#drive-client",
+      "#drive-import-button",
+    ]) {
+      expect(visible(root, selector)).toBe(false)
+    }
+    controller.stop()
+  })
+
+  test("a connect the host refuses for a missing client shows its message and the setup entry", async () => {
+    // Given: the window thinks a client is saved, the host says otherwise
+    const message = "Google 클라이언트를 먼저 저장해 주세요."
+    const { controller, root } = await mount(
+      backend({
+        loadDriveStatus: async () => fresh,
+        connectDrive: failWith("DRIVE_CLIENT_REQUIRED", message),
+      }),
+    )
+    expect(pick(root, "#drive-connect-button").textContent).toContain("Drive 연결")
+
+    // When
+    await click(root, "#drive-connect-button")
+
+    // Then: the host's message stands, and the next click leads to the setup
+    expect(pick(root, "#drive-onboarding-status").textContent).toBe(message)
+    expect(pick(root, "#drive-onboarding-status").dataset["state"]).toBe("error")
+    expect(pick(root, "#drive-connect-button").textContent).toContain("Google 클라이언트 설정")
+    controller.stop()
+  })
+
+  test("an import the host refuses for a missing client fails the card with its message", async () => {
+    // Given
+    const message = "Google 클라이언트를 먼저 저장해 주세요."
+    const { controller, root } = await mount(
+      backend({ importFromDrive: failWith("DRIVE_CLIENT_REQUIRED", message) }),
+    )
+
+    // When
+    await click(root, "#drive-import-button")
+
+    // Then: the failure shows, and Drive stops offering imports until a client is saved
+    expect(pick(root, "#job-panel").dataset["status"]).toBe("failed")
+    expect(pick(root, "#error-message").textContent).toBe(message)
+    expect(visible(root, "#drive-import-button")).toBe(false)
     controller.stop()
   })
 })

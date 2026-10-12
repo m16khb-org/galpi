@@ -1,7 +1,7 @@
 //! Google Drive for the desktop (RFC 8252): `drive.file` consent and the
 //! desktop Picker through the system browser and a loopback redirect with
-//! PKCE, the code exchange and renewal the auth-gateway performs for Galpi
-//! (the desktop client secret lives only on the gateway), and Drive v3 calls.
+//! PKCE, the code exchange and renewal at Google's token endpoint, and Drive
+//! v3 calls.
 //!
 //! Nothing here logs a token, `code`, `state`, or consent URL, and no failed
 //! request is retried.
@@ -18,22 +18,19 @@ pub use rest::DriveRestAdapter;
 use super::browser_sign_in::loopback::{Loopback, PREFERRED_PORT, SIGN_IN_TIMEOUT};
 use super::browser_sign_in::pkce::{NONCE_BYTES, VERIFIER_BYTES, random_urlsafe};
 use super::browser_sign_in::{BrowserOpener, SignInCodes};
-use super::gateway::gateway_url;
 use crate::application::error::AppError;
 use crate::application::ports::{ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback};
-use crate::domain::drive::{DriveTokenFailure, DriveTokens};
+use crate::domain::drive::{DriveClient, DriveTokenFailure, DriveTokens};
 use async_trait::async_trait;
 use reqwest::{Client, redirect::Policy};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
-/// The `Galpi Desktop` OAuth client of the `galpi-511214` Cloud project.
-/// A desktop client id is public; its secret stays on the auth-gateway.
-const CLIENT_ID: &str = "747212408320-1io6clrt6t568ot424pv54lepsvfl9pf.apps.googleusercontent.com";
 /// The only scope Galpi asks for: files it created or the user picked.
 const SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const GOOGLE_REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
 const DRIVE_API_URL: &str = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3";
@@ -52,7 +49,7 @@ fn connect_failed(message: &str) -> AppError {
 
 /// Every endpoint and limit that production fixes and tests shorten.
 pub struct Tuning {
-    pub gateway_url: String,
+    pub token_url: String,
     pub google_auth_url: String,
     pub google_revoke_url: String,
     pub drive_api_url: String,
@@ -66,7 +63,7 @@ pub struct Tuning {
 impl Tuning {
     fn production() -> Self {
         Self {
-            gateway_url: gateway_url(),
+            token_url: GOOGLE_TOKEN_URL.to_owned(),
             google_auth_url: GOOGLE_AUTH_URL.to_owned(),
             google_revoke_url: GOOGLE_REVOKE_URL.to_owned(),
             drive_api_url: DRIVE_API_URL.to_owned(),
@@ -111,10 +108,6 @@ impl DriveOAuthAdapter {
             clock,
         })
     }
-
-    fn token_endpoint(&self) -> String {
-        format!("{}/drive/native/token", self.tuning.gateway_url)
-    }
 }
 
 #[async_trait]
@@ -145,18 +138,14 @@ impl DriveAuthPort for DriveOAuthAdapter {
             verifier,
             redirect_uri,
             picked,
+            client: request.client.clone(),
         })
     }
 
-    async fn exchange(
-        &self,
-        bearer: &str,
-        callback: &DriveCallback,
-    ) -> Result<DriveTokens, DriveTokenFailure> {
+    async fn exchange(&self, callback: &DriveCallback) -> Result<DriveTokens, DriveTokenFailure> {
         tokens::exchange(
             &self.http,
-            &self.token_endpoint(),
-            bearer,
+            &self.tuning.token_url,
             callback,
             self.clock.now_unix(),
         )
@@ -165,13 +154,13 @@ impl DriveAuthPort for DriveOAuthAdapter {
 
     async fn refresh(
         &self,
-        bearer: &str,
+        client: &DriveClient,
         refresh_token: &str,
     ) -> Result<DriveTokens, DriveTokenFailure> {
         tokens::refresh(
             &self.http,
-            &self.token_endpoint(),
-            bearer,
+            &self.tuning.token_url,
+            client,
             refresh_token,
             self.clock.now_unix(),
         )

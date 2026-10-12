@@ -1,4 +1,3 @@
-use super::gateway::tokens_expiring;
 use super::{FakePort, TranscriptionBehavior, request};
 use crate::application::error::AppError;
 use crate::application::model::TranscriptImportResult;
@@ -9,10 +8,9 @@ use crate::application::ports::{
 use crate::application::use_cases::Application;
 use crate::domain::artifact::ArtifactKind;
 use crate::domain::drive::{
-    DriveAccount, DriveConnection, DriveFileId, DriveRecordingState, DriveStatus, DriveSyncState,
-    DriveTokenFailure, DriveTokens, MeetingKey, RemoteFile, parse_picked_ids,
+    DriveAccount, DriveClient, DriveConnection, DriveFileId, DriveRecordingState, DriveStatus,
+    DriveSyncState, DriveTokenFailure, DriveTokens, MeetingKey, RemoteFile, parse_picked_ids,
 };
-use crate::domain::gateway::GatewayRefreshFailure;
 use crate::domain::job::{SpeakerHint, TranscriptImportRequest, TranscriptionRequest};
 use crate::domain::recording::RecordingSource;
 use async_trait::async_trait;
@@ -35,13 +33,18 @@ struct Stored {
     tokens: Option<DriveTokens>,
     dismissed: bool,
     save_recordings: bool,
+    client: Option<DriveClient>,
 }
 
 #[derive(Default)]
 struct Calls {
     consents: Vec<(Option<DrivePickerKind>, Option<String>)>,
-    exchange_bearers: Vec<String>,
-    refresh_bearers: Vec<String>,
+    exchanged: usize,
+    refreshed: usize,
+    /// The client id each consent, exchange and renewal asked with.
+    consent_clients: Vec<String>,
+    exchange_clients: Vec<String>,
+    refresh_clients: Vec<String>,
     revoked: Vec<String>,
     created: Vec<ArtifactKind>,
     updated: Vec<String>,
@@ -80,7 +83,7 @@ impl RemoteDrive {
 }
 
 /// The Drive side of `FakePort`: an in-memory store, a scripted consent and
-/// gateway, and an in-memory Drive that answers like the real one.
+/// token endpoint, and an in-memory Drive that answers like the real one.
 pub(super) struct DriveFake {
     stored: Mutex<Stored>,
     calls: Mutex<Calls>,
@@ -208,12 +211,14 @@ fn drive_tokens(port: &FakePort, name: &str, seconds_left: u64) -> DriveTokens {
     }
 }
 
-fn callback(picked: &str) -> Result<DriveCallback, AppError> {
+/// The callback remembers which client asked, as the real adapter does.
+fn callback(picked: &str, client: &DriveClient) -> Result<DriveCallback, AppError> {
     Ok(DriveCallback {
         code: "galpi-test-code".to_owned(),
         verifier: "galpi-test-verifier".to_owned(),
         redirect_uri: "http://127.0.0.1:1455/auth/callback".to_owned(),
         picked: parse_picked_ids(picked).map_err(|_| AppError::new("TEST_ERROR", "bad pick"))?,
+        client: client.clone(),
     })
 }
 
@@ -224,10 +229,13 @@ impl DriveAuthPort for FakePort {
         request: &DriveAuthorize,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<DriveCallback, AppError> {
-        self.drive
-            .calls()?
-            .consents
-            .push((request.picker, request.login_hint.clone()));
+        {
+            let mut calls = self.drive.calls()?;
+            calls
+                .consents
+                .push((request.picker, request.login_hint.clone()));
+            calls.consent_clients.push(request.client.id().to_owned());
+        }
         let default_pick = if request.picker.is_some() {
             "file-1"
         } else {
@@ -235,25 +243,22 @@ impl DriveAuthPort for FakePort {
         };
         let consent = lock(&self.drive.consents)?.pop_front();
         match consent {
-            Some(Consent::Approve(picked)) => callback(picked),
-            None => callback(default_pick),
+            Some(Consent::Approve(picked)) => callback(picked, &request.client),
+            None => callback(default_pick, &request.client),
             Some(Consent::Wait) => {
                 self.drive.consent_started.notify_one();
                 tokio::select! {
                     _ = &mut *cancel => Err(AppError::new("CANCELLED", "사용자가 작업을 취소했습니다.")),
-                    () = self.drive.consent_release.notified() => callback(default_pick),
+                    () = self.drive.consent_release.notified() => callback(default_pick, &request.client),
                 }
             }
         }
     }
 
-    async fn exchange(
-        &self,
-        bearer: &str,
-        _callback: &DriveCallback,
-    ) -> Result<DriveTokens, DriveTokenFailure> {
+    async fn exchange(&self, callback: &DriveCallback) -> Result<DriveTokens, DriveTokenFailure> {
         if let Ok(mut calls) = self.drive.calls() {
-            calls.exchange_bearers.push(bearer.to_owned());
+            calls.exchanged += 1;
+            calls.exchange_clients.push(callback.client.id().to_owned());
         }
         self.drive
             .exchanges
@@ -265,11 +270,12 @@ impl DriveAuthPort for FakePort {
 
     async fn refresh(
         &self,
-        bearer: &str,
+        client: &DriveClient,
         _refresh_token: &str,
     ) -> Result<DriveTokens, DriveTokenFailure> {
         if let Ok(mut calls) = self.drive.calls() {
-            calls.refresh_bearers.push(bearer.to_owned());
+            calls.refreshed += 1;
+            calls.refresh_clients.push(client.id().to_owned());
         }
         self.drive
             .refreshes
@@ -575,20 +581,59 @@ impl DriveSessionStore for FakePort {
         stored.save_recordings = false;
         Ok(())
     }
+
+    async fn load_client(&self) -> Result<Option<DriveClient>, AppError> {
+        Ok(self.drive.stored()?.client.clone())
+    }
+
+    async fn save_client(&self, client: DriveClient) -> Result<(), AppError> {
+        self.drive.stored()?.client = Some(client);
+        Ok(())
+    }
+
+    async fn clear_client(&self) -> Result<(), AppError> {
+        self.drive.stored()?.client = None;
+        Ok(())
+    }
 }
 
-/// A signed-in app whose gateway session is good for an hour.
-fn signed_in() -> Result<(Arc<FakePort>, Application), AppError> {
+/// An app with nothing connected; nobody signs in to anything first.
+fn disconnected() -> (Arc<FakePort>, Application) {
     let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
-    port.gateway
-        .seed(tokens_expiring(&port, "session", 3_600), None)?;
+    if let Ok(mut stored) = port.drive.stored() {
+        stored.client = own_client().ok();
+    }
     let app = port.application();
-    Ok((port, app))
+    (port, app)
 }
 
-/// A signed-in app with Drive connected to `root-saved`, which exists on Drive.
+/// Like `disconnected`, but no Google client is saved: Drive cannot connect yet.
+fn without_client() -> (Arc<FakePort>, Application) {
+    let (port, app) = disconnected();
+    if let Ok(mut stored) = port.drive.stored() {
+        stored.client = None;
+    }
+    (port, app)
+}
+
+const OWN_ID: &str = "123-abc.apps.googleusercontent.com";
+const OWN_SECRET: &str = "test-client-secret";
+const OTHER_ID: &str = "456-def.apps.googleusercontent.com";
+const OTHER_SECRET: &str = "other-client-secret";
+
+fn own_client() -> Result<DriveClient, AppError> {
+    DriveClient::parse(OWN_ID, OWN_SECRET)
+        .map_err(|error| AppError::new("TEST_ERROR", format!("{error:?}")))
+}
+
+fn other_client() -> Result<DriveClient, AppError> {
+    DriveClient::parse(OTHER_ID, OTHER_SECRET)
+        .map_err(|error| AppError::new("TEST_ERROR", format!("{error:?}")))
+}
+
+/// An app with Drive connected to `root-saved`, which exists on Drive.
 fn connected() -> Result<(Arc<FakePort>, Application), AppError> {
-    let (port, app) = signed_in()?;
+    let (port, app) = disconnected();
     {
         let mut stored = port.drive.stored()?;
         stored.connection = Some(DriveConnection {
@@ -628,36 +673,9 @@ fn stored_tokens(port: &FakePort) -> Result<Option<DriveTokens>, AppError> {
 }
 
 #[tokio::test]
-async fn drive_features_require_sign_in() -> Result<(), AppError> {
-    // Given
-    let port = Arc::new(FakePort::new(TranscriptionBehavior::Success));
-    let app = port.signed_out_application();
-
-    // When
-    let codes = [
-        failure(app.connect_drive().await)?.code,
-        failure(app.import_from_drive(Uuid::now_v7()).await)?.code,
-        failure(import_transcript(&app, Uuid::now_v7()).await)?.code,
-        failure(app.sync_meeting_to_drive(Uuid::now_v7(), false).await)?.code,
-        failure(app.upload_recording_to_drive(Uuid::now_v7()).await)?.code,
-    ];
-
-    // Then: only the feature commands are closed
-    assert_eq!(codes, ["AUTH_REQUIRED"; 5]);
-    assert_eq!(
-        app.load_drive_status().await?,
-        DriveStatus::Disconnected {
-            onboarding_dismissed: false
-        }
-    );
-    assert_eq!(port.drive.calls()?.consents, Vec::new());
-    Ok(())
-}
-
-#[tokio::test]
 async fn connecting_stores_the_account_and_the_galpi_folder() -> Result<(), AppError> {
     // Given
-    let (port, app) = signed_in()?;
+    let (port, app) = disconnected();
 
     // When
     let status = app.connect_drive().await?;
@@ -684,10 +702,7 @@ async fn connecting_stores_the_account_and_the_galpi_folder() -> Result<(), AppE
             .map(|tokens| tokens.refresh_token.as_str()),
         Some("galpi-test-drive-refresh-exchanged")
     );
-    assert_eq!(
-        port.drive.calls()?.exchange_bearers,
-        ["galpi-test-access-session"]
-    );
+    assert_eq!(port.drive.calls()?.exchanged, 1);
     assert_eq!(port.drive.calls()?.consents, [(None, None)]);
     Ok(())
 }
@@ -695,7 +710,7 @@ async fn connecting_stores_the_account_and_the_galpi_folder() -> Result<(), AppE
 #[tokio::test]
 async fn one_connect_waits_at_a_time_and_cancelling_allows_another() -> Result<(), AppError> {
     // Given: a connect waiting for the browser
-    let (port, app) = signed_in()?;
+    let (port, app) = disconnected();
     port.drive.push_consent(Consent::Wait)?;
     let app = Arc::new(app);
     let first = {
@@ -713,40 +728,11 @@ async fn one_connect_waits_at_a_time_and_cancelling_allows_another() -> Result<(
     assert_eq!(second.code, "DRIVE_BUSY");
     assert_eq!(first.code, "CANCELLED");
     assert_eq!(port.drive.stored()?.connection, None);
-    assert_eq!(port.drive.calls()?.exchange_bearers, Vec::<String>::new());
+    assert_eq!(port.drive.calls()?.exchanged, 0);
     assert!(matches!(
         app.connect_drive().await?,
         DriveStatus::Connected { .. }
     ));
-    Ok(())
-}
-
-#[tokio::test]
-async fn the_exchange_uses_a_gateway_bearer_renewed_after_a_long_consent() -> Result<(), AppError> {
-    // Given: a gateway session with two minutes left and a slow consent
-    let (port, app) = signed_in()?;
-    port.gateway
-        .seed(tokens_expiring(&port, "short", 120), None)?;
-    port.drive.push_consent(Consent::Wait)?;
-    let app = Arc::new(app);
-    let connecting = {
-        let app = Arc::clone(&app);
-        tokio::spawn(async move { app.connect_drive().await })
-    };
-    port.drive.consent_started.notified().await;
-
-    // When: the session is about to expire by the time the browser returns
-    port.chatgpt.advance(100);
-    port.gateway
-        .script_refresh(Ok(tokens_expiring(&port, "renewed", 3_600)))?;
-    port.drive.consent_release.notify_one();
-    joined(connecting.await)??;
-
-    // Then
-    assert_eq!(
-        port.drive.calls()?.exchange_bearers,
-        ["galpi-test-access-renewed"]
-    );
     Ok(())
 }
 
@@ -1215,25 +1201,6 @@ async fn an_unreachable_drive_ends_the_whole_sync() -> Result<(), AppError> {
 }
 
 #[tokio::test]
-async fn a_gateway_refusing_the_bearer_at_exchange_signs_the_host_out() -> Result<(), AppError> {
-    // Given: the gateway answers the Drive code exchange with 401
-    let (port, app) = signed_in()?;
-    lock(&port.drive.exchanges)?.push_back(Err(DriveTokenFailure::AuthRequired));
-
-    // When
-    let error = failure(app.connect_drive().await)?;
-
-    // Then: the host closes the session the window is about to leave
-    assert_eq!(error.code, "AUTH_REQUIRED");
-    assert_eq!(port.gateway.stored_tokens()?, None);
-    assert_eq!(
-        failure(app.transcribe(request(SpeakerHint::Auto)).await)?.code,
-        "AUTH_REQUIRED"
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn minutes_sync_under_the_transcription_job_after_refinement() -> Result<(), AppError> {
     // Given: a transcribed and refined meeting
     let (_port, app) = connected()?;
@@ -1293,10 +1260,7 @@ async fn a_refused_renewal_disconnects_drive() -> Result<(), AppError> {
     assert_eq!(error.code, "DRIVE_RECONNECT_REQUIRED");
     assert_eq!(port.drive.stored()?.connection, None);
     assert_eq!(stored_tokens(&port)?, None);
-    assert_eq!(
-        port.drive.calls()?.refresh_bearers,
-        ["galpi-test-access-session"]
-    );
+    assert_eq!(port.drive.calls()?.refreshed, 1);
     Ok(())
 }
 
@@ -1314,7 +1278,7 @@ async fn a_drive_401_renews_once_and_never_resends() -> Result<(), AppError> {
 
     // Then: the renewal is kept, and the refused request is not retried
     assert_eq!(renewed.code, "DRIVE_UNAVAILABLE");
-    assert_eq!(port.drive.calls()?.refresh_bearers.len(), 1);
+    assert_eq!(port.drive.calls()?.refreshed, 1);
     assert_eq!(port.drive.calls()?.created, Vec::new());
     assert_eq!(
         stored_tokens(&port)?.map(|tokens| tokens.access_token),
@@ -1455,34 +1419,33 @@ async fn reconnecting_another_account_during_a_picker_consent_keeps_its_tokens()
 }
 
 #[tokio::test]
-async fn a_gateway_refusal_during_a_drive_call_signs_the_app_out() -> Result<(), AppError> {
-    // Given: an expired gateway session the gateway refuses to renew
+async fn a_renewal_google_cannot_answer_keeps_drive_connected() -> Result<(), AppError> {
+    // Given: expired Drive tokens, and the token endpoint fails for a reason
+    // other than a refused grant (network, 5xx, a refused client)
     let (port, app) = connected()?;
-    port.gateway
-        .seed(tokens_expiring(&port, "expired", 0), None)?;
-    port.gateway
-        .script_refresh(Err(GatewayRefreshFailure::Rejected))?;
     port.drive.stored()?.tokens = Some(drive_tokens(&port, "stored", 0));
+    port.drive
+        .script_refresh(Err(DriveTokenFailure::Unavailable))?;
     let transcribed = app.transcribe(request(SpeakerHint::Auto)).await?;
 
     // When
     let error = failure(app.sync_meeting_to_drive(transcribed.job_id, false).await)?;
 
-    // Then: Drive stays connected, but the app is closed until sign-in
-    assert_eq!(error.code, "AUTH_REQUIRED");
-    assert_eq!(port.gateway.stored_tokens()?, None);
+    // Then: only `invalid_grant` disconnects; this keeps the connection and tokens
+    assert_eq!(error.code, "DRIVE_UNAVAILABLE");
     assert!(port.drive.stored()?.connection.is_some());
     assert_eq!(
-        failure(app.transcribe(request(SpeakerHint::Auto)).await)?.code,
-        "AUTH_REQUIRED"
+        stored_tokens(&port)?.map(|tokens| tokens.refresh_token),
+        Some("galpi-test-drive-refresh-stored".to_owned())
     );
+    assert_eq!(port.drive.calls()?.created, Vec::new());
     Ok(())
 }
 
 #[tokio::test]
 async fn syncing_without_a_connection_is_refused() -> Result<(), AppError> {
     // Given
-    let (_port, app) = signed_in()?;
+    let (_port, app) = disconnected();
     let transcribed = app.transcribe(request(SpeakerHint::Auto)).await?;
 
     // When
@@ -1527,8 +1490,8 @@ async fn only_a_finished_recording_of_this_run_can_be_uploaded() -> Result<(), A
 
 #[tokio::test]
 async fn uploading_a_recording_without_a_drive_connection_is_refused() -> Result<(), AppError> {
-    // Given: signed in, a finished recording, but no Drive connection
-    let (port, app) = signed_in()?;
+    // Given: a finished recording, but no Drive connection
+    let (port, app) = disconnected();
     let recording = finished_recording(&app).await?;
 
     // When
@@ -1651,8 +1614,8 @@ async fn a_failed_upload_keeps_the_recording_so_a_retry_can_finish_it() -> Resul
 
 #[tokio::test]
 async fn the_recordings_choice_needs_a_connection_and_ends_with_it() -> Result<(), AppError> {
-    // Given: signed in, Drive not connected
-    let (_port, app) = signed_in()?;
+    // Given: Drive not connected
+    let (_port, app) = disconnected();
 
     // When / Then: nothing to choose yet
     assert_eq!(
@@ -1692,5 +1655,268 @@ async fn the_recordings_choice_needs_a_connection_and_ends_with_it() -> Result<(
             save_recordings: false
         }
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_save_and_clear_report_which_client_is_in_use() -> Result<(), AppError> {
+    // Given: nothing saved yet
+    let (_port, app) = without_client();
+    assert!(!app.load_drive_client().await?.configured);
+
+    // When: the person saves a client, then removes it
+    let saved = app.save_drive_client(OWN_ID, OWN_SECRET).await?;
+    let loaded = app.load_drive_client().await?;
+    let cleared = app.clear_drive_client().await?;
+
+    // Then: the id shows, the secret never does, and clearing leaves none saved
+    assert!(saved.configured);
+    assert_eq!(saved.client_id.as_deref(), Some(OWN_ID));
+    assert_eq!(loaded, saved);
+    assert!(!cleared.configured);
+    assert_eq!(cleared.client_id, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_invalid_input_is_refused_before_anything_is_stored() -> Result<(), AppError> {
+    // Given
+    let (port, app) = without_client();
+
+    // When: a malformed id, then a secret with a space
+    let id = failure(app.save_drive_client("not-an-id", OWN_SECRET).await)?;
+    let secret = failure(app.save_drive_client(OWN_ID, "has space").await)?;
+
+    // Then: each error names its own field, and nothing was stored
+    assert_eq!(id.code, "DRIVE_CLIENT_INVALID");
+    assert!(id.message.starts_with("클라이언트 ID"), "{}", id.message);
+    assert_eq!(secret.code, "DRIVE_CLIENT_INVALID");
+    assert!(
+        secret.message.starts_with("보안 비밀번호"),
+        "{}",
+        secret.message
+    );
+    assert_eq!(port.drive.stored()?.client, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_locked_save_while_connected() -> Result<(), AppError> {
+    // Given: Drive is connected
+    let (port, app) = connected()?;
+
+    // When
+    let error = failure(app.save_drive_client(OTHER_ID, OTHER_SECRET).await)?;
+
+    // Then: a refresh token only renews at its own client, so nothing changed
+    assert_eq!(error.code, "DRIVE_CLIENT_LOCKED");
+    assert_eq!(port.drive.stored()?.client, Some(own_client()?));
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_locked_clear_while_connected() -> Result<(), AppError> {
+    // Given: Drive is connected under the saved client
+    let (port, app) = connected()?;
+
+    // When
+    let error = failure(app.clear_drive_client().await)?;
+
+    // Then
+    assert_eq!(error.code, "DRIVE_CLIENT_LOCKED");
+    assert_eq!(port.drive.stored()?.client, Some(own_client()?));
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_locked_save_while_consent() -> Result<(), AppError> {
+    // Given: a connect waiting for the browser
+    let (port, app) = disconnected();
+    port.drive.push_consent(Consent::Wait)?;
+    let app = Arc::new(app);
+    let connecting = {
+        let app = Arc::clone(&app);
+        tokio::spawn(async move { app.connect_drive().await })
+    };
+    port.drive.consent_started.notified().await;
+
+    // When
+    let error = failure(app.save_drive_client(OTHER_ID, OTHER_SECRET).await)?;
+    app.cancel_drive_operation()?;
+    failure(joined(connecting.await)?)?;
+
+    // Then: the consent in flight keeps the client it asked with
+    assert_eq!(error.code, "DRIVE_CLIENT_LOCKED");
+    assert_eq!(port.drive.stored()?.client, Some(own_client()?));
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_locked_clear_while_consent() -> Result<(), AppError> {
+    // Given: a saved client, and a connect waiting for the browser
+    let (port, app) = disconnected();
+    port.drive.push_consent(Consent::Wait)?;
+    let app = Arc::new(app);
+    let connecting = {
+        let app = Arc::clone(&app);
+        tokio::spawn(async move { app.connect_drive().await })
+    };
+    port.drive.consent_started.notified().await;
+
+    // When
+    let error = failure(app.clear_drive_client().await)?;
+    app.cancel_drive_operation()?;
+    failure(joined(connecting.await)?)?;
+
+    // Then
+    assert_eq!(error.code, "DRIVE_CLIENT_LOCKED");
+    assert_eq!(port.drive.stored()?.client, Some(own_client()?));
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_locked_picker_client_changed() -> Result<(), AppError> {
+    // Given: an import waiting for the Picker, asked with the saved client
+    let (port, app) = connected()?;
+    port.drive.push_consent(Consent::Wait)?;
+    let app = Arc::new(app);
+    let importing = {
+        let app = Arc::clone(&app);
+        tokio::spawn(async move { app.import_from_drive(Uuid::now_v7()).await })
+    };
+    port.drive.consent_started.notified().await;
+
+    // When: during the wait Drive is disconnected, the person saves their own
+    // client, and Drive is connected again (same account), then the Picker answers
+    app.disconnect_drive().await?;
+    app.save_drive_client(OTHER_ID, OTHER_SECRET).await?;
+    app.connect_drive().await?;
+    port.drive.consent_release.notify_one();
+    let error = failure(joined(importing.await)?)?;
+
+    // Then: the disconnect revoked the first connection's grant, and the old
+    // client's Picker grant is given back too instead of attached to the new connection
+    assert_eq!(error.code, "DRIVE_NOT_CONNECTED");
+    assert_eq!(
+        port.drive.calls()?.revoked,
+        [
+            "galpi-test-drive-refresh-stored",
+            "galpi-test-drive-refresh-exchanged"
+        ]
+    );
+    assert_eq!(port.drive.stored()?.client, Some(other_client()?));
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_used_connect_passes_stored() -> Result<(), AppError> {
+    // Given: a client is saved
+    let (port, app) = disconnected();
+
+    // When
+    app.connect_drive().await?;
+
+    // Then: the consent and its exchange both ask with that client
+    let calls = port.drive.calls()?;
+    assert_eq!(calls.consent_clients, [OWN_ID]);
+    assert_eq!(calls.exchange_clients, [OWN_ID]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_used_picker_passes_stored() -> Result<(), AppError> {
+    // Given: Drive is connected under the saved client
+    let (port, app) = connected()?;
+
+    // When
+    app.import_from_drive(Uuid::now_v7()).await?;
+
+    // Then
+    let calls = port.drive.calls()?;
+    assert_eq!(calls.consent_clients, [OWN_ID]);
+    assert_eq!(calls.exchange_clients, [OWN_ID]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_used_renewal_passes_stored() -> Result<(), AppError> {
+    // Given: Drive tokens about to expire under the saved client
+    let (port, app) = connected()?;
+    port.drive.stored()?.tokens = Some(drive_tokens(&port, "stored", 60));
+    port.drive
+        .script_refresh(Ok(drive_tokens(&port, "renewed", 3_600)))?;
+    let transcribed = app.transcribe(request(SpeakerHint::Auto)).await?;
+
+    // When
+    app.sync_meeting_to_drive(transcribed.job_id, false).await?;
+
+    // Then: the renewal asked with that client
+    assert_eq!(port.drive.calls()?.refresh_clients, [OWN_ID]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_required_connect_without_client() -> Result<(), AppError> {
+    // Given: no client is saved
+    let (port, app) = without_client();
+
+    // When
+    let error = failure(app.connect_drive().await)?;
+
+    // Then: Google is never asked
+    assert_eq!(error.code, "DRIVE_CLIENT_REQUIRED");
+    assert_eq!(port.drive.calls()?.consents, []);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_required_import_without_client() -> Result<(), AppError> {
+    // Given: a connection on file but no saved client
+    let (port, app) = connected()?;
+    port.drive.stored()?.client = None;
+
+    // When
+    let error = failure(app.import_from_drive(Uuid::now_v7()).await)?;
+
+    // Then: the Picker never opens
+    assert_eq!(error.code, "DRIVE_CLIENT_REQUIRED");
+    assert_eq!(port.drive.calls()?.consents, []);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_required_old_connection_is_dropped_at_status() -> Result<(), AppError> {
+    // Given: a connection issued under the removed built-in client, so no client is saved
+    let (port, app) = connected()?;
+    port.drive.stored()?.client = None;
+
+    // When
+    let status = app.load_drive_status().await?;
+
+    // Then: it is revoked and forgotten, and the person starts again from a saved client
+    assert!(matches!(status, DriveStatus::Disconnected { .. }));
+    assert_eq!(stored_tokens(&port)?, None);
+    assert_eq!(
+        port.drive.calls()?.revoked,
+        ["galpi-test-drive-refresh-stored"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_required_renewal_without_client_reconnects() -> Result<(), AppError> {
+    // Given: expiring tokens of a connection that has no saved client
+    let (port, app) = connected()?;
+    port.drive.stored()?.client = None;
+    port.drive.stored()?.tokens = Some(drive_tokens(&port, "stored", 60));
+    let transcribed = app.transcribe(request(SpeakerHint::Auto)).await?;
+
+    // When
+    let error = failure(app.sync_meeting_to_drive(transcribed.job_id, false).await)?;
+
+    // Then: nothing is sent to Google, and the connection is forgotten
+    assert_eq!(error.code, "DRIVE_RECONNECT_REQUIRED");
+    assert_eq!(port.drive.calls()?.refreshed, 0);
+    assert_eq!(stored_tokens(&port)?, None);
     Ok(())
 }

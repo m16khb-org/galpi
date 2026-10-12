@@ -10,6 +10,16 @@ export type DriveStatus =
       readonly saveRecordings: boolean
     }
 
+/**
+ * The Google OAuth client the user saved for Drive; the app ships none. The
+ * client secret never crosses the IPC border, so there is no field for it;
+ * `clientId` is a string exactly when `configured` is true.
+ */
+export interface DriveClientStatus {
+  readonly configured: boolean
+  readonly clientId: string | null
+}
+
 /** A recording the Picker chose, downloaded and ready to transcribe from `inputPath`. */
 export interface DriveImport {
   readonly jobId: string

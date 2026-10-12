@@ -1,7 +1,6 @@
 pub mod chatgpt;
 pub mod drive;
 pub mod error;
-pub mod gateway;
 pub mod jobs;
 pub mod model;
 pub mod ports;
