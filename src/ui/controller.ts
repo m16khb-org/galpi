@@ -16,7 +16,6 @@ import {
 } from "../domain/backend"
 import type { ComputeDevice, EnginePreset, ImportedTranscript, TranscriptionResult } from "../domain/job"
 import { buildSpeakerHint, type SpeakerHint } from "../domain/speaker"
-import { AccessController } from "./access-controller"
 import type { AppView, BusyKind } from "./app-view"
 import { ChatGptController } from "./chatgpt-controller"
 import { DriveController } from "./drive-controller"
@@ -40,7 +39,6 @@ export class AppController {
   private lastResult: TranscriptionResult | ImportedTranscript | null = null
   private readonly recording: RecordingController
   private readonly chatgpt: ChatGptController
-  private readonly access: AccessController
   private readonly drive: DriveController
   private unlisten: (() => void) | null = null
   private unlistenRecording: (() => void) | null = null
@@ -60,15 +58,6 @@ export class AppController {
       (recordingId) => this.drive.uploadRecordingAfter(recordingId),
     )
     this.chatgpt = new ChatGptController(backend, view, () => this.requestSettingsSave())
-    this.access = new AccessController(
-      backend,
-      view.access,
-      () => this.loadWorkspace(),
-      () => {
-        this.view.tokenSettings.close()
-        this.drive.reset()
-      },
-    )
     this.drive = new DriveController(backend, view, {
       onImportStarted: (jobId, kind) =>
         kind === "recording"
@@ -101,8 +90,12 @@ export class AppController {
         this.handleFailure(error)
       },
       onImportFinished: () => this.view.setBusy(null),
-      onSessionExpired: () => this.access.expire(),
       onError: (message) => this.view.showError(message),
+      // The setup lives in the Drive tab of the settings sheet.
+      onClientRequired: () => {
+        this.view.settingsTabs.select("drive")
+        void this.openSettings()
+      },
     })
   }
 
@@ -123,16 +116,14 @@ export class AppController {
       await this.chatgpt.subscribe()
     } catch {
       // Without the event channel no other IPC call can succeed either, and a
-      // later retry would miss job events; the login screen asks for a restart.
-      this.access.runtimeUnavailable(
-        "네이티브 런타임에 연결할 수 없습니다. 앱을 다시 실행해 주세요.",
-      )
+      // later retry would miss job events; stop with a visible message instead.
+      this.view.showError("네이티브 런타임에 연결할 수 없습니다. 앱을 다시 실행해 주세요.")
       return
     }
-    await this.access.check()
+    await this.loadWorkspace()
   }
 
-  /** Runs each time someone signs in, including a stored sign-in at startup. */
+  /** Loads the work screen once the native event channel is up. */
   private async loadWorkspace(): Promise<void> {
     try {
       await this.recording.loadSource()
@@ -196,10 +187,6 @@ export class AppController {
     this.view.on("stop-recording", () => void this.recording.stop())
     this.view.on("cancel-recording", () => void this.recording.cancel())
     this.view.on("sign-in-chatgpt", () => void this.chatgpt.signIn())
-    this.view.on("sign-in-gateway", () => void this.access.signIn())
-    this.view.on("retry-app-access", () => void this.access.check())
-    this.view.on("cancel-gateway-sign-in", () => void this.access.cancelSignIn())
-    this.view.on("sign-out-gateway", () => void this.access.signOut())
     this.view.on("cancel-chatgpt-sign-in", () => void this.chatgpt.cancelSignIn())
     this.view.on("sign-out-chatgpt", () => void this.chatgpt.signOut())
     this.view.on("open-chatgpt-usage", () => void this.chatgpt.openUsagePage())
@@ -215,6 +202,8 @@ export class AppController {
     this.view.on("dismiss-drive-onboarding", () => void this.drive.dismiss())
     this.view.on("import-from-drive", () => void this.drive.importFromDrive())
     this.view.on("import-transcript-from-drive", () => void this.importTranscriptFromDrive())
+    this.view.on("save-drive-client", () => void this.drive.saveClient())
+    this.view.on("remove-drive-client", () => void this.drive.clearClient())
     this.view.on("overwrite-drive", () => void this.drive.overwrite())
     this.view.on("open-drive-folder", () => void this.drive.openFolder())
     this.view.on("open-recording-drive-folder", () => void this.drive.openRecordingFolder())

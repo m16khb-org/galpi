@@ -37,7 +37,7 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Install Galpi for a user | `INSTALL.md` | No binaries ship; build from source, install, hand sign-in back to the user |
+| Install Galpi for a user | `INSTALL.md` | No binaries ship; build from source, install, hand first-run setup back to the user |
 | Frontend startup | `src/main.ts` | Composes backend, view, controller |
 | Frontend orchestration | `src/ui/controller.ts` | Setup, transcription, artifacts, cancellation |
 | Recording UI lifecycle | `src/ui/recording-controller.ts` | Buffers early native failures |
@@ -47,13 +47,10 @@ Generated trees (`node_modules`, `dist`, `src-tauri/target`,
 | Frontend backend port | `src/domain/backend.ts` | Port contract owned by the inner layer; `TauriBackend` implements it |
 | Tauri IPC client | `src/adapters/tauri-backend.ts` | `invoke`/`listen` plus Zod boundary parsing |
 | Native composition | `src-tauri/src/composition.rs` | Only concrete port wiring and Tauri registration |
-| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | 40 frontend commands and event bridges (`job-event`, `recording-event`, `chatgpt-event`) |
-| Google sign-in gate (use cases) | `src-tauri/src/application/gateway.rs` | `AppAccessGate`: restore/renew, sign-in, sign-out, `AUTH_REQUIRED` on feature commands behind `GatewayAuthPort`/`GatewaySessionStore` |
-| Google sign-in gate (adapters) | `src-tauri/src/adapters/outbound/gateway/`, `settings/gateway.rs` | auth-gateway `/auth/native/*` client; session in the secret store |
-| Google sign-in gate (UI) | `src/ui/access-controller.ts`, `src/application/access-machine.ts` | Login screen in front of the inert shell, account chip, sign-out |
+| IPC command surface | `src-tauri/src/adapters/inbound/tauri.rs` | 39 frontend commands and event bridges (`job-event`, `recording-event`, `chatgpt-event`) |
 | Shared browser sign-in | `src-tauri/src/adapters/outbound/browser_sign_in/` | System browser, loopback callback, PKCE; callers pass their error codes |
-| Google Drive (use cases) | `src-tauri/src/application/drive.rs`, `src-tauri/src/domain/drive.rs` | `DriveAccounts`: connect, Picker import, sync with stateless conflict check, resumable upload of a finished recording by recording id, and the save-recordings choice behind `DriveAuthPort`/`DriveFilesPort`/`DriveSessionStore`; gateway bearer from `AppAccessGate::bearer()` |
-| Google Drive (adapters) | `src-tauri/src/adapters/outbound/drive/`, `settings/drive.rs` | Consent/Picker URL, gateway-brokered token exchange, Drive v3 REST; tokens in the secret store |
+| Google Drive (use cases) | `src-tauri/src/application/drive.rs`, `src-tauri/src/domain/drive.rs` | `DriveAccounts`: connect, Picker import, sync with stateless conflict check, resumable upload of a finished recording by recording id, the save-recordings choice, and the user's Google client (`DriveClient`; save and delete, locked while Drive is connected or waiting for consent; `DriveClientStatus {configured, clientId}`; connect and import fail with `DRIVE_CLIENT_REQUIRED` until one is saved) behind `DriveAuthPort`/`DriveFilesPort`/`DriveSessionStore`; code exchange and refresh go straight to Google |
+| Google Drive (adapters) | `src-tauri/src/adapters/outbound/drive/`, `settings/drive.rs` | Consent/Picker URL, direct Google token exchange with the caller-supplied `DriveClient` (the source ships no OAuth client or secret), Drive v3 REST; tokens in the secret store; `settings/drive.rs` also stores the user's client (ID in `settings.json`, secret in the secret store) |
 | Google Drive (UI) | `src/ui/drive-controller.ts`, `src/ui/drive-view.ts`, `src/application/drive-machine.ts` | Onboarding card, chip, import as a job, sync row, settings section |
 | ChatGPT sign-in (use cases) | `src-tauri/src/application/chatgpt.rs` | Session, token refresh, model list, sign-out behind `ChatGptAuthPort`/`ChatGptStore` |
 | ChatGPT sign-in (adapters) | `src-tauri/src/adapters/outbound/chatgpt/` | OAuth authorize/callback, ID-token, models |
@@ -80,7 +77,7 @@ call sites, not semantic workspace references.
 |--------|------|----------|------|------|
 | `AppController` | class | `src/ui/controller.ts` | 1 construction | Frontend workflow coordinator |
 | `TauriBackend` | class | `src/adapters/tauri-backend.ts` | 1 construction | IPC and runtime-validation boundary |
-| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 40 command paths | Backend use-case facade |
+| `Application` | struct | `src-tauri/src/application/use_cases.rs` | 39 command paths | Backend use-case facade |
 | `run` | function | `src-tauri/src/composition.rs` | 1 entry call | Native composition root |
 | `run_process` | async function | `src-tauri/src/adapters/outbound/process.rs` | 3 production calls | Worker/process supervisor |
 | `NativeRecorder` | struct | `src-tauri/src/adapters/outbound/recording/mod.rs` | 1 production wiring | Recording port implementation |

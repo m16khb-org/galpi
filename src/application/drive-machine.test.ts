@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 
 import type { DriveRecordingUpload, DriveSyncResult } from "../domain/drive"
-import { type DriveEvent, type DriveState, initialDrive, reduceDrive } from "./drive-machine"
+import {
+  clientLocked,
+  type DriveEvent,
+  type DriveState,
+  initialDrive,
+  reduceDrive,
+} from "./drive-machine"
 
 const connected = { state: "connected", email: "dev@example.com", saveRecordings: false } as const
 const disconnected = { state: "disconnected", onboardingDismissed: false } as const
@@ -138,13 +144,9 @@ describe("reduceDrive", () => {
       sync: { status: "failed", jobId: "job-1", message: "다시 연결해 주세요." },
       savingRecordings: false,
       recording: null,
+      client: { status: "unknown" },
+      clientNotice: null,
     })
-  })
-
-  test("signing out forgets everything", () => {
-    const busy = run([{ type: "importStarted" }, { type: "syncStarted", jobId: "job-1" }], online)
-
-    expect(reduceDrive(busy, { type: "signedOut" })).toEqual(initialDrive)
   })
 
   test("the recordings choice saves only while connected, one write at a time", () => {
@@ -236,5 +238,102 @@ describe("reduceDrive", () => {
       reduceDrive(uploading, { type: "reconnectRequired", message: "다시 연결해 주세요." })
         .recording,
     ).toEqual({ status: "failed", recordingId: "rec-1", message: "다시 연결해 주세요." })
+  })
+})
+
+describe("Drive client machine", () => {
+  const noClient = { configured: false, clientId: null } as const
+  const savedClient = { configured: true, clientId: "123-abc.apps.googleusercontent.com" } as const
+  const ready = run([{ type: "clientLoaded", status: noClient }], offline)
+
+  test("Drive client is locked while connected or waiting for consent, and only then", () => {
+    // Given / When / Then
+    expect(clientLocked(ready)).toBe(false)
+    expect(clientLocked(run([{ type: "connectStarted" }], ready))).toBe(true)
+    expect(clientLocked(run([{ type: "connectStarted" }, { type: "connectCancelled" }], ready))).toBe(
+      false,
+    )
+    expect(clientLocked(run([{ type: "statusLoaded", status: connected }], ready))).toBe(true)
+  })
+
+  test("Drive client write starts only when the client is known and unlocked", () => {
+    // Given
+    const unknown = run([{ type: "clientSaveStarted" }], offline)
+    const locked = run([{ type: "clientSaveStarted" }], run([{ type: "statusLoaded", status: connected }], ready))
+
+    // When
+    const started = run([{ type: "clientSaveStarted" }], ready)
+
+    // Then
+    expect(unknown.clientNotice).toBeNull()
+    expect(locked.clientNotice).toBeNull()
+    expect(started.clientNotice).toEqual({ kind: "saving" })
+  })
+
+  test("Drive client save stores the loaded id and reports 저장됨; a removal reports nothing", () => {
+    // Given
+    const saving = run([{ type: "clientSaveStarted" }], ready)
+
+    // When
+    const saved = reduceDrive(saving, { type: "clientSaved", status: savedClient })
+    const removed = run(
+      [{ type: "clientSaveStarted" }, { type: "clientSaved", status: noClient }],
+      saved,
+    )
+
+    // Then
+    expect(saved.client).toEqual({ status: "saved", clientId: savedClient.clientId })
+    expect(saved.clientNotice).toEqual({ kind: "saved" })
+    expect(removed.client).toEqual({ status: "none" })
+    expect(removed.clientNotice).toBeNull()
+  })
+
+  test("Drive client loaded as saved or missing, and unknown until then", () => {
+    // Given / When / Then
+    expect(offline.client).toEqual({ status: "unknown" })
+    expect(ready.client).toEqual({ status: "none" })
+    expect(run([{ type: "clientLoaded", status: savedClient }], offline).client).toEqual({
+      status: "saved",
+      clientId: savedClient.clientId,
+    })
+  })
+
+  test("Drive client is missing for a legacy connection that the host dropped", () => {
+    // Given / When: the host disconnected it on startup, so the window sees both answers
+    const legacy = run(
+      [
+        { type: "statusLoaded", status: dismissed },
+        { type: "clientLoaded", status: noClient },
+      ],
+      initialDrive,
+    )
+
+    // Then: disconnected with no client, and the client is free to change
+    expect(legacy.connection).toEqual({ status: "disconnected", onboardingDismissed: true })
+    expect(legacy.client).toEqual({ status: "none" })
+    expect(clientLocked(legacy)).toBe(false)
+  })
+
+  test("Drive client failure keeps the client and names the field; an answer nobody awaits is ignored", () => {
+    // Given
+    const saving = run([{ type: "clientSaveStarted" }], ready)
+    const failure = {
+      type: "clientFailed",
+      field: "clientId",
+      message: "클라이언트 ID는 숫자-문자.apps.googleusercontent.com 형태여야 합니다.",
+    } as const
+
+    // When
+    const failed = reduceDrive(saving, failure)
+
+    // Then
+    expect(failed.client).toEqual({ status: "none" })
+    expect(failed.clientNotice).toEqual({
+      kind: "failed",
+      field: "clientId",
+      message: failure.message,
+    })
+    expect(reduceDrive(ready, failure)).toBe(ready)
+    expect(reduceDrive(ready, { type: "clientSaved", status: savedClient })).toBe(ready)
   })
 })

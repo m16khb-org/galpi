@@ -5,7 +5,7 @@ import {
   reduceDrive,
 } from "../application/drive-machine"
 import { type BackendPort, errorCode, errorMessage } from "../domain/backend"
-import type { DriveImport } from "../domain/drive"
+import type { DriveClientStatus, DriveImport } from "../domain/drive"
 import type { ImportedTranscript } from "../domain/job"
 import type { AppView } from "./app-view"
 
@@ -22,9 +22,9 @@ export interface DriveHooks {
   readonly onTranscriptImported: (imported: ImportedTranscript) => void
   readonly onImportFailed: (error: unknown) => void
   readonly onImportFinished: () => void
-  /** A Drive command answered `AUTH_REQUIRED`: the host closed the session. */
-  readonly onSessionExpired: () => void
   readonly onError: (message: string) => void
+  /** Drive was asked for with no client saved: lead the user to where one is saved. */
+  readonly onClientRequired: () => void
 }
 
 /**
@@ -48,14 +48,33 @@ export class DriveController {
     } catch {
       // Drive is optional: an unreadable status leaves every Drive control hidden.
     }
+    try {
+      this.dispatch({ type: "clientLoaded", status: await this.backend.loadDriveClient() })
+    } catch {
+      // The client section stays hidden rather than offering a change it cannot show.
+    }
   }
 
-  /** Forget everything on sign-out; the next sign-in loads the status again. */
-  reset(): void {
-    this.dispatch({ type: "signedOut" })
+  /** Store the client typed in the settings sheet; the host refuses it while Drive is connected. */
+  async saveClient(): Promise<void> {
+    const { clientId, clientSecret } = this.view.drive.clientForm()
+    await this.writeClient(() => this.backend.saveDriveClient(clientId, clientSecret))
   }
 
+  /** Remove the saved client; the host refuses it while Drive is connected. */
+  async clearClient(): Promise<void> {
+    await this.writeClient(() => this.backend.clearDriveClient())
+  }
+
+  /**
+   * Without a client Drive cannot connect, so the button leads to the setup
+   * instead of asking the host for a connection it would refuse.
+   */
   async connect(): Promise<void> {
+    if (this.state.client.status === "none") {
+      this.hooks.onClientRequired()
+      return
+    }
     if (this.dispatch({ type: "connectStarted" }).activity !== "connecting") return
     try {
       this.dispatch({ type: "connectSucceeded", status: await this.backend.connectDrive() })
@@ -65,7 +84,7 @@ export class DriveController {
         return
       }
       this.dispatch({ type: "connectFailed", message: errorMessage(error) })
-      if (errorCode(error) === "AUTH_REQUIRED") this.hooks.onSessionExpired()
+      this.noteMissingClient(error)
     }
   }
 
@@ -99,6 +118,7 @@ export class DriveController {
   }
 
   async importFromDrive(): Promise<void> {
+    if (this.state.client.status === "none") return
     if (this.dispatch({ type: "importStarted" }).activity !== "importing") return
     const jobId = crypto.randomUUID()
     this.hooks.onImportStarted(jobId, "recording")
@@ -110,6 +130,7 @@ export class DriveController {
       this.dispatch({ type: "importFailed" })
       this.hooks.onImportFailed(error)
       this.noteLostConnection(error)
+      this.noteMissingClient(error)
     } finally {
       this.hooks.onImportFinished()
     }
@@ -120,6 +141,7 @@ export class DriveController {
    * `outputRoot` as an augment target. Same job slot and cancel as `importFromDrive`.
    */
   async importTranscriptFromDrive(outputRoot: string): Promise<void> {
+    if (this.state.client.status === "none") return
     if (this.dispatch({ type: "importStarted" }).activity !== "importing") return
     const jobId = crypto.randomUUID()
     this.hooks.onImportStarted(jobId, "transcript")
@@ -131,6 +153,7 @@ export class DriveController {
       this.dispatch({ type: "importFailed" })
       this.hooks.onImportFailed(error)
       this.noteLostConnection(error)
+      this.noteMissingClient(error)
     } finally {
       this.hooks.onImportFinished()
     }
@@ -210,6 +233,26 @@ export class DriveController {
     this.dispatch({ type: "recordingUploadCleared" })
   }
 
+  private async writeClient(write: () => Promise<DriveClientStatus>): Promise<void> {
+    if (this.state.clientNotice?.kind === "saving") return
+    if (this.dispatch({ type: "clientSaveStarted" }).clientNotice?.kind !== "saving") return
+    try {
+      this.dispatch({ type: "clientSaved", status: await write() })
+    } catch (error) {
+      const message = errorMessage(error)
+      // The host words a refusal around the field it refused; only that field is marked.
+      // The Rust test `drive_client_invalid_input_is_refused_before_anything_is_stored`
+      // pins the two prefixes ("클라이언트 ID", "보안 비밀번호") this relies on.
+      const field =
+        errorCode(error) !== "DRIVE_CLIENT_INVALID"
+          ? null
+          : message.startsWith("보안 비밀번호")
+            ? "clientSecret"
+            : "clientId"
+      this.dispatch({ type: "clientFailed", field, message })
+    }
+  }
+
   private async uploadRecording(recordingId: string): Promise<void> {
     const started = this.dispatch({ type: "recordingUploadStarted", recordingId })
     if (started.recording?.recordingId !== recordingId) return
@@ -234,14 +277,21 @@ export class DriveController {
   }
 
   /**
-   * Follow the host when a failure means the session or the connection is gone.
+   * The host has no client although the window thought it did (a race with a
+   * removal): show the setup state, and let the host's own message stand.
+   */
+  private noteMissingClient(error: unknown): void {
+    if (errorCode(error) !== "DRIVE_CLIENT_REQUIRED") return
+    this.dispatch({ type: "clientLoaded", status: { configured: false, clientId: null } })
+  }
+
+  /**
+   * Follow the host when a failure means the connection is gone.
    * A user who just disconnected already sees the disconnected state.
    */
   private noteLostConnection(error: unknown): void {
     const code = errorCode(error)
-    if (code === "AUTH_REQUIRED") {
-      this.hooks.onSessionExpired()
-    } else if (
+    if (
       (code === "DRIVE_RECONNECT_REQUIRED" || code === "DRIVE_NOT_CONNECTED") &&
       this.state.connection.status === "connected"
     ) {
@@ -251,7 +301,10 @@ export class DriveController {
 
   private dispatch(event: DriveEvent): DriveState {
     this.state = reduceDrive(this.state, event)
-    this.view.setDriveConnected(this.state.connection.status === "connected")
+    // Import needs a connection and a client; a connection without one is not offered.
+    this.view.setDriveConnected(
+      this.state.connection.status === "connected" && this.state.client.status !== "none",
+    )
     this.view.drive.render(this.state)
     return this.state
   }

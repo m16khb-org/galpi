@@ -15,7 +15,13 @@ import type {
   ChatGptSignInPhase,
   ChatGptSignOutResult,
 } from "./chatgpt"
-import type { DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult } from "./drive"
+import type {
+  DriveClientStatus,
+  DriveImport,
+  DriveRecordingUpload,
+  DriveStatus,
+  DriveSyncResult,
+} from "./drive"
 import type { RecordingSource } from "./recording"
 import type { SpeakerHint } from "./speaker"
 
@@ -67,18 +73,22 @@ export interface BackendPort {
   signOutOfChatGpt(): Promise<ChatGptSignOutResult>
   openChatGptUsagePage(): Promise<void>
   listenToChatGptEvents(handler: (phase: ChatGptSignInPhase) => void): Promise<() => void>
-  /** Renews the stored Google sign-in once; every feature command needs `signedIn`. */
-  loadAppAccess(): Promise<AppAccess>
-  /** Resolves once the browser sign-in finished, failed, was cancelled, or timed out. */
-  signInToGateway(): Promise<AppAccess>
-  cancelGatewaySignIn(): Promise<void>
-  signOutOfGateway(): Promise<void>
   loadDriveStatus(): Promise<DriveStatus>
   /** Resolves once the browser consent finished, failed, was cancelled, or timed out. */
   connectDrive(): Promise<DriveStatus>
   cancelDriveOperation(): Promise<void>
   disconnectDrive(): Promise<DriveStatus>
   dismissDriveOnboarding(): Promise<DriveStatus>
+  loadDriveClient(): Promise<DriveClientStatus>
+  /**
+   * Stores the user's Google OAuth client, which Drive needs before it can connect or import.
+   * Refused with `DRIVE_CLIENT_INVALID` for a malformed value and `DRIVE_CLIENT_LOCKED` while
+   * Drive is connected or waiting for consent. `connectDrive` and the imports fail with
+   * `DRIVE_CLIENT_REQUIRED` while no client is saved.
+   */
+  saveDriveClient(clientId: string, clientSecret: string): Promise<DriveClientStatus>
+  /** Removes the saved client (no other client exists); locked like `saveDriveClient`. */
+  clearDriveClient(): Promise<DriveClientStatus>
   /** Opens the desktop Picker and downloads the pick as job `jobId`; `cancel(jobId)` stops it. */
   importFromDrive(jobId: string): Promise<DriveImport>
   /**
@@ -94,16 +104,6 @@ export interface BackendPort {
   uploadRecordingToDrive(recordingId: string): Promise<DriveRecordingUpload>
   openDriveLink(url: string): Promise<void>
 }
-
-/** Whether the app may be used. Only the state and the e-mail cross the IPC border. */
-export type AppAccess =
-  | { readonly state: "signedOut" }
-  | {
-      readonly state: "signedIn"
-      readonly email: string | null
-      /** The gateway was unreachable at startup, so the stored sign-in was trusted as is. */
-      readonly offline: boolean
-    }
 
 export interface SetupResult {
   readonly jobId: string

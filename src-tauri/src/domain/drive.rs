@@ -48,14 +48,12 @@ impl Debug for DriveTokens {
     }
 }
 
-/// Why exchanging or renewing Drive tokens through the gateway failed.
+/// Why exchanging or renewing Drive tokens at Google failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriveTokenFailure {
     /// Google refused the code or refresh token (`invalid_grant`).
     Rejected,
-    /// The gateway refused the Galpi session that vouches for the request.
-    AuthRequired,
-    /// Anything else: network, gateway, Google, or an unexpected answer.
+    /// Anything else: network, Google, a refused client, or an unexpected answer.
     Unavailable,
 }
 
@@ -89,6 +87,95 @@ pub enum DriveStatus {
         /// starts uploading recordings by itself.
         save_recordings: bool,
     },
+}
+
+/// A Google OAuth client (desktop app type): its id and secret.
+///
+/// The person brings their own: `Debug` hides the secret, it has no
+/// `Serialize`, and no IPC type carries it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DriveClient {
+    id: String,
+    secret: String,
+}
+
+/// Which field of a [`DriveClient`] is malformed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveClientError {
+    Id,
+    Secret,
+}
+
+const CLIENT_ID_SUFFIX: &str = ".apps.googleusercontent.com";
+const CLIENT_SECRET_MAX_CHARS: usize = 256;
+
+impl DriveClient {
+    /// Trims both fields. The id must read `<digits>-<a-z0-9>.apps.googleusercontent.com`;
+    /// the secret must be non-empty without whitespace. Older clients' secrets
+    /// have no `GOCSPX-` prefix, so no prefix is required.
+    pub fn parse(id: &str, secret: &str) -> Result<Self, DriveClientError> {
+        let id = id.trim();
+        let secret = secret.trim();
+        let well_formed_id = id.strip_suffix(CLIENT_ID_SUFFIX).is_some_and(|stem| {
+            stem.split_once('-').is_some_and(|(project, key)| {
+                !project.is_empty()
+                    && project.bytes().all(|byte| byte.is_ascii_digit())
+                    && !key.is_empty()
+                    && key
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+            })
+        });
+        if !well_formed_id {
+            return Err(DriveClientError::Id);
+        }
+        if secret.is_empty()
+            || secret.chars().any(char::is_whitespace)
+            || secret.chars().count() > CLIENT_SECRET_MAX_CHARS
+        {
+            return Err(DriveClientError::Secret);
+        }
+        Ok(Self {
+            id: id.to_owned(),
+            secret: secret.to_owned(),
+        })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+}
+
+impl Debug for DriveClient {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DriveClient")
+            .field("id", &self.id)
+            .field("secret", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Which client the window sees Drive using. Never holds the secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveClientStatus {
+    /// `true` once the person saved a client; Drive cannot connect without one.
+    pub configured: bool,
+    pub client_id: Option<String>,
+}
+
+impl DriveClientStatus {
+    pub fn of(client: Option<&DriveClient>) -> Self {
+        Self {
+            configured: client.is_some(),
+            client_id: client.map(|client| client.id().to_owned()),
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -322,10 +409,10 @@ pub struct DriveRecordingUpload {
 #[cfg(test)]
 mod tests {
     use super::{
-        APP_PROPERTY_BYTES, DriveFileId, DriveIdError, DriveMeeting, DriveRecordingState,
-        DriveRecordingUpload, DriveStatus, DriveSyncFile, DriveSyncState, DriveTokens,
-        MEETING_PROPERTY, MeetingKey, RemoteFile, SyncDecision, decide, parse_picked_ids,
-        stable_hash,
+        APP_PROPERTY_BYTES, DriveClient, DriveClientError, DriveClientStatus, DriveFileId,
+        DriveIdError, DriveMeeting, DriveRecordingState, DriveRecordingUpload, DriveStatus,
+        DriveSyncFile, DriveSyncState, DriveTokens, MEETING_PROPERTY, MeetingKey, RemoteFile,
+        SyncDecision, decide, parse_picked_ids, stable_hash,
     };
     use crate::domain::artifact::ArtifactKind;
     use serde_json::json;
@@ -563,6 +650,94 @@ mod tests {
                 "webViewLink": null,
             })
         );
+        Ok(())
+    }
+
+    const CLIENT_ID: &str = "123-abc.apps.googleusercontent.com";
+
+    #[test]
+    fn drive_client_invalid_ids_are_refused() {
+        // Given: ids that are not `<digits>-<a-z0-9>.apps.googleusercontent.com`
+        let bad = [
+            "",
+            "123-abc",
+            "abc-def.apps.googleusercontent.com",
+            "123-.apps.googleusercontent.com",
+            "-abc.apps.googleusercontent.com",
+            "123-ABC.apps.googleusercontent.com",
+            "123-a b.apps.googleusercontent.com",
+            "123abc.apps.googleusercontent.com",
+            "123-abc.apps.googleusercontent.org",
+        ];
+
+        // When / Then
+        for id in bad {
+            assert_eq!(
+                DriveClient::parse(id, "test-client-secret").err(),
+                Some(DriveClientError::Id),
+                "{id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn drive_client_invalid_secrets_are_refused() {
+        // Given: an empty secret, one with whitespace inside, and one over 256 characters
+        let too_long = "x".repeat(257);
+        let bad = ["", "   ", "has space", "tab\tinside", too_long.as_str()];
+
+        // When / Then
+        for secret in bad {
+            assert_eq!(
+                DriveClient::parse(CLIENT_ID, secret).err(),
+                Some(DriveClientError::Secret),
+                "{secret:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn drive_client_invalid_input_is_trimmed_before_it_is_judged() -> Result<(), DriveClientError> {
+        // Given: values pasted with surrounding whitespace, and a secret without the
+        // GOCSPX- prefix that older clients have
+        let client = DriveClient::parse(
+            "  123-abc.apps.googleusercontent.com\n",
+            " test-client-secret\t",
+        )?;
+
+        // Then
+        assert_eq!(client.id(), CLIENT_ID);
+        assert_eq!(client.secret(), "test-client-secret");
+        Ok(())
+    }
+
+    #[test]
+    fn drive_client_hidden_from_debug_output() -> Result<(), DriveClientError> {
+        // Given
+        let client = DriveClient::parse(CLIENT_ID, "test-client-secret")?;
+
+        // When
+        let shown = format!("{client:?}");
+
+        // Then: the id may show, the secret never does
+        assert!(shown.contains(CLIENT_ID));
+        assert!(!shown.contains("test-client-secret"));
+        Ok(())
+    }
+
+    #[test]
+    fn drive_client_hidden_from_the_window_status() -> Result<(), Box<dyn std::error::Error>> {
+        // Given
+        let client = DriveClient::parse(CLIENT_ID, "test-client-secret")
+            .map_err(|error| format!("{error:?}"))?;
+
+        // When
+        let saved = serde_json::to_value(DriveClientStatus::of(Some(&client)))?;
+        let none = serde_json::to_value(DriveClientStatus::of(None))?;
+
+        // Then: only `configured` and `clientId` cross the boundary
+        assert_eq!(saved, json!({"configured": true, "clientId": CLIENT_ID}));
+        assert_eq!(none, json!({"configured": false, "clientId": null}));
         Ok(())
     }
 }

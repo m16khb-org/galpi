@@ -10,7 +10,7 @@ use crate::application::ports::{
     LargeUpload, LocalFileDigest, LocalUpload, PickedFile,
 };
 use crate::domain::artifact::ArtifactKind;
-use crate::domain::drive::{DriveFileId, DriveTokenFailure, DriveTokens, MeetingKey};
+use crate::domain::drive::{DriveClient, DriveFileId, DriveTokenFailure, DriveTokens, MeetingKey};
 use reqwest::Url;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -22,6 +22,11 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 const NOW: u64 = 1_000_000;
+
+fn own_client() -> Result<DriveClient, AppError> {
+    DriveClient::parse("123-abc.apps.googleusercontent.com", "test-client-secret")
+        .map_err(|error| AppError::new("TEST", format!("{error:?}")))
+}
 
 /// What the browser "user" sends back, given the `state` of the request.
 type Behavior = Box<dyn Fn(&str) -> String + Send + Sync>;
@@ -70,7 +75,7 @@ fn json_body(request: &Recorded) -> Value {
 
 fn tuning(base: &str) -> Tuning {
     Tuning {
-        gateway_url: base.to_owned(),
+        token_url: format!("{base}/token"),
         google_auth_url: format!("{base}/o/oauth2/v2/auth"),
         google_revoke_url: format!("{base}/revoke"),
         drive_api_url: format!("{base}/drive/v3"),
@@ -141,18 +146,30 @@ fn no_server() -> Handler {
     Arc::new(|_request| (404, String::new()))
 }
 
-const CONNECT: DriveAuthorize = DriveAuthorize {
-    picker: None,
-    login_hint: None,
-};
+fn connect_request(client: DriveClient) -> DriveAuthorize {
+    DriveAuthorize {
+        picker: None,
+        login_hint: None,
+        client,
+    }
+}
 
-fn callback() -> DriveCallback {
+fn connect() -> Result<DriveAuthorize, AppError> {
+    Ok(connect_request(own_client()?))
+}
+
+fn callback_for(client: DriveClient) -> DriveCallback {
     DriveCallback {
         code: "galpi-test-code".to_owned(),
         verifier: "galpi-test-verifier".to_owned(),
         redirect_uri: "http://127.0.0.1:1455/auth/callback".to_owned(),
         picked: Vec::new(),
+        client,
     }
+}
+
+fn callback() -> Result<DriveCallback, AppError> {
+    Ok(callback_for(own_client()?))
 }
 
 fn token_answer(refresh: Option<&str>) -> String {
@@ -179,13 +196,12 @@ async fn connecting_asks_google_for_drive_file_with_pkce_and_offline_access() ->
     let harness = AuthHarness::start(answer("&code=galpi-test-code"), no_server()).await?;
 
     // When
-    let callback = harness.authorize(&CONNECT).await?;
+    let callback = harness.authorize(&connect()?).await?;
 
     // Then
     let url = harness.opened_url()?;
     assert_eq!(url.path(), "/o/oauth2/v2/auth");
     let param = |name: &str| query(&url, name);
-    assert_eq!(param("client_id").as_deref(), Some(super::CLIENT_ID));
     assert_eq!(param("scope").as_deref(), Some(super::SCOPE));
     assert_eq!(param("response_type").as_deref(), Some("code"));
     assert_eq!(param("access_type").as_deref(), Some("offline"));
@@ -219,6 +235,7 @@ async fn the_picker_adds_onepick_audio_types_and_the_account_hint() -> Result<()
         .authorize(&DriveAuthorize {
             picker: Some(DrivePickerKind::Recording),
             login_hint: Some("user@example.com".to_owned()),
+            client: own_client()?,
         })
         .await?;
 
@@ -257,6 +274,7 @@ async fn the_transcript_picker_offers_text_types_only() -> Result<(), AppError> 
         .authorize(&DriveAuthorize {
             picker: Some(DrivePickerKind::Transcript),
             login_hint: Some("user@example.com".to_owned()),
+            client: own_client()?,
         })
         .await?;
 
@@ -288,7 +306,7 @@ async fn callbacks_that_do_not_answer_this_request_are_refused() -> Result<(), A
     for (behavior, code) in cases {
         let harness = AuthHarness::start(behavior, no_server()).await?;
         let error = harness
-            .authorize(&CONNECT)
+            .authorize(&connect()?)
             .await
             .err()
             .ok_or_else(|| AppError::new("TEST", "expected a refusal"))?;
@@ -299,7 +317,8 @@ async fn callbacks_that_do_not_answer_this_request_are_refused() -> Result<(), A
 }
 
 #[tokio::test]
-async fn the_gateway_exchanges_the_code_on_the_bearers_behalf() -> Result<(), AppError> {
+async fn the_code_is_exchanged_at_google_with_the_desktop_client_and_pkce() -> Result<(), AppError>
+{
     // Given
     let harness = AuthHarness::start(
         answer(""),
@@ -310,7 +329,7 @@ async fn the_gateway_exchanges_the_code_on_the_bearers_behalf() -> Result<(), Ap
     // When
     let tokens = harness
         .adapter
-        .exchange("galpi-test-gateway", &callback())
+        .exchange(&callback()?)
         .await
         .map_err(|failure| AppError::new("TEST", format!("{failure:?}")))?;
 
@@ -328,18 +347,25 @@ async fn the_gateway_exchanges_the_code_on_the_bearers_behalf() -> Result<(), Ap
         .first()
         .ok_or_else(|| AppError::new("TEST", "no exchange"))?;
     assert_eq!(exchange.method, "POST");
-    assert_eq!(exchange.route(), "/drive/native/token");
+    assert_eq!(exchange.route(), "/token");
+    assert_eq!(exchange.authorization, None);
     assert_eq!(
-        exchange.authorization.as_deref(),
-        Some("Bearer galpi-test-gateway")
+        exchange.content_type.as_deref(),
+        Some("application/x-www-form-urlencoded")
     );
-    assert_eq!(exchange.content_type.as_deref(), Some("application/json"));
-    let body = json_body(exchange);
-    assert_eq!(body["grant_type"], "authorization_code");
-    assert_eq!(body["code"], "galpi-test-code");
-    assert_eq!(body["code_verifier"], "galpi-test-verifier");
-    assert_eq!(body["redirect_uri"], "http://127.0.0.1:1455/auth/callback");
-    assert_eq!(body.as_object().map(serde_json::Map::len), Some(4));
+    assert_eq!(
+        exchange.field("grant_type").as_deref(),
+        Some("authorization_code")
+    );
+    assert_eq!(exchange.field("code").as_deref(), Some("galpi-test-code"));
+    assert_eq!(
+        exchange.field("code_verifier").as_deref(),
+        Some("galpi-test-verifier")
+    );
+    assert_eq!(
+        exchange.field("redirect_uri").as_deref(),
+        Some("http://127.0.0.1:1455/auth/callback")
+    );
     Ok(())
 }
 
@@ -358,8 +384,8 @@ async fn token_failures_map_to_what_the_caller_can_do() -> Result<(), AppError> 
         ),
         (
             401,
-            json!({"error": "unauthorized"}).to_string(),
-            DriveTokenFailure::AuthRequired,
+            json!({"error": "invalid_client"}).to_string(),
+            DriveTokenFailure::Unavailable,
         ),
         (
             503,
@@ -372,17 +398,13 @@ async fn token_failures_map_to_what_the_caller_can_do() -> Result<(), AppError> 
     for (status, body, expected) in cases {
         let harness = AuthHarness::start(answer(""), fixed(status, body)).await?;
         assert_eq!(
-            harness
-                .adapter
-                .exchange("galpi-test-gateway", &callback())
-                .await
-                .err(),
+            harness.adapter.exchange(&callback()?).await.err(),
             Some(expected),
             "status {status}"
         );
     }
 
-    // And: a gateway that cannot be reached
+    // And: a token endpoint that cannot be reached
     let unreachable = DriveOAuthAdapter::with_tuning(
         tuning("http://127.0.0.1:9"),
         Arc::new(FakeBrowser {
@@ -393,7 +415,7 @@ async fn token_failures_map_to_what_the_caller_can_do() -> Result<(), AppError> 
     )?;
     assert_eq!(
         unreachable
-            .refresh("galpi-test-gateway", "galpi-test-refresh")
+            .refresh(&own_client()?, "galpi-test-refresh")
             .await
             .err(),
         Some(DriveTokenFailure::Unavailable)
@@ -409,17 +431,104 @@ async fn a_renewal_without_a_rotated_refresh_token_keeps_the_old_one() -> Result
     // When
     let tokens = harness
         .adapter
-        .refresh("galpi-test-gateway", "galpi-test-refresh-old")
+        .refresh(&own_client()?, "galpi-test-refresh-old")
+        .await
+        .map_err(|failure| AppError::new("TEST", format!("{failure:?}")))?;
+
+    // Then: the renewal went to the same Google endpoint
+    assert_eq!(tokens.refresh_token, "galpi-test-refresh-old");
+    let requests = harness.server.requests();
+    let renewal = requests
+        .first()
+        .ok_or_else(|| AppError::new("TEST", "no renewal"))?;
+    assert_eq!(renewal.route(), "/token");
+    assert_eq!(renewal.authorization, None);
+    assert_eq!(
+        renewal.field("grant_type").as_deref(),
+        Some("refresh_token")
+    );
+    assert_eq!(
+        renewal.field("refresh_token").as_deref(),
+        Some("galpi-test-refresh-old")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_used_consent_url() -> Result<(), AppError> {
+    // Given: the person saved their own client
+    let harness = AuthHarness::start(answer("&code=galpi-test-code"), no_server()).await?;
+    let own = own_client()?;
+
+    // When
+    let callback = harness
+        .authorize(&DriveAuthorize {
+            picker: None,
+            login_hint: None,
+            client: own.clone(),
+        })
+        .await?;
+
+    // Then: the consent asks with their id, and the callback remembers which client asked
+    let url = harness.opened_url()?;
+    assert_eq!(query(&url, "client_id").as_deref(), Some(own.id()));
+    assert_eq!(callback.client, own);
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_used_exchange_form() -> Result<(), AppError> {
+    // Given: a callback that was asked with the person's own client
+    let harness = AuthHarness::start(
+        answer(""),
+        fixed(200, token_answer(Some("galpi-test-refresh"))),
+    )
+    .await?;
+    let own = own_client()?;
+    let callback = callback_for(own.clone());
+
+    // When
+    harness
+        .adapter
+        .exchange(&callback)
+        .await
+        .map_err(|failure| AppError::new("TEST", format!("{failure:?}")))?;
+
+    // Then: the exchange sends their id and secret
+    let requests = harness.server.requests();
+    let exchange = requests
+        .first()
+        .ok_or_else(|| AppError::new("TEST", "no exchange"))?;
+    assert_eq!(exchange.field("client_id").as_deref(), Some(own.id()));
+    assert_eq!(
+        exchange.field("client_secret").as_deref(),
+        Some(own.secret())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn drive_client_used_refresh_form() -> Result<(), AppError> {
+    // Given
+    let harness = AuthHarness::start(answer(""), fixed(200, token_answer(None))).await?;
+    let own = own_client()?;
+
+    // When
+    harness
+        .adapter
+        .refresh(&own, "galpi-test-refresh")
         .await
         .map_err(|failure| AppError::new("TEST", format!("{failure:?}")))?;
 
     // Then
-    assert_eq!(tokens.refresh_token, "galpi-test-refresh-old");
     let requests = harness.server.requests();
-    let body = requests.first().map_or(Value::Null, json_body);
+    let renewal = requests
+        .first()
+        .ok_or_else(|| AppError::new("TEST", "no renewal"))?;
+    assert_eq!(renewal.field("client_id").as_deref(), Some(own.id()));
     assert_eq!(
-        body,
-        json!({"grant_type": "refresh_token", "refresh_token": "galpi-test-refresh-old"})
+        renewal.field("client_secret").as_deref(),
+        Some(own.secret())
     );
     Ok(())
 }

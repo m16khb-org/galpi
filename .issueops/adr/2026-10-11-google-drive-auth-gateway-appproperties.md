@@ -3,6 +3,8 @@ name: 2026-10-11-google-drive-auth-gateway-appproperties
 description: Accepted decision record with rationale, alternatives, and consequences.
 ---
 
+> 부분 대체됨: gateway 대행 교환과 "소스 상수 포함" 기각(Decision 1·2)은 [2026-10-12-drop-auth-gateway-drive-client-in-source](2026-10-12-drop-auth-gateway-drive-client-in-source.md)가 대체했다(galpi#16). appProperties 무상태 동기화는 그대로 유효하다.
+
 # Google Drive 연동은 auth-gateway가 토큰을 교환하고 appProperties로 무상태 동기화한다
 
 - Date: 2026-10-11

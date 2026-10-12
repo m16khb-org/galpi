@@ -3,10 +3,10 @@ import { describe, expect, mock, test } from "bun:test"
 import type { DriveRecordingUpload, DriveSyncResult } from "../domain/drive"
 
 import {
-  appAccessSchema,
   chatGptModelsSchema,
   chatGptSettingsSchema,
   chatGptSignOutSchema,
+  driveClientStatusSchema,
   driveImportSchema,
   driveRecordingUploadSchema,
   driveStatusSchema,
@@ -276,25 +276,6 @@ describe("parseChatGptEvent", () => {
   })
 })
 
-describe("appAccessSchema", () => {
-  test("reads both access states", () => {
-    expect(appAccessSchema.parse({ state: "signedOut" })).toEqual({ state: "signedOut" })
-    expect(
-      appAccessSchema.parse({ state: "signedIn", email: "dev@example.com", offline: true }),
-    ).toEqual({ state: "signedIn", email: "dev@example.com", offline: true })
-  })
-
-  test("rejects a response that carries a session token", () => {
-    const leaked = { state: "signedIn", email: null, offline: false, refreshToken: "secret" }
-
-    expect(appAccessSchema.safeParse(leaked).success).toBe(false)
-  })
-
-  test("rejects a signed-in answer without the offline flag", () => {
-    expect(appAccessSchema.safeParse({ state: "signedIn", email: null }).success).toBe(false)
-  })
-})
-
 describe("Drive schemas", () => {
   test("read both connection states and refuse a leaked token", () => {
     const connected = { state: "connected" as const, email: "dev@example.com", saveRecordings: true }
@@ -310,6 +291,24 @@ describe("Drive schemas", () => {
     expect(
       driveStatusSchema.safeParse({ state: "connected", email: "dev@example.com" }).success,
     ).toBe(false)
+  })
+
+  test("Drive client status reads both shapes and refuses a response that carries the secret", () => {
+    // Given
+    const saved = { configured: true, clientId: "123-abc.apps.googleusercontent.com" }
+
+    // When / Then
+    expect(driveClientStatusSchema.parse(saved)).toEqual(saved)
+    expect(driveClientStatusSchema.parse({ configured: false, clientId: null })).toEqual({
+      configured: false,
+      clientId: null,
+    })
+    const leaked = { ...saved, clientSecret: "fake-secret-value" }
+    expect(driveClientStatusSchema.safeParse(leaked).success).toBe(false)
+    expect(driveClientStatusSchema.safeParse({ configured: true }).success).toBe(false)
+    // The old field name is not accepted: the host and window change together.
+    const legacy = { custom: true, clientId: saved.clientId }
+    expect(driveClientStatusSchema.safeParse(legacy).success).toBe(false)
   })
 
   test("read an import and refuse one without the Drive file id", () => {

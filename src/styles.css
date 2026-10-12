@@ -303,11 +303,6 @@ summary:focus-visible {
   font-size: var(--seed-font-size-t1);
 }
 
-/* The offline mode is spelled out in the chip's second line. */
-.account-chip span[data-state="pending"] {
-  color: var(--seed-color-fg-warning-contrast);
-}
-
 /* A long Drive address must not push the settings button off a narrow top bar. */
 .drive-chip {
   min-width: 0;
@@ -319,73 +314,6 @@ summary:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sign-out-button {
-  flex: 0 0 auto;
-  word-break: keep-all;
-}
-
-/* In front of the inert shell until someone signs in. */
-.access-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  padding: var(--seed-dimension-x5);
-  background: var(--seed-color-bg-neutral-muted);
-}
-
-.access-card {
-  display: grid;
-  justify-items: start;
-  gap: var(--seed-dimension-x3);
-  width: min(480px, calc(100vw - 40px));
-  padding: var(--seed-dimension-x8);
-  background: var(--seed-color-bg-layer-default);
-  border: 1px solid var(--seed-color-stroke-neutral-weak);
-  border-radius: var(--seed-radius-r4);
-  box-shadow: var(--seed-shadow-s3);
-}
-
-.access-card h1 {
-  margin: 0;
-  font-size: var(--seed-font-size-t9);
-  font-weight: var(--seed-font-weight-medium);
-  letter-spacing: -0.03em;
-}
-
-.access-card p {
-  margin: 0;
-  color: var(--seed-color-fg-neutral-muted);
-  font-size: var(--seed-font-size-t3);
-}
-
-/* Status pairs its color with text, so state never rides on color alone. */
-.access-card .access-status {
-  color: var(--seed-color-fg-warning-contrast);
-  font-size: var(--seed-font-size-t2);
-  font-weight: var(--seed-font-weight-bold);
-}
-
-.access-card .access-status[data-state="ready"] {
-  color: var(--seed-color-fg-positive-contrast);
-}
-
-.access-card .access-status[data-state="error"] {
-  color: var(--seed-color-fg-critical-contrast);
-}
-
-.access-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--seed-dimension-x3);
-  margin-top: var(--seed-dimension-x2);
-}
-
-.access-actions button {
-  word-break: keep-all;
 }
 
 .workspace-body {
@@ -782,6 +710,7 @@ summary:focus-visible {
 #settings-chatgpt-effort-help,
 #chatgpt-data-notice,
 #drive-settings-help,
+#drive-client-lock,
 #drive-save-recordings-help {
   margin: var(--seed-dimension-x2) 0 0;
   color: var(--seed-color-fg-neutral-muted);
@@ -1320,6 +1249,48 @@ button:disabled:not(.seed-action-button) {
 
 .drive-status[data-state="error"] {
   color: var(--seed-color-fg-critical-contrast);
+}
+
+.drive-status[data-state="default"] {
+  color: var(--seed-color-fg-neutral-muted);
+}
+
+/* The Google client is a sub-section of the Drive section, set off by a rule. */
+.drive-client {
+  margin-top: var(--seed-dimension-x5);
+  padding-top: var(--seed-dimension-x5);
+  border-top: 1px solid var(--seed-color-stroke-neutral-muted);
+}
+
+.drive-client .settings-section-heading strong {
+  font-size: var(--seed-font-size-t2);
+}
+
+.settings-input[aria-invalid="true"] {
+  border-color: var(--seed-color-stroke-critical-solid);
+}
+
+.drive-client-guide {
+  margin-top: var(--seed-dimension-x4);
+}
+
+.drive-client-guide summary {
+  color: var(--seed-color-fg-neutral-muted);
+  font-size: var(--seed-font-size-t1);
+  font-weight: var(--seed-font-weight-bold);
+  cursor: pointer;
+}
+
+.drive-client-guide ol,
+.drive-client-guide p {
+  margin: var(--seed-dimension-x2) 0 0;
+  color: var(--seed-color-fg-neutral-muted);
+  font-size: var(--seed-font-size-t1);
+  line-height: var(--seed-line-height-t1);
+}
+
+.drive-client-guide ol {
+  padding-left: var(--seed-dimension-x5);
 }
 
 .drive-import {

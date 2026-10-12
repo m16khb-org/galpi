@@ -1,10 +1,8 @@
 //! Google Drive use cases: connecting, importing a recording through the
 //! desktop Picker, and syncing a meeting's results.
 //!
-//! The host owns the Drive tokens. Exchanges and renewals go through the
-//! auth-gateway, which needs a fresh gateway bearer each time, so the bearer
-//! is fetched right before every gateway call rather than once per use case:
-//! a consent page can stay open for minutes.
+//! The host owns the Drive tokens. Exchanges and renewals go straight to
+//! Google's token endpoint.
 //!
 //! Every connection and token write happens under `store_lock` and, apart
 //! from connecting, only while a connection is still on file. A disconnect
@@ -13,16 +11,16 @@
 //! back. Dismissing the onboarding card touches neither and takes no lock.
 
 use crate::application::error::AppError;
-use crate::application::gateway::{AppAccessGate, auth_required};
 use crate::application::ports::{
     ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DrivePickerKind,
     DriveSessionStore, LargeUpload, PickedFile,
 };
 use crate::domain::artifact::{ArtifactKind, Artifacts, is_transcript_name};
 use crate::domain::drive::{
-    DRIVE_ACCESS_REFRESH_MARGIN_SECONDS, DriveConnection, DriveFileId, DriveMeeting,
-    DriveRecordingState, DriveRecordingUpload, DriveStatus, DriveSyncFile, DriveSyncResult,
-    DriveSyncState, DriveTokenFailure, DriveTokens, MeetingKey, SyncDecision, decide,
+    DRIVE_ACCESS_REFRESH_MARGIN_SECONDS, DriveClient, DriveClientError, DriveClientStatus,
+    DriveConnection, DriveFileId, DriveMeeting, DriveRecordingState, DriveRecordingUpload,
+    DriveStatus, DriveSyncFile, DriveSyncResult, DriveSyncState, DriveTokenFailure, DriveTokens,
+    MeetingKey, SyncDecision, decide,
 };
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,8 +48,34 @@ fn reconnect_required() -> AppError {
 fn unavailable() -> AppError {
     AppError::new(
         "DRIVE_UNAVAILABLE",
-        "Google Drive 또는 로그인 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+        "Google Drive에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
     )
+}
+
+fn client_locked() -> AppError {
+    AppError::new(
+        "DRIVE_CLIENT_LOCKED",
+        "Drive 연결을 해제한 뒤에 바꿀 수 있습니다.",
+    )
+}
+
+fn client_required() -> AppError {
+    AppError::new(
+        "DRIVE_CLIENT_REQUIRED",
+        "Google 클라이언트를 먼저 저장해 주세요.",
+    )
+}
+
+fn client_invalid(error: DriveClientError) -> AppError {
+    let message = match error {
+        DriveClientError::Id => {
+            "클라이언트 ID는 숫자-문자.apps.googleusercontent.com 형태여야 합니다."
+        }
+        DriveClientError::Secret => {
+            "보안 비밀번호는 비어 있지 않고 공백 없이 256자 이하여야 합니다."
+        }
+    };
+    AppError::new("DRIVE_CLIENT_INVALID", message)
 }
 
 fn cancelled() -> AppError {
@@ -66,20 +90,11 @@ fn token_rejected(error: &AppError) -> bool {
     error.code == "DRIVE_TOKEN_REJECTED"
 }
 
-/// What a failed gateway token call means to the caller. `rejected` is the
-/// answer to Google refusing the grant. A refused bearer means the Galpi
-/// session is gone, so the host closes it too, as the window will.
-async fn token_failure(
-    access: &AppAccessGate,
-    failure: DriveTokenFailure,
-    rejected: AppError,
-) -> AppError {
+/// What a failed token call means to the caller. `rejected` is the answer to
+/// Google refusing the grant.
+fn token_failure(failure: DriveTokenFailure, rejected: AppError) -> AppError {
     match failure {
         DriveTokenFailure::Rejected => rejected,
-        DriveTokenFailure::AuthRequired => {
-            access.expire().await;
-            auth_required()
-        }
         DriveTokenFailure::Unavailable => unavailable(),
     }
 }
@@ -169,6 +184,13 @@ impl DriveAccounts {
     }
 
     pub async fn status(&self) -> Result<DriveStatus, AppError> {
+        // Earlier builds connected with a built-in client that no longer
+        // exists; such a connection cannot be renewed, so it is dropped here.
+        if self.store.load_connection().await?.is_some()
+            && self.store.load_client().await?.is_none()
+        {
+            return self.disconnect().await;
+        }
         self.store.load_status().await
     }
 
@@ -188,6 +210,11 @@ impl DriveAccounts {
         self.store.load_status().await
     }
 
+    /// The saved client; Drive cannot ask Google for anything without one.
+    async fn required_client(&self) -> Result<DriveClient, AppError> {
+        self.store.load_client().await?.ok_or_else(client_required)
+    }
+
     /// Fail with `DRIVE_NOT_CONNECTED` unless a connection is on file.
     async fn connection(&self) -> Result<DriveConnection, AppError> {
         self.store
@@ -196,16 +223,17 @@ impl DriveAccounts {
             .ok_or_else(not_connected)
     }
 
-    /// Consent in the browser, exchange through the gateway, then remember
-    /// the account and the `Galpi` folder.
-    pub async fn connect(&self, access: &AppAccessGate) -> Result<DriveStatus, AppError> {
+    /// Consent in the browser, exchange at Google, then remember the account
+    /// and the `Galpi` folder.
+    pub async fn connect(&self) -> Result<DriveStatus, AppError> {
         let (_slot, mut cancel) = self.claim_operation()?;
+        let client = self.required_client().await?;
         let (_callback, tokens) = self
             .consent(
-                access,
                 &DriveAuthorize {
                     picker: None,
                     login_hint: None,
+                    client,
                 },
                 &mut cancel,
             )
@@ -229,27 +257,70 @@ impl DriveAccounts {
         self.store.load_status().await
     }
 
-    /// One browser consent, exchanged through the gateway. The bearer is
-    /// fetched only after the browser comes back, so a consent left open for
-    /// minutes still exchanges with a live gateway session.
+    /// One browser consent, exchanged at Google.
     async fn consent(
         &self,
-        access: &AppAccessGate,
         request: &DriveAuthorize,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<(DriveCallback, DriveTokens), AppError> {
         let callback = self.auth.authorize(request, cancel).await?;
-        let bearer = access.bearer().await?;
-        match self.auth.exchange(&bearer, &callback).await {
+        match self.auth.exchange(&callback).await {
             Ok(tokens) => Ok((callback, tokens)),
             Err(failure) => {
                 let rejected = AppError::new(
                     "DRIVE_CONNECT_FAILED",
                     "Google이 Drive 권한을 확인하지 못했습니다. 다시 시도해 주세요.",
                 );
-                Err(token_failure(access, failure, rejected).await)
+                Err(token_failure(failure, rejected))
             }
         }
+    }
+
+    /// Which client Drive uses now, if one is saved.
+    pub async fn client_status(&self) -> Result<DriveClientStatus, AppError> {
+        Ok(DriveClientStatus::of(
+            self.store.load_client().await?.as_ref(),
+        ))
+    }
+
+    /// Save the person's own client. Refused while Drive is connected or a
+    /// connect consent is waiting, because a refresh token only renews at the
+    /// client that issued it.
+    pub async fn save_client(&self, id: &str, secret: &str) -> Result<DriveClientStatus, AppError> {
+        let client = DriveClient::parse(id, secret).map_err(client_invalid)?;
+        let (_slot, _cancel) = self.claim_client_change()?;
+        let _writing = self.store_lock.lock().await;
+        self.refuse_while_connected().await?;
+        self.store.save_client(client).await?;
+        self.client_status().await
+    }
+
+    /// Remove the saved client, under the same rules as `save_client`.
+    /// Disconnecting Drive does not do this.
+    pub async fn clear_client(&self) -> Result<DriveClientStatus, AppError> {
+        let (_slot, _cancel) = self.claim_client_change()?;
+        let _writing = self.store_lock.lock().await;
+        self.refuse_while_connected().await?;
+        self.store.clear_client().await?;
+        self.client_status().await
+    }
+
+    /// The connect slot, so a client change cannot overlap a waiting consent.
+    fn claim_client_change(&self) -> Result<(OperationSlot<'_>, oneshot::Receiver<()>), AppError> {
+        self.claim_operation().map_err(|error| {
+            if error.code == "DRIVE_BUSY" {
+                client_locked()
+            } else {
+                error
+            }
+        })
+    }
+
+    async fn refuse_while_connected(&self) -> Result<(), AppError> {
+        if self.store.load_connection().await?.is_some() {
+            return Err(client_locked());
+        }
+        Ok(())
     }
 
     async fn prepare_connection(&self, tokens: &DriveTokens) -> Result<DriveConnection, AppError> {
@@ -294,33 +365,29 @@ impl DriveAccounts {
     }
 
     /// A Drive access token with at least the refresh margin left.
-    async fn access_token(&self, access: &AppAccessGate) -> Result<String, AppError> {
+    async fn access_token(&self) -> Result<String, AppError> {
         let _writing = self.store_lock.lock().await;
         let tokens = self.stored_tokens().await?;
         if !tokens.needs_refresh(self.clock.now_unix(), DRIVE_ACCESS_REFRESH_MARGIN_SECONDS) {
             return Ok(tokens.access_token);
         }
-        self.renew_locked(access, &tokens).await
+        self.renew_locked(&tokens).await
     }
 
     /// Pass a Drive call's result through, except a 401 (see `after_refused_token`).
-    async fn recovered<T>(
-        &self,
-        access: &AppAccessGate,
-        result: Result<T, AppError>,
-    ) -> Result<T, AppError> {
+    async fn recovered<T>(&self, result: Result<T, AppError>) -> Result<T, AppError> {
         match result {
-            Err(error) if token_rejected(&error) => Err(self.after_refused_token(access).await),
+            Err(error) if token_rejected(&error) => Err(self.after_refused_token().await),
             result => result,
         }
     }
 
     /// Answer a Drive 401: renew once whatever the expiry says, then fail the
     /// operation without resending the refused request.
-    async fn after_refused_token(&self, access: &AppAccessGate) -> AppError {
+    async fn after_refused_token(&self) -> AppError {
         let _writing = self.store_lock.lock().await;
         let renewed = match self.stored_tokens().await {
-            Ok(tokens) => self.renew_locked(access, &tokens).await,
+            Ok(tokens) => self.renew_locked(&tokens).await,
             Err(error) => Err(error),
         };
         renewed.err().unwrap_or_else(unavailable)
@@ -334,14 +401,14 @@ impl DriveAccounts {
         self.store.load_tokens().await?.ok_or_else(not_connected)
     }
 
-    /// Renew through the gateway; must be called under `store_lock`.
-    async fn renew_locked(
-        &self,
-        access: &AppAccessGate,
-        tokens: &DriveTokens,
-    ) -> Result<String, AppError> {
-        let bearer = access.bearer().await?;
-        match self.auth.refresh(&bearer, &tokens.refresh_token).await {
+    /// Renew at Google; must be called under `store_lock`.
+    async fn renew_locked(&self, tokens: &DriveTokens) -> Result<String, AppError> {
+        // A connection made under the removed built-in client has nothing to renew with.
+        let Some(client) = self.store.load_client().await? else {
+            self.store.clear().await?;
+            return Err(reconnect_required());
+        };
+        match self.auth.refresh(&client, &tokens.refresh_token).await {
             Ok(renewed) => {
                 let access_token = renewed.access_token.clone();
                 self.store.replace_tokens(renewed).await?;
@@ -351,7 +418,7 @@ impl DriveAccounts {
                 self.store.clear().await?;
                 Err(reconnect_required())
             }
-            Err(failure) => Err(token_failure(access, failure, reconnect_required()).await),
+            Err(failure) => Err(token_failure(failure, reconnect_required())),
         }
     }
 
@@ -362,13 +429,12 @@ impl DriveAccounts {
     /// consent wait and the download.
     pub async fn import(
         &self,
-        access: &AppAccessGate,
         kind: DrivePickerKind,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<ImportedFile, AppError> {
-        let (id, access_token) = self.pick(access, kind, cancel).await?;
+        let (id, access_token) = self.pick(kind, cancel).await?;
         let file = self
-            .recovered(access, self.files.file_metadata(&access_token, &id).await)
+            .recovered(self.files.file_metadata(&access_token, &id).await)
             .await?;
         if !supported(kind, &file) {
             return Err(unsupported_file(kind));
@@ -380,10 +446,7 @@ impl DriveAccounts {
             ));
         }
         let path = self
-            .recovered(
-                access,
-                self.files.download(&access_token, &id, &file, cancel).await,
-            )
+            .recovered(self.files.download(&access_token, &id, &file, cancel).await)
             .await?;
         Ok(ImportedFile {
             path,
@@ -396,17 +459,17 @@ impl DriveAccounts {
     /// The Picker consent: the chosen file and a token that can read it.
     async fn pick(
         &self,
-        access: &AppAccessGate,
         kind: DrivePickerKind,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<(DriveFileId, String), AppError> {
         let connection = self.connection().await?;
+        let client = self.required_client().await?;
         let (callback, tokens) = self
             .consent(
-                access,
                 &DriveAuthorize {
                     picker: Some(kind),
                     login_hint: Some(connection.email.clone()),
+                    client,
                 },
                 cancel,
             )
@@ -433,7 +496,17 @@ impl DriveAccounts {
             let current = self.store.load_connection().await?;
             // A disconnect, or a reconnect to another account, during the
             // Picker wait must not attach these tokens to the new connection.
-            if current.is_none_or(|current| current.permission_id != account.permission_id) {
+            // A client saved or removed, or a reconnect under another one, during
+            // the Picker wait would make these tokens belong to a client the
+            // connection no longer uses.
+            let client_changed = self
+                .store
+                .load_client()
+                .await?
+                .is_none_or(|stored| stored.id() != callback.client.id());
+            if client_changed
+                || current.is_none_or(|current| current.permission_id != account.permission_id)
+            {
                 self.auth.revoke(&tokens.refresh_token).await;
                 return Err(not_connected());
             }
@@ -451,13 +524,11 @@ impl DriveAccounts {
     /// The `Galpi` folder, remembered again when Drive had to replace it.
     async fn ensure_root(
         &self,
-        access: &AppAccessGate,
         connection: &DriveConnection,
         token: &str,
     ) -> Result<String, AppError> {
         let root = self
             .recovered(
-                access,
                 self.files
                     .ensure_root_folder(token, Some(&connection.folder_id))
                     .await,
@@ -479,17 +550,15 @@ impl DriveAccounts {
     /// Drive copy that changed elsewhere since.
     pub async fn upload_recording(
         &self,
-        access: &AppAccessGate,
         meeting: &DriveMeeting,
         path: &Path,
     ) -> Result<DriveRecordingUpload, AppError> {
         let connection = self.connection().await?;
         let digest = self.files.digest_local(path).await?;
-        let token = self.access_token(access).await?;
-        let root = self.ensure_root(access, &connection, &token).await?;
+        let token = self.access_token().await?;
+        let root = self.ensure_root(&connection, &token).await?;
         let folder = self
             .recovered(
-                access,
                 self.files
                     .ensure_meeting_folder(&token, &root, &meeting.key, &meeting.name)
                     .await,
@@ -497,7 +566,6 @@ impl DriveAccounts {
             .await?;
         let remote = self
             .recovered(
-                access,
                 self.files
                     .find_artifact(&token, &folder.id, ArtifactKind::Recording)
                     .await,
@@ -516,7 +584,7 @@ impl DriveAccounts {
             // `decide` never asks to update a file that is not there.
             (SyncDecision::Create, _) | (SyncDecision::Update, None) => {
                 let sent = self
-                    .recovered(access, self.files.upload_large(&token, &create).await)
+                    .recovered(self.files.upload_large(&token, &create).await)
                     .await?;
                 (DriveRecordingState::Uploaded, sent.web_view_link)
             }
@@ -526,7 +594,7 @@ impl DriveAccounts {
                     ..create
                 };
                 let sent = self
-                    .recovered(access, self.files.upload_large(&token, &replace).await)
+                    .recovered(self.files.upload_large(&token, &replace).await)
                     .await?;
                 (
                     DriveRecordingState::Updated,
@@ -556,17 +624,15 @@ impl DriveAccounts {
     /// whole sync.
     pub async fn sync(
         &self,
-        access: &AppAccessGate,
         artifacts: &Artifacts,
         meeting: &DriveMeeting,
         overwrite: bool,
     ) -> Result<DriveSyncResult, AppError> {
         let connection = self.connection().await?;
-        let token = self.access_token(access).await?;
-        let root = self.ensure_root(access, &connection, &token).await?;
+        let token = self.access_token().await?;
+        let root = self.ensure_root(&connection, &token).await?;
         let folder = self
             .recovered(
-                access,
                 self.files
                     .ensure_meeting_folder(&token, &root, &meeting.key, &meeting.name)
                     .await,
@@ -583,7 +649,7 @@ impl DriveAccounts {
             match synced {
                 Ok(file) => files.push(file),
                 Err(error) if token_rejected(&error) => {
-                    return Err(self.after_refused_token(access).await);
+                    return Err(self.after_refused_token().await);
                 }
                 // Drive itself is unreachable: the next file would fail the same way.
                 Err(error) if error.code == "DRIVE_UNAVAILABLE" => return Err(error),

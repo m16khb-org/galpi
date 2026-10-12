@@ -5,7 +5,6 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { z } from "zod"
 
 import type {
-  AppAccess,
   ArtifactKind,
   BackendPort,
   RecordingFailure,
@@ -32,7 +31,13 @@ import type {
   ChatGptSignInPhase,
   ChatGptSignOutResult,
 } from "../domain/chatgpt"
-import type { DriveImport, DriveRecordingUpload, DriveStatus, DriveSyncResult } from "../domain/drive"
+import type {
+  DriveClientStatus,
+  DriveImport,
+  DriveRecordingUpload,
+  DriveStatus,
+  DriveSyncResult,
+} from "../domain/drive"
 import type { RecordingSource } from "../domain/recording"
 
 const enginePresetSchema = z.enum(["qwen3", "whisperx"])
@@ -129,16 +134,6 @@ export const chatGptSignOutSchema = z.strictObject({
 
 const chatGptEventSchema = z.object({ phase: z.enum(["awaitingBrowser", "exchanging"]) })
 
-// Strict for the same reason: no session token may ever reach the window.
-export const appAccessSchema = z.discriminatedUnion("state", [
-  z.strictObject({ state: z.literal("signedOut") }),
-  z.strictObject({
-    state: z.literal("signedIn"),
-    email: z.string().nullable(),
-    offline: z.boolean(),
-  }),
-])
-
 // Strict like the sign-in schemas: no Drive token may ever reach the window.
 export const driveStatusSchema = z.discriminatedUnion("state", [
   z.strictObject({ state: z.literal("disconnected"), onboardingDismissed: z.boolean() }),
@@ -148,6 +143,12 @@ export const driveStatusSchema = z.discriminatedUnion("state", [
     saveRecordings: z.boolean(),
   }),
 ])
+
+// Strict too: the client secret is the user's and must never come back to the window.
+export const driveClientStatusSchema = z.strictObject({
+  configured: z.boolean(),
+  clientId: z.string().nullable(),
+})
 
 export const driveImportSchema = z.strictObject({
   jobId: z.string(),
@@ -428,22 +429,6 @@ export class TauriBackend implements BackendPort {
     })
   }
 
-  async loadAppAccess(): Promise<AppAccess> {
-    return appAccessSchema.parse(await invoke<unknown>("load_app_access"))
-  }
-
-  async signInToGateway(): Promise<AppAccess> {
-    return appAccessSchema.parse(await invoke<unknown>("sign_in_to_gateway"))
-  }
-
-  async cancelGatewaySignIn(): Promise<void> {
-    await invoke("cancel_gateway_sign_in")
-  }
-
-  async signOutOfGateway(): Promise<void> {
-    await invoke("sign_out_of_gateway")
-  }
-
   async loadDriveStatus(): Promise<DriveStatus> {
     return driveStatusSchema.parse(await invoke<unknown>("load_drive_status"))
   }
@@ -462,6 +447,20 @@ export class TauriBackend implements BackendPort {
 
   async dismissDriveOnboarding(): Promise<DriveStatus> {
     return driveStatusSchema.parse(await invoke<unknown>("dismiss_drive_onboarding"))
+  }
+
+  async loadDriveClient(): Promise<DriveClientStatus> {
+    return driveClientStatusSchema.parse(await invoke<unknown>("load_drive_client"))
+  }
+
+  async saveDriveClient(clientId: string, clientSecret: string): Promise<DriveClientStatus> {
+    return driveClientStatusSchema.parse(
+      await invoke<unknown>("save_drive_client", { clientId, clientSecret }),
+    )
+  }
+
+  async clearDriveClient(): Promise<DriveClientStatus> {
+    return driveClientStatusSchema.parse(await invoke<unknown>("clear_drive_client"))
   }
 
   async importFromDrive(jobId: string): Promise<DriveImport> {

@@ -10,20 +10,6 @@ const recordAction = actionButtonClass("neutralOutline", "xsmall")
 const dismiss = actionButtonClass("ghost", "xsmall", "iconOnly")
 
 export const appTemplate = `
-  <section id="access-screen" class="access-screen" aria-labelledby="access-title">
-    <div class="access-card">
-      <span class="brand-mark" aria-hidden="true"><img src="${appIconUrl}" alt="" /></span>
-      <span class="eyebrow">GALPI ACCOUNT</span>
-      <h1 id="access-title">Google 계정으로 로그인</h1>
-      <p>갈피를 사용하려면 Google 계정으로 로그인해야 합니다. 로그인은 시스템 브라우저에서 진행되며, 갈피는 비밀번호를 보지 않습니다.</p>
-      <p id="access-status" class="access-status" role="status" aria-live="polite" data-state="pending">로그인 상태를 확인하는 중입니다.</p>
-      <div class="access-actions">
-        <button id="access-sign-in-button" class="primary-button ${primary}" type="button" data-action="sign-in-gateway" hidden>Google로 로그인</button>
-        <button id="access-retry-button" class="secondary-button ${secondary}" type="button" data-action="retry-app-access" hidden>다시 확인</button>
-        <button id="access-cancel-button" class="secondary-button ${secondary}" type="button" data-action="cancel-gateway-sign-in" hidden>취소</button>
-      </div>
-    </div>
-  </section>
   <div class="app-shell">
     <aside class="setup-rail" aria-label="진행 단계">
       <div class="brand-lockup">
@@ -44,8 +30,6 @@ export const appTemplate = `
         <div class="topbar-actions">
           <div class="engine-chip"><span id="setup-state" data-state="pending">확인 중</span><small id="engine-version">확인 중</small></div>
           <div id="drive-chip" class="engine-chip drive-chip" hidden><span data-state="ready">Google Drive</span><small id="drive-account">연결됨</small></div>
-          <div id="account-chip" class="engine-chip account-chip" hidden><span id="account-email" data-state="ready">Google 계정</span><small id="account-mode">온라인</small></div>
-          <button id="sign-out-button" class="sign-out-button ${secondary}" type="button" data-action="sign-out-gateway" hidden>로그아웃</button>
           <button class="settings-button ${iconOutline}" type="button" data-action="open-settings" aria-label="설정 열기"><i class="ph ph-gear" aria-hidden="true"></i></button>
         </div>
       </header>
@@ -93,11 +77,11 @@ export const appTemplate = `
         <section id="drive-onboarding" class="panel drive-onboarding" aria-labelledby="drive-onboarding-title" hidden>
           <div class="section-heading">
             <div><span class="section-index">선택 / Google Drive</span><h2 id="drive-onboarding-title">Google Drive 연결</h2></div>
-            <p>Drive에 있는 녹음을 가져오고 전사 결과를 내 Drive의 Galpi 폴더에 자동으로 올립니다. Galpi는 직접 만든 파일과 직접 고른 파일에만 접근합니다.</p>
+            <p>Drive에 있는 녹음을 가져오고 전사 결과를 내 Drive의 Galpi 폴더에 자동으로 올립니다. Galpi는 직접 만든 파일과 직접 고른 파일에만 접근합니다. 쓰려면 내 Google 클라이언트를 먼저 저장해야 합니다.</p>
           </div>
           <p id="drive-onboarding-status" class="drive-status" role="status" aria-live="polite" data-state="pending"></p>
           <div class="panel-actions">
-            <button id="drive-connect-button" class="primary-button ${primary}" type="button" data-action="connect-drive"><i class="ph ph-cloud" aria-hidden="true"></i><span>Drive 연결</span></button>
+            <button id="drive-connect-button" class="primary-button ${primary}" type="button" data-action="connect-drive"><i class="ph ph-cloud" aria-hidden="true"></i><span id="drive-connect-label">Drive 연결</span></button>
             <button id="drive-onboarding-cancel-button" class="secondary-button ${secondary}" type="button" data-action="cancel-drive-operation" hidden>취소</button>
             <button id="drive-dismiss-button" class="${ghost}" type="button" data-action="dismiss-drive-onboarding">나중에</button>
           </div>
@@ -434,6 +418,37 @@ export const appTemplate = `
           </label>
           <p id="drive-save-recordings-help">마이크로 녹음한 파일을 정지하는 즉시 Drive의 Galpi 폴더에 올립니다. Drive에 연결해야 쓸 수 있고, 올리는 동안에도 전사를 시작할 수 있습니다.</p>
           <p id="drive-settings-help">연결을 해제해도 Drive에 올린 파일은 지워지지 않습니다.</p>
+          <div id="drive-client" class="drive-client" role="group" aria-labelledby="drive-client-title" hidden>
+            <div class="settings-section-heading">
+              <div><strong id="drive-client-title">Google 클라이언트</strong></div>
+              <p id="drive-client-help">Drive를 쓰려면 내 Google Cloud 프로젝트에서 만든 OAuth 클라이언트가 필요합니다. 클라이언트 ID와 보안 비밀번호를 저장하면 Drive에 연결할 수 있습니다. 보안 비밀번호는 저장한 뒤 다시 보여 주지 않습니다. 클라이언트를 만드는 순서는 아래 '만드는 방법'에서 확인하세요.</p>
+            </div>
+            <div id="drive-client-form">
+              <label class="settings-field-label" for="drive-client-id">클라이언트 ID</label>
+              <input id="drive-client-id" class="settings-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="123-abc.apps.googleusercontent.com" aria-describedby="drive-client-help" />
+              <label class="settings-field-label" for="drive-client-secret">보안 비밀번호</label>
+              <input id="drive-client-secret" class="settings-input" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="drive-client-help" />
+              <div class="chatgpt-actions">
+                <button id="drive-client-save-button" class="primary-button ${primary}" type="button" data-action="save-drive-client">저장</button>
+              </div>
+            </div>
+            <p id="drive-client-status" class="drive-status" role="status" aria-live="polite" data-state="default"></p>
+            <p id="drive-client-error" class="drive-status" role="status" aria-live="polite" data-state="error"></p>
+            <p id="drive-client-lock" hidden>Drive 연결을 해제한 뒤에 바꿀 수 있습니다.</p>
+            <div class="chatgpt-actions">
+              <button id="drive-client-remove-button" class="secondary-button danger ${secondary}" type="button" data-action="remove-drive-client" hidden>클라이언트 삭제</button>
+            </div>
+            <details class="drive-client-guide">
+              <summary>만드는 방법</summary>
+              <ol>
+                <li>Google Cloud 콘솔에서 프로젝트를 만들고, API 및 서비스에서 Google Drive API와 Google Picker API를 사용 설정합니다.</li>
+                <li>Google 인증 플랫폼에서 앱 정보와 대상(외부)을 설정하고, 앱을 프로덕션으로 게시합니다. 게시 상태가 테스트이면 Drive 연결이 7일 뒤에 끊깁니다.</li>
+                <li>클라이언트에서 애플리케이션 유형을 데스크톱 앱으로 골라 만들고, 보안 비밀번호를 바로 복사합니다. 콘솔은 만든 직후에만 비밀번호를 보여 줍니다.</li>
+                <li>클라이언트 ID와 보안 비밀번호를 위 칸에 붙여 넣고 저장한 다음 Drive를 연결합니다.</li>
+              </ol>
+              <p>방금 만든 클라이언트의 설정이 Google에 반영되기까지 몇 분 걸릴 수 있습니다. 저장한 클라이언트를 바꾸려면 Drive 연결을 해제하고 클라이언트를 삭제한 뒤 새로 저장합니다. 클라이언트를 바꾸면 Drive에 새 Galpi 폴더가 생기고, 이전 클라이언트로 올린 파일은 이어지지 않습니다. 자세한 절차는 README의 'Google Drive 사용 준비' 절을 참고하세요.</p>
+            </details>
+          </div>
         </section>
         </div>
         </div>

@@ -18,9 +18,7 @@ This file is written for the agent. Report to the user in the user's language.
   Tools, Visual Studio Build Tools, Rust, Bun). Check first; install only what
   is missing.
 - Never ask for, type, or log the user's Google password, Hugging Face token,
-  or AI API keys. The user enters those in the app.
-- Do not set `GALPI_AUTH_GATEWAY_URL`. Release builds ignore it; it exists for
-  local auth-gateway development only.
+  Google OAuth client secret, or AI API keys. The user enters those in the app.
 
 ## 1. Check the platform
 
@@ -164,18 +162,23 @@ data folder (`~/Library/Application Support/com.m16khb.galpi` on macOS,
 
 ## 6. Hand over to the user
 
-Confirm the app opens on its login screen, then tell the user to finish these
+Confirm the app opens on its work screen, then tell the user to finish these
 steps themselves (details in the README sections of the same names):
 
-1. **Sign in with Google**: press `Google로 로그인`; the system browser opens.
-2. **Hugging Face token** (first engine setup only): accept the
+1. **Hugging Face token** (first engine setup only): accept the
    `pyannote/speaker-diarization-community-1` terms and save a read token in
    `설정`.
-3. **Prepare the local engine**: `설정` → `로컬 엔진 준비`. This downloads an
+2. **Prepare the local engine**: `설정` → `로컬 엔진 준비`. This downloads an
    app-managed Python environment and several GB of models.
-4. **Connect Google Drive** (optional): `Drive 연결` on the card shown after
-   sign-in, or `설정` → **Google Drive**. The system browser asks for the
-   `drive.file` permission only. Skipping it changes nothing else.
+3. **Set up and connect Google Drive** (optional): Galpi ships with no Google
+   OAuth client, so Drive works only after the user creates one in their own
+   Google Cloud project and saves its client ID and secret in `설정` →
+   **Google Drive** → `Google 클라이언트`. The steps are in the README section
+   "Google Drive 사용 준비" (English README: "Set up Google Drive"). Then
+   `Drive 연결` on the card shown when the app opens, or `설정` →
+   **Google Drive**. The system browser asks for the `drive.file` permission
+   only. Skipping Drive changes nothing else. A Drive connection made by an
+   earlier build is disconnected at the first launch and needs this setup.
 
 ## Updating
 

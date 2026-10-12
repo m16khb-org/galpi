@@ -3,6 +3,8 @@ name: 2026-10-09-auth-gateway-google
 description: Accepted decision record with rationale, alternatives, and consequences.
 ---
 
+> 대체됨: 이 결정은 [2026-10-12-drop-auth-gateway-drive-client-in-source](2026-10-12-drop-auth-gateway-drive-client-in-source.md)가 대체했다(galpi#16).
+
 # 앱 사용에 auth-gateway Google 로그인을 요구하고 호스트가 기능 명령을 막는다
 
 - Date: 2026-10-09

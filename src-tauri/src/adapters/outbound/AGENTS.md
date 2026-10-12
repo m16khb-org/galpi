@@ -12,11 +12,9 @@ cleanup, and stable error codes are the contract here.
 outbound/
 ├── browser_sign_in/  # Shared system-browser sign-in: TauriBrowser, loopback callback, PKCE; callers pass SignInCodes
 ├── chatgpt/          # ChatGptAuthPort: OAuth authorize/callback, ID-token, /v1/models; SystemClock
-├── drive/            # DriveAuthPort (consent, Picker, gateway-brokered exchange) and DriveFilesPort (Drive v3 REST, streamed download)
-├── gateway/          # GatewayAuthPort: auth-gateway /auth/native Google sign-in, refresh, logout
+├── drive/            # DriveAuthPort (consent, Picker, direct Google token exchange with the caller-supplied DriveClient; no client is built in) and DriveFilesPort (Drive v3 REST, streamed download)
 ├── settings/chatgpt.rs # ChatGptStore on LocalSettingsStore (tokens in 0600 settings.json)
-├── settings/drive.rs # DriveSessionStore on LocalSettingsStore (Secret::DriveSession)
-├── settings/gateway.rs # GatewaySessionStore on LocalSettingsStore (Secret::GatewaySession)
+├── settings/drive.rs # DriveSessionStore on LocalSettingsStore (Secret::DriveSession); also stores the user's Google client (ID in settings.json, secret in Secret::DriveClientSecret); `clear_client` removes it
 ├── desktop.rs        # EnginePort, TranscriptionPort, TranscriptImportPort, ArtifactPort facade
 ├── environment.rs    # Readiness probe and worker environment
 ├── import.rs         # Transcript import into a per-meeting folder

@@ -1,14 +1,11 @@
-//! The code exchange and renewal at the auth-gateway's `/drive/native/token`.
+//! The code exchange and renewal at Google's token endpoint.
 //!
-//! The gateway holds the desktop client secret and forwards to Google. Galpi's
-//! own gateway session vouches for the request as a bearer token.
+//! Both send the desktop client id and secret with the grant as a form.
 
 use crate::application::ports::DriveCallback;
-use crate::domain::drive::{DriveTokenFailure, DriveTokens};
-use reqwest::header::CONTENT_TYPE;
+use crate::domain::drive::{DriveClient, DriveTokenFailure, DriveTokens};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 #[derive(Deserialize)]
 struct TokenBody {
@@ -26,14 +23,11 @@ struct ErrorBody {
 async fn post(
     http: &Client,
     endpoint: &str,
-    bearer: &str,
-    body: &Value,
+    form: &[(&str, &str)],
 ) -> Result<TokenBody, DriveTokenFailure> {
     let response = http
         .post(endpoint)
-        .bearer_auth(bearer)
-        .header(CONTENT_TYPE, "application/json")
-        .body(body.to_string())
+        .form(form)
         .send()
         .await
         .map_err(|_| DriveTokenFailure::Unavailable)?;
@@ -44,9 +38,6 @@ async fn post(
         .map_err(|_| DriveTokenFailure::Unavailable)?;
     if status.is_success() {
         return serde_json::from_slice(&bytes).map_err(|_| DriveTokenFailure::Unavailable);
-    }
-    if status == StatusCode::UNAUTHORIZED {
-        return Err(DriveTokenFailure::AuthRequired);
     }
     if status == StatusCode::BAD_REQUEST
         && serde_json::from_slice::<ErrorBody>(&bytes)
@@ -68,17 +59,19 @@ fn tokens_from(body: TokenBody, refresh_token: String, now: u64) -> DriveTokens 
 pub(super) async fn exchange(
     http: &Client,
     endpoint: &str,
-    bearer: &str,
     callback: &DriveCallback,
     now: u64,
 ) -> Result<DriveTokens, DriveTokenFailure> {
-    let body = json!({
-        "grant_type": "authorization_code",
-        "code": callback.code,
-        "code_verifier": callback.verifier,
-        "redirect_uri": callback.redirect_uri,
-    });
-    let mut answer = post(http, endpoint, bearer, &body).await?;
+    let (id, secret) = (callback.client.id(), callback.client.secret());
+    let form = [
+        ("client_id", id),
+        ("client_secret", secret),
+        ("grant_type", "authorization_code"),
+        ("code", callback.code.as_str()),
+        ("code_verifier", callback.verifier.as_str()),
+        ("redirect_uri", callback.redirect_uri.as_str()),
+    ];
+    let mut answer = post(http, endpoint, &form).await?;
     // With offline access and `prompt=consent` Google returns a refresh token;
     // an answer without one cannot keep the connection alive.
     let refresh_token = answer
@@ -91,12 +84,18 @@ pub(super) async fn exchange(
 pub(super) async fn refresh(
     http: &Client,
     endpoint: &str,
-    bearer: &str,
+    client: &DriveClient,
     refresh_token: &str,
     now: u64,
 ) -> Result<DriveTokens, DriveTokenFailure> {
-    let body = json!({"grant_type": "refresh_token", "refresh_token": refresh_token});
-    let mut answer = post(http, endpoint, bearer, &body).await?;
+    let (id, secret) = (client.id(), client.secret());
+    let form = [
+        ("client_id", id),
+        ("client_secret", secret),
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+    ];
+    let mut answer = post(http, endpoint, &form).await?;
     // Google rotates the refresh token only sometimes; otherwise the old one stays.
     let refresh_token = answer
         .refresh_token

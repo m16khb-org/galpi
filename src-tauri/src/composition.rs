@@ -3,7 +3,6 @@ use crate::adapters::outbound::browser_sign_in::TauriBrowser;
 use crate::adapters::outbound::chatgpt::{ChatGptOAuthAdapter, SystemClock};
 use crate::adapters::outbound::desktop::DesktopAdapter;
 use crate::adapters::outbound::drive::{DriveOAuthAdapter, DriveRestAdapter};
-use crate::adapters::outbound::gateway::GatewayOAuthAdapter;
 use crate::adapters::outbound::recording::NativeRecorder;
 #[cfg(windows)]
 use crate::adapters::outbound::secrets::CredentialManager;
@@ -14,12 +13,10 @@ use crate::adapters::outbound::settings::LocalSettingsStore;
 use crate::application::chatgpt::ChatGptAccounts;
 use crate::application::drive::DriveAccounts;
 use crate::application::error::AppError;
-use crate::application::gateway::AppAccessGate;
 use crate::application::ports::{
     ArtifactPort, ChatGptAuthPort, ChatGptEvents, ChatGptStore, ClockPort, DriveAuthPort,
-    DriveFilesPort, DriveSessionStore, EnginePort, GatewayAuthPort, GatewaySessionStore, JobEvents,
-    RecordingEvents, RecordingPort, RefinementPort, SettingsPort, TranscriptImportPort,
-    TranscriptionPort,
+    DriveFilesPort, DriveSessionStore, EnginePort, JobEvents, RecordingEvents, RecordingPort,
+    RefinementPort, SettingsPort, TranscriptImportPort, TranscriptionPort,
 };
 use crate::application::use_cases::Application;
 use std::sync::Arc;
@@ -61,7 +58,6 @@ pub fn run() {
             let local_settings = Arc::new(LocalSettingsStore::new(app.handle(), secrets)?);
             let settings: Arc<dyn SettingsPort> = local_settings.clone();
             let chatgpt_store: Arc<dyn ChatGptStore> = local_settings.clone();
-            let gateway_store: Arc<dyn GatewaySessionStore> = local_settings.clone();
             let drive_store: Arc<dyn DriveSessionStore> = local_settings;
             let clock: Arc<dyn ClockPort> = Arc::new(SystemClock);
             let browser = Arc::new(TauriBrowser::new(app.handle().clone()));
@@ -70,8 +66,6 @@ pub fn run() {
                 chatgpt_events,
                 clock.clone(),
             )?);
-            let gateway_auth: Arc<dyn GatewayAuthPort> =
-                Arc::new(GatewayOAuthAdapter::new(browser.clone(), clock.clone())?);
             let drive_auth: Arc<dyn DriveAuthPort> =
                 Arc::new(DriveOAuthAdapter::new(browser, clock.clone())?);
             let drive_files = drive_files(app.handle())?;
@@ -84,7 +78,6 @@ pub fn run() {
                 settings,
                 refinement,
                 ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock.clone()),
-                AppAccessGate::new(gateway_auth, gateway_store, clock.clone()),
                 DriveAccounts::new(drive_auth, drive_files, drive_store, clock),
             ));
             Ok(())
@@ -116,10 +109,6 @@ pub fn run() {
             crate::adapters::inbound::tauri::cancel_chatgpt_sign_in,
             crate::adapters::inbound::tauri::list_chatgpt_models,
             crate::adapters::inbound::tauri::sign_out_of_chatgpt,
-            crate::adapters::inbound::tauri::load_app_access,
-            crate::adapters::inbound::tauri::sign_in_to_gateway,
-            crate::adapters::inbound::tauri::cancel_gateway_sign_in,
-            crate::adapters::inbound::tauri::sign_out_of_gateway,
             crate::adapters::inbound::tauri::load_drive_status,
             crate::adapters::inbound::tauri::connect_drive,
             crate::adapters::inbound::tauri::cancel_drive_operation,
@@ -130,6 +119,9 @@ pub fn run() {
             crate::adapters::inbound::tauri::sync_meeting_to_drive,
             crate::adapters::inbound::tauri::set_drive_save_recordings,
             crate::adapters::inbound::tauri::upload_recording_to_drive,
+            crate::adapters::inbound::tauri::load_drive_client,
+            crate::adapters::inbound::tauri::save_drive_client,
+            crate::adapters::inbound::tauri::clear_drive_client,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| {
