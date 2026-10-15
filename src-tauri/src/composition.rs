@@ -40,7 +40,10 @@ pub fn run() {
             let job_events: Arc<dyn JobEvents> = events.clone();
             let chatgpt_events: Arc<dyn ChatGptEvents> = events.clone();
             let recording_events: Arc<dyn RecordingEvents> = events;
-            let desktop = Arc::new(DesktopAdapter::new(app.handle().clone(), job_events));
+            let desktop = Arc::new(DesktopAdapter::new(
+                app.handle().clone(),
+                job_events.clone(),
+            ));
             let engine: Arc<dyn EnginePort> = desktop.clone();
             let transcription: Arc<dyn TranscriptionPort> = desktop.clone();
             let imports: Arc<dyn TranscriptImportPort> = desktop.clone();
@@ -78,7 +81,7 @@ pub fn run() {
                 settings,
                 refinement,
                 ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock.clone()),
-                DriveAccounts::new(drive_auth, drive_files, drive_store, clock),
+                DriveAccounts::new(drive_auth, drive_files, drive_store, clock, job_events),
             ));
             Ok(())
         })

@@ -3,7 +3,8 @@ use crate::application::error::AppError;
 use crate::application::model::TranscriptImportResult;
 use crate::application::ports::{
     ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DrivePickerKind,
-    DriveSessionStore, LargeUpload, LocalFileDigest, LocalUpload, PickedFile, RemoteFolder,
+    DriveSessionStore, JobEvents, LargeUpload, LocalFileDigest, LocalUpload, PickedFile,
+    RemoteFolder,
 };
 use crate::application::use_cases::Application;
 use crate::domain::artifact::ArtifactKind;
@@ -13,6 +14,7 @@ use crate::domain::drive::{
 };
 use crate::domain::job::{SpeakerHint, TranscriptImportRequest, TranscriptionRequest};
 use crate::domain::recording::RecordingSource;
+use crate::domain::worker::WorkerEvent;
 use async_trait::async_trait;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -101,6 +103,10 @@ pub(super) struct DriveFake {
     failing_kind: Mutex<Option<(ArtifactKind, &'static str)>>,
     block_download: AtomicBool,
     download_started: Notify,
+    /// The byte counts a download reports, in order.
+    download_chunks: Mutex<Vec<u64>>,
+    /// Every job event, in order.
+    job_events: Mutex<Vec<(Uuid, WorkerEvent)>>,
 }
 
 impl Default for DriveFake {
@@ -124,12 +130,15 @@ impl Default for DriveFake {
                 mime_type: "audio/x-m4a".to_owned(),
                 can_download: true,
                 modified_time: Some("2026-10-01T09:30:00Z".to_owned()),
+                size: None,
                 meeting: None,
             }),
             reject_files: AtomicBool::new(false),
             failing_kind: Mutex::new(None),
             block_download: AtomicBool::new(false),
             download_started: Notify::new(),
+            download_chunks: Mutex::new(Vec::new()),
+            job_events: Mutex::new(Vec::new()),
         }
     }
 }
@@ -503,6 +512,7 @@ impl DriveFilesPort for FakePort {
         id: &DriveFileId,
         file: &PickedFile,
         cancel: &mut oneshot::Receiver<()>,
+        progress: &mut (dyn FnMut(u64) + Send),
     ) -> Result<PathBuf, AppError> {
         self.drive.rejecting()?;
         if self.drive.block_download.load(Ordering::Relaxed) {
@@ -510,11 +520,21 @@ impl DriveFilesPort for FakePort {
             let _cancelled = cancel.await;
             return Err(AppError::new("CANCELLED", "사용자가 작업을 취소했습니다."));
         }
+        for received in lock(&self.drive.download_chunks)?.iter().copied() {
+            progress(received);
+        }
         Ok(PathBuf::from(format!(
             "/tmp/drive-imports/{}/{}",
             id.as_str(),
             file.name
         )))
+    }
+}
+
+impl JobEvents for FakePort {
+    fn emit(&self, job_id: Uuid, event: WorkerEvent) -> Result<(), AppError> {
+        lock(&self.drive.job_events)?.push((job_id, event));
+        Ok(())
     }
 }
 
@@ -788,6 +808,78 @@ async fn importing_with_the_same_account_keeps_the_new_grant() -> Result<(), App
         Some("galpi-test-drive-refresh-exchanged".to_owned())
     );
     assert_eq!(port.drive.calls()?.revoked, Vec::<String>::new());
+    Ok(())
+}
+
+/// The download progress the import job reported, as (percent, message).
+fn download_progress(port: &FakePort, job_id: Uuid) -> Result<Vec<(f32, String)>, AppError> {
+    Ok(lock(&port.drive.job_events)?
+        .iter()
+        .filter(|(id, _)| *id == job_id)
+        .filter_map(|(_, event)| match event {
+            WorkerEvent::Phase {
+                phase,
+                percent,
+                message,
+            } if phase == "downloading" => Some((*percent, message.clone())),
+            _ => None,
+        })
+        .collect())
+}
+
+#[tokio::test]
+async fn an_import_reports_its_download_once_per_whole_percent() -> Result<(), AppError> {
+    // Given: a 200 MB recording whose last chunk overshoots the size Drive reported
+    let (port, app) = connected()?;
+    lock(&port.drive.picked)?.size = Some(200_000_000);
+    *lock(&port.drive.download_chunks)? = vec![
+        1_000_000,
+        1_999_999,
+        2_000_000,
+        100_000_000,
+        200_000_000,
+        210_000_000,
+    ];
+    let job_id = Uuid::now_v7();
+
+    // When
+    app.import_from_drive(job_id).await?;
+
+    // Then: the bar starts at zero, skips chunks inside a percent, and never passes 100
+    assert_eq!(
+        download_progress(&port, job_id)?,
+        [
+            (0.0, "Drive에서 내려받는 중 · 0KB / 200.0MB".to_owned()),
+            (1.0, "Drive에서 내려받는 중 · 2.0MB / 200.0MB".to_owned()),
+            (50.0, "Drive에서 내려받는 중 · 100.0MB / 200.0MB".to_owned()),
+            (
+                100.0,
+                "Drive에서 내려받는 중 · 200.0MB / 200.0MB".to_owned()
+            ),
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_download_of_unknown_size_reports_bytes_per_megabyte() -> Result<(), AppError> {
+    // Given: Drive reports no size for the picked file
+    let (port, app) = connected()?;
+    *lock(&port.drive.download_chunks)? = vec![500_000, 999_999, 1_000_000, 2_500_000];
+    let job_id = Uuid::now_v7();
+
+    // When
+    app.import_from_drive(job_id).await?;
+
+    // Then: no invented percentage, only the bytes so far
+    assert_eq!(
+        download_progress(&port, job_id)?,
+        [
+            (0.0, "Drive에서 내려받는 중 · 0KB".to_owned()),
+            (0.0, "Drive에서 내려받는 중 · 1.0MB".to_owned()),
+            (0.0, "Drive에서 내려받는 중 · 2.5MB".to_owned()),
+        ]
+    );
     Ok(())
 }
 

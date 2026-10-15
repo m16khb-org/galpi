@@ -963,6 +963,7 @@ fn picked(modified: &str) -> PickedFile {
         mime_type: "audio/x-m4a".to_owned(),
         can_download: true,
         modified_time: Some(modified.to_owned()),
+        size: None,
         meeting: None,
     }
 }
@@ -978,6 +979,7 @@ async fn picked_file_metadata_carries_its_galpi_meeting() -> Result<(), AppError
             "mimeType": "text/plain",
             "capabilities": {"canDownload": true},
             "modifiedTime": "2026-10-01T09:30:00.000Z",
+            "size": "227862572",
             "appProperties": {"galpiMeeting": "drive:rec-1", "galpiKind": "speaker_text"},
         })
         .to_string(),
@@ -999,13 +1001,16 @@ async fn picked_file_metadata_carries_its_galpi_meeting() -> Result<(), AppError
     let uploaded = galpi.adapter.file_metadata(TOKEN, &id).await?;
     let other = foreign.adapter.file_metadata(TOKEN, &id).await?;
 
-    // Then: a valid key is kept, an invalid one is ignored
+    // Then: a valid key is kept, an invalid one is ignored, and Drive's
+    // int64-as-string size is read as a number
     assert_eq!(
         uploaded.meeting.as_ref().map(MeetingKey::as_str),
         Some("drive:rec-1")
     );
     assert_eq!(uploaded.name, "새로운 노트_화자별.txt");
+    assert_eq!(uploaded.size, Some(227_862_572));
     assert_eq!(other.meeting, None);
+    assert_eq!(other.size, None);
     let requests = galpi.requests_to("GET", "/drive/v3/files/file-1");
     assert!(
         requests
@@ -1023,6 +1028,7 @@ async fn downloads_land_in_a_fresh_folder_with_the_drive_modification_time() -> 
     let harness = RestHarness::start(fixed(200, "galpi-test-audio".to_owned())).await?;
     let id = DriveFileId::parse("file-1").map_err(|_| AppError::new("TEST", "id"))?;
     let (_cancel, mut receiver) = oneshot::channel();
+    let mut reported = Vec::new();
 
     // When
     let path = harness
@@ -1032,6 +1038,7 @@ async fn downloads_land_in_a_fresh_folder_with_the_drive_modification_time() -> 
             &id,
             &picked("2026-10-01T09:30:00.000Z"),
             &mut receiver,
+            &mut |received| reported.push(received),
         )
         .await?;
 
@@ -1066,6 +1073,9 @@ async fn downloads_land_in_a_fresh_folder_with_the_drive_modification_time() -> 
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(names, ["주간 회의.m4a"]);
+    // Progress counts up to the whole file
+    assert!(reported.is_sorted());
+    assert_eq!(reported.last(), Some(&16));
     let requests = harness.requests_to("GET", "/drive/v3/files/file-1");
     assert_eq!(
         requests
@@ -1087,7 +1097,13 @@ async fn a_cancelled_or_refused_download_leaves_no_folder_behind() -> Result<(),
     let _sent = cancel.send(());
     let error = harness
         .adapter
-        .download(TOKEN, &id, &picked("2026-10-01T09:30:00Z"), &mut receiver)
+        .download(
+            TOKEN,
+            &id,
+            &picked("2026-10-01T09:30:00Z"),
+            &mut receiver,
+            &mut |_| {},
+        )
         .await
         .err()
         .map(|error| error.code);
@@ -1103,7 +1119,13 @@ async fn a_cancelled_or_refused_download_leaves_no_folder_behind() -> Result<(),
     let (_cancel, mut receiver) = oneshot::channel();
     let error = refused
         .adapter
-        .download(TOKEN, &id, &picked("2026-10-01T09:30:00Z"), &mut receiver)
+        .download(
+            TOKEN,
+            &id,
+            &picked("2026-10-01T09:30:00Z"),
+            &mut receiver,
+            &mut |_| {},
+        )
         .await
         .err()
         .map(|error| error.code);

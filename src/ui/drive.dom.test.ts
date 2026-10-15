@@ -9,7 +9,7 @@ import type {
   DriveStatus,
   DriveSyncResult,
 } from "../domain/drive"
-import type { ImportedTranscript, TranscriptionResult } from "../domain/job"
+import type { ImportedTranscript, JobEvent, TranscriptionResult } from "../domain/job"
 import { AppView } from "./app-view"
 import { AppController } from "./controller"
 
@@ -635,6 +635,58 @@ describe("Drive import as a job", () => {
     controller.stop()
   })
 
+  test("the import card shows the download's percentage once the host reports bytes", async () => {
+    // Given: two imports that wait in the Picker, with the job events wired to the window
+    const pending = [Promise.withResolvers<DriveImport>(), Promise.withResolvers<DriveImport>()]
+    const importJobs: string[] = []
+    let emit: (event: JobEvent) => void = () => undefined
+    const { controller, root } = await mount(
+      backend({
+        listenToJobs: async (handler) => {
+          emit = handler
+          return () => undefined
+        },
+        importFromDrive: (jobId) => {
+          const waiting = pending[importJobs.length]
+          importJobs.push(jobId)
+          if (waiting === undefined) throw new Error("unexpected import")
+          return waiting.promise
+        },
+      }),
+    )
+    await click(root, "#drive-import-button")
+    expect(visible(root, "#job-progress")).toBe(false)
+    expect(visible(root, "#job-percent")).toBe(false)
+
+    // When: the download reports how far it has come
+    emit({
+      jobId: importJobs[0] ?? "",
+      type: "phase",
+      phase: "downloading",
+      percent: 40,
+      message: "Drive에서 내려받는 중 · 91.1MB / 227.9MB",
+    })
+
+    // Then
+    expect(visible(root, "#job-progress")).toBe(true)
+    expect(pick(root, "#job-progress").getAttribute("aria-valuenow")).toBe("40")
+    expect(pick(root, "#job-percent").textContent).toBe("40%")
+    expect(pick(root, "#job-message").textContent).toBe("Drive에서 내려받는 중 · 91.1MB / 227.9MB")
+    expect(visible(root, "#job-phase-list")).toBe(false)
+
+    // When: the download finishes and the next import is back in the Picker
+    pending[0]?.resolve(imported(importJobs[0] ?? ""))
+    await settle()
+    await click(root, "#drive-import-button")
+
+    // Then: its card runs without the previous download's bar
+    expect(pick(root, "#job-panel").dataset["status"]).toBe("running")
+    expect(visible(root, "#job-panel")).toBe(true)
+    expect(visible(root, "#job-progress")).toBe(false)
+    expect(visible(root, "#job-percent")).toBe(false)
+    controller.stop()
+  })
+
   test("a finished import hides the card and names the file, even after a transcription", async () => {
     // Given: a session that already finished a transcription
     const { controller, root } = await mount(
@@ -807,9 +859,14 @@ describe("Drive transcript import into the augment panel", () => {
     const calls: string[] = []
     const pending = Promise.withResolvers<ImportedTranscript>()
     let importJob = ""
+    let emit: (event: JobEvent) => void = () => undefined
     const { controller, root } = await mount(
       backend(
         {
+          listenToJobs: async (handler) => {
+            emit = handler
+            return () => undefined
+          },
           importTranscriptFromDrive: (jobId) => {
             importJob = jobId
             return pending.promise
@@ -822,7 +879,7 @@ describe("Drive transcript import into the augment panel", () => {
     // When
     await click(root, "#drive-transcript-button")
 
-    // Then: the card has no percentage, a plain cancel, and the starters wait
+    // Then: the card has no percentage while in the Picker, a plain cancel, and the starters wait
     expect(visible(root, "#augment-progress")).toBe(true)
     expect(pick(root, "#augment-job-title").textContent).toBe(
       "Drive에서 전사문을 가져오고 있습니다",
@@ -834,6 +891,18 @@ describe("Drive transcript import into the augment panel", () => {
     expect(pick<HTMLButtonElement>(root, "#drive-transcript-button").disabled).toBe(true)
     expect(pick<HTMLButtonElement>(root, "#transcript-selection").disabled).toBe(true)
     expect(pick<HTMLButtonElement>(root, "#drive-import-button").disabled).toBe(true)
+
+    // When: the download reports bytes, the card shows how far it has come
+    emit({
+      jobId: importJob,
+      type: "phase",
+      phase: "downloading",
+      percent: 100,
+      message: "Drive에서 내려받는 중 · 49KB / 49KB",
+    })
+    expect(visible(root, "#augment-job-progress")).toBe(true)
+    expect(pick(root, "#augment-job-percent").textContent).toBe("100%")
+    expect(pick(root, "#augment-job-message").textContent).toBe("Drive에서 내려받는 중 · 49KB / 49KB")
     await click(root, "#augment-cancel-button")
     expect(calls).toContain(`cancel:${importJob}`)
     pending.reject({ code: "CANCELLED", message: "사용자가 작업을 취소했습니다." })

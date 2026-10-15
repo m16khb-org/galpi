@@ -4,8 +4,8 @@ use super::error::AppError;
 use super::model::{CompletedTranscription, EnvironmentStatus};
 use super::ports::{
     ArtifactPort, ChatGptAuthPort, ChatGptStore, ClockPort, DriveAuthPort, DriveFilesPort,
-    DriveSessionStore, EnginePort, RecordingPort, RefinementJob, RefinementPort, SettingsPort,
-    TranscriptImportPort, TranscriptionPort,
+    DriveSessionStore, EnginePort, JobEvents, RecordingPort, RefinementJob, RefinementPort,
+    SettingsPort, TranscriptImportPort, TranscriptionPort,
 };
 use super::use_cases::Application;
 use crate::domain::artifact::{ArtifactKind, Artifacts};
@@ -121,6 +121,7 @@ impl FakePort {
         let drive_auth: Arc<dyn DriveAuthPort> = self.clone();
         let drive_files: Arc<dyn DriveFilesPort> = self.clone();
         let drive_store: Arc<dyn DriveSessionStore> = self.clone();
+        let job_events: Arc<dyn JobEvents> = self.clone();
         Application::new(
             engine,
             transcription,
@@ -130,7 +131,7 @@ impl FakePort {
             settings,
             refinement,
             ChatGptAccounts::new(chatgpt_auth, chatgpt_store, clock.clone()),
-            DriveAccounts::new(drive_auth, drive_files, drive_store, clock),
+            DriveAccounts::new(drive_auth, drive_files, drive_store, clock, job_events),
         )
     }
 }

@@ -249,6 +249,8 @@ struct FileBody {
     mime_type: Option<String>,
     capabilities: Option<Capabilities>,
     modified_time: Option<String>,
+    /// int64 as a JSON string, as Drive v3 sends every int64.
+    size: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -571,16 +573,23 @@ impl DriveRestAdapter {
         remote_file(parse(&bytes)?, Some(upload.sha256.clone()))
     }
 
-    /// Stream `id` into `folder/name` through a `.part` file.
+    /// Stream `id` into `folder`, under the picked file's sanitized name,
+    /// through a `.part` file.
     async fn stream(
         &self,
         access_token: &str,
         id: &DriveFileId,
+        file: &PickedFile,
         folder: &Path,
-        name: &str,
-        modified: Option<SystemTime>,
         cancel: &mut oneshot::Receiver<()>,
+        progress: &mut (dyn FnMut(u64) + Send),
     ) -> Result<PathBuf, AppError> {
+        let name = local_name(&file.name);
+        let modified = file
+            .modified_time
+            .as_deref()
+            .and_then(|time| chrono::DateTime::parse_from_rfc3339(time).ok())
+            .map(SystemTime::from);
         let url = Self::url(
             &self.api,
             &format!("/files/{}", id.as_str()),
@@ -607,6 +616,7 @@ impl DriveRestAdapter {
         let mut file = tokio::fs::File::create(&part)
             .await
             .map_err(|error| AppError::io("내려받을 파일을 만들지 못했습니다", &error))?;
+        let mut received: u64 = 0;
         loop {
             let chunk = tokio::select! {
                 biased;
@@ -614,10 +624,13 @@ impl DriveRestAdapter {
                 chunk = timeout(CHUNK_TIMEOUT, response.chunk()) => chunk,
             };
             match chunk {
-                Ok(Ok(Some(bytes))) => file
-                    .write_all(&bytes)
-                    .await
-                    .map_err(|error| AppError::io("내려받은 내용을 저장하지 못했습니다", &error))?,
+                Ok(Ok(Some(bytes))) => {
+                    file.write_all(&bytes).await.map_err(|error| {
+                        AppError::io("내려받은 내용을 저장하지 못했습니다", &error)
+                    })?;
+                    received = received.saturating_add(bytes.len() as u64);
+                    progress(received);
+                }
                 Ok(Ok(None)) => break,
                 Ok(Err(_)) | Err(_) => return Err(unavailable()),
             }
@@ -875,7 +888,7 @@ impl DriveFilesPort for DriveRestAdapter {
             &format!("/files/{}", id.as_str()),
             &[(
                 "fields",
-                "name,mimeType,capabilities(canDownload),modifiedTime,appProperties",
+                "name,mimeType,capabilities(canDownload),modifiedTime,size,appProperties",
             )],
         )?;
         let mut body: FileBody = parse(&self.call(self.http.get(url), access_token).await?)?;
@@ -890,6 +903,7 @@ impl DriveFilesPort for DriveRestAdapter {
                 .capabilities
                 .is_some_and(|capabilities| capabilities.can_download),
             modified_time: body.modified_time,
+            size: body.size.and_then(|size| size.parse().ok()),
             meeting,
         })
     }
@@ -900,25 +914,14 @@ impl DriveFilesPort for DriveRestAdapter {
         id: &DriveFileId,
         file: &PickedFile,
         cancel: &mut oneshot::Receiver<()>,
+        progress: &mut (dyn FnMut(u64) + Send),
     ) -> Result<PathBuf, AppError> {
         let folder = self.imports.join(Uuid::new_v4().to_string());
         tokio::fs::create_dir_all(&folder)
             .await
             .map_err(|error| AppError::io("내려받을 폴더를 만들지 못했습니다", &error))?;
-        let modified = file
-            .modified_time
-            .as_deref()
-            .and_then(|time| chrono::DateTime::parse_from_rfc3339(time).ok())
-            .map(SystemTime::from);
         let result = self
-            .stream(
-                access_token,
-                id,
-                &folder,
-                &local_name(&file.name),
-                modified,
-                cancel,
-            )
+            .stream(access_token, id, file, &folder, cancel, progress)
             .await;
         if result.is_err() {
             // Nothing half-downloaded stays behind; startup clears any rest.

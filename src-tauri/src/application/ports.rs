@@ -268,6 +268,8 @@ pub struct PickedFile {
     pub can_download: bool,
     /// RFC 3339, kept for the downloaded file's modification time.
     pub modified_time: Option<String>,
+    /// Drive's byte count, which download progress measures against.
+    pub size: Option<u64>,
     /// The meeting Galpi uploaded this file for (`galpiMeeting`), when it did.
     pub meeting: Option<MeetingKey>,
 }
@@ -355,13 +357,15 @@ pub trait DriveFilesPort: Send + Sync {
         id: &DriveFileId,
     ) -> Result<PickedFile, AppError>;
     /// Stream the file into a fresh import folder and return its canonical
-    /// path. A failure or cancellation leaves no folder behind.
+    /// path. A failure or cancellation leaves no folder behind. `progress`
+    /// hears the byte count written so far after every received chunk.
     async fn download(
         &self,
         access_token: &str,
         id: &DriveFileId,
         file: &PickedFile,
         cancel: &mut oneshot::Receiver<()>,
+        progress: &mut (dyn FnMut(u64) + Send),
     ) -> Result<PathBuf, AppError>;
 }
 

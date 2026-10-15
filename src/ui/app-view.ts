@@ -296,12 +296,12 @@ export class AppView {
       // recording import inside the transcription panel.
       this.element("#job-panel").hidden = !usesJobPanel(kind) && !this.transcriptionSummary
       this.element("#job-phase-list").hidden = kind !== "transcription"
-      // A Drive import reports no progress, so it shows no percentage either.
+      // A Drive import waits in the Picker first: its bar appears once the download reports bytes.
       this.element("#job-progress").hidden = kind === "driveImport"
       this.element("#job-percent").hidden = kind === "driveImport"
       this.element("#augment-progress").hidden = !usesAugmentCard(kind)
       // The same card serves two jobs: its label and cancel follow the one running, and a
-      // Drive transcript import reports no progress, so it shows no percentage either.
+      // Drive transcript import, like a recording import, shows its bar only while downloading.
       this.element("#augment-job-eyebrow").textContent =
         kind === "driveTranscript" ? "Drive 가져오기 진행 중" : "AI 증강 진행 중"
       this.element("#augment-cancel-button").textContent =
@@ -366,6 +366,7 @@ export class AppView {
       this.element("#job-panel").dataset["status"] = state.status
     }
     this.jobPhase = state.phase
+    this.renderDownloadProgress(state.phase === "downloading")
     this.renderJobTitle(state.status)
     this.refreshStages()
     this.element("#job-message").textContent = state.message
@@ -579,6 +580,17 @@ export class AppView {
       this.element("#job-title").textContent = driveImportTitles[status]
     } else if (this.jobKind === "driveTranscript") {
       this.element("#augment-job-title").textContent = driveTranscriptTitles[status]
+    }
+  }
+
+  /** A Drive import's card gains its bar and percentage once the host reports download bytes. */
+  private renderDownloadProgress(downloading: boolean): void {
+    if (this.jobKind === "driveImport") {
+      this.element("#job-progress").hidden = !downloading
+      this.element("#job-percent").hidden = !downloading
+    } else if (this.jobKind === "driveTranscript") {
+      this.element("#augment-job-progress").hidden = !downloading
+      this.element("#augment-job-percent").hidden = !downloading
     }
   }
 

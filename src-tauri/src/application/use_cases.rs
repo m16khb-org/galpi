@@ -371,7 +371,7 @@ impl Application {
         let job_id = job.id();
         let imported = self
             .drive
-            .import(DrivePickerKind::Recording, &mut cancel)
+            .import(DrivePickerKind::Recording, job_id, &mut cancel)
             .await?;
         self.drive_imports
             .lock()
@@ -489,7 +489,7 @@ impl Application {
         let job_id = job.id();
         let picked = self
             .drive
-            .import(DrivePickerKind::Transcript, &mut cancel)
+            .import(DrivePickerKind::Transcript, job_id, &mut cancel)
             .await?;
         let artifacts = self
             .imports

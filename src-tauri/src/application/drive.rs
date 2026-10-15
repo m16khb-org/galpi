@@ -13,7 +13,7 @@
 use crate::application::error::AppError;
 use crate::application::ports::{
     ClockPort, DriveAuthPort, DriveAuthorize, DriveCallback, DriveFilesPort, DrivePickerKind,
-    DriveSessionStore, LargeUpload, PickedFile,
+    DriveSessionStore, JobEvents, LargeUpload, PickedFile,
 };
 use crate::domain::artifact::{ArtifactKind, Artifacts, is_transcript_name};
 use crate::domain::drive::{
@@ -22,10 +22,12 @@ use crate::domain::drive::{
     DriveStatus, DriveSyncFile, DriveSyncResult, DriveSyncState, DriveTokenFailure, DriveTokens,
     MeetingKey, SyncDecision, decide,
 };
+use crate::domain::worker::WorkerEvent;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
+use uuid::Uuid;
 
 /// The result files a sync uploads, in display order. The checkpoint stays local.
 const SYNCED_KINDS: [ArtifactKind; 3] = [
@@ -154,6 +156,68 @@ fn pick_one_only(kind: DrivePickerKind) -> AppError {
     AppError::new("DRIVE_PICK_INVALID", message)
 }
 
+/// The job phase a Drive download reports under.
+const DOWNLOAD_PHASE: &str = "downloading";
+
+/// How often a download of unknown size reports: every this many bytes.
+const UNSIZED_REPORT_BYTES: u64 = 1_000_000;
+
+/// A byte count as people read it in Finder: decimal units, one decimal place.
+fn readable_size(bytes: u64) -> String {
+    const KB: u64 = 1_000;
+    const MB: u64 = 1_000_000;
+    const GB: u64 = 1_000_000_000;
+    let (unit, name) = if bytes >= GB {
+        (GB, "GB")
+    } else if bytes >= MB {
+        (MB, "MB")
+    } else {
+        return format!("{}KB", bytes.div_ceil(KB));
+    };
+    let tenths = bytes / (unit / 10);
+    format!("{}.{}{name}", tenths / 10, tenths % 10)
+}
+
+/// Turns a download's byte count into job progress: one event per whole
+/// percent, or per megabyte when Drive gave no size, so a large file does
+/// not send the window an event for every network chunk.
+struct DownloadProgress<'a> {
+    events: &'a dyn JobEvents,
+    job_id: Uuid,
+    total: Option<u64>,
+    reported: Option<u64>,
+}
+
+impl DownloadProgress<'_> {
+    fn report(&mut self, received: u64) {
+        let total = self.total.filter(|total| *total > 0);
+        let percent = total.map(|total| received.min(total).saturating_mul(100) / total);
+        let step = percent.unwrap_or(received / UNSIZED_REPORT_BYTES);
+        if self.reported == Some(step) {
+            return;
+        }
+        self.reported = Some(step);
+        let message = match total {
+            Some(total) => format!(
+                "Drive에서 내려받는 중 · {} / {}",
+                readable_size(received.min(total)),
+                readable_size(total)
+            ),
+            None => format!("Drive에서 내려받는 중 · {}", readable_size(received)),
+        };
+        let event = WorkerEvent::Phase {
+            phase: DOWNLOAD_PHASE.to_owned(),
+            percent: percent.map_or(0.0, |percent| {
+                f32::from(u8::try_from(percent).unwrap_or(100))
+            }),
+            message,
+        };
+        // Progress is advisory: a window that missed one event still gets the
+        // next, and the download itself must not fail over it.
+        let _not_shown = self.events.emit(self.job_id, event);
+    }
+}
+
 /// Releases the connect slot however the attempt ends, including a dropped call.
 struct OperationSlot<'a> {
     drive: &'a DriveAccounts,
@@ -173,6 +237,8 @@ pub struct DriveAccounts {
     files: Arc<dyn DriveFilesPort>,
     store: Arc<dyn DriveSessionStore>,
     clock: Arc<dyn ClockPort>,
+    /// Where an import reports its download progress, under the import's job id.
+    events: Arc<dyn JobEvents>,
     /// Serializes token renewals and every connection or token write, including the clear.
     store_lock: tokio::sync::Mutex<()>,
     /// The waiting connect consent. The Picker uses a job slot instead, so its
@@ -187,12 +253,14 @@ impl DriveAccounts {
         files: Arc<dyn DriveFilesPort>,
         store: Arc<dyn DriveSessionStore>,
         clock: Arc<dyn ClockPort>,
+        events: Arc<dyn JobEvents>,
     ) -> Self {
         Self {
             auth,
             files,
             store,
             clock,
+            events,
             store_lock: tokio::sync::Mutex::new(()),
             operation_active: AtomicBool::new(false),
             operation_cancel: Mutex::new(None),
@@ -439,13 +507,14 @@ impl DriveAccounts {
     }
 
     /// Let the user pick one file of `kind` in the desktop Picker and
-    /// download it.
+    /// download it, reporting the download as job `job_id`'s progress.
     ///
     /// `cancel` is the caller's job slot, so the job's cancel stops both the
     /// consent wait and the download.
     pub async fn import(
         &self,
         kind: DrivePickerKind,
+        job_id: Uuid,
         cancel: &mut oneshot::Receiver<()>,
     ) -> Result<ImportedFile, AppError> {
         let (id, access_token) = self.pick(kind, cancel).await?;
@@ -461,8 +530,22 @@ impl DriveAccounts {
                 "Drive에서 이 파일을 내려받을 권한이 없습니다.",
             ));
         }
+        let mut progress = DownloadProgress {
+            events: self.events.as_ref(),
+            job_id,
+            total: file.size,
+            reported: None,
+        };
+        // The card shows the bar from the first byte on, not after the first percent.
+        progress.report(0);
         let path = self
-            .recovered(self.files.download(&access_token, &id, &file, cancel).await)
+            .recovered(
+                self.files
+                    .download(&access_token, &id, &file, cancel, &mut |received| {
+                        progress.report(received);
+                    })
+                    .await,
+            )
             .await?;
         Ok(ImportedFile {
             path,
